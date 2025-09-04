@@ -1,8 +1,5 @@
 import { CircuitBreaker } from '../core/circuit-breaker.js';
-import {
-    createLogger,
-    ObservabilitySystem,
-} from '../../observability/index.js';
+import { createLogger } from '../../observability/index.js';
 import {
     CircuitBreakerConfig,
     CircuitBreakerMiddlewareConfig,
@@ -12,6 +9,7 @@ import {
     MiddlewareFactoryType,
     TEvent,
 } from '../../core/types/allTypes.js';
+import { ObservabilitySystem } from '../../observability/observability.js';
 
 export class CircuitBreakerManager {
     private circuits = new Map<string, CircuitBreaker>();

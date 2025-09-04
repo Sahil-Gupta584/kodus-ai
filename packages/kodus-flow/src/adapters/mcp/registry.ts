@@ -270,7 +270,11 @@ export class MCPRegistry {
     destroy(): void {
         // Desconecta todos os clientes
         for (const [, client] of this.clients) {
-            client.disconnect().catch(console.error);
+            client.disconnect().catch((error) => {
+                this.logger.warn('Failed to disconnect MCP client', {
+                    error: error.message,
+                });
+            });
         }
         this.clients.clear();
     }

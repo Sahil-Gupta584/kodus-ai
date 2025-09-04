@@ -7,7 +7,7 @@ import {
     TEvent,
 } from '../../core/types/allTypes.js';
 import { KernelError } from '../../core/errors.js';
-import { getActiveSpan } from '../../observability/index.js';
+import { getObservability } from '../../observability/index.js';
 
 function backoff(attempt: number, opt: RetryOptions) {
     const { initialDelayMs, backoffFactor, jitter, maxDelayMs } = opt;
@@ -64,7 +64,7 @@ export const withRetry: MiddlewareFactoryType<Partial<RetryOptions>, TEvent> = (
             ev: E,
             signal?: AbortSignal,
         ): Promise<R> {
-            const span = getActiveSpan();
+            const span = getObservability().getCurrentSpan();
             let attempt = 0;
             const started = Date.now();
 

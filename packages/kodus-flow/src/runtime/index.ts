@@ -179,10 +179,11 @@ export function createRuntime(
                 const err = error as Error;
                 errors.push(err);
                 if (enableObservability) {
-                    observability.logger.error(
+                    observability.log(
+                        'error',
                         'Failed to enqueue batched event',
-                        err,
                         {
+                            error: err.message,
                             eventType: event.type,
                             eventId: event.id,
                         },
@@ -199,7 +200,7 @@ export function createRuntime(
         }
 
         if (enableObservability) {
-            observability.logger.debug('Batch flushed', {
+            observability.log('debug', 'Batch flushed', {
                 eventCount: eventsToProcess.length,
             });
         }
@@ -224,10 +225,11 @@ export function createRuntime(
             // Fire-and-forget calls to flushBatch need error handling
             flushBatch().catch((error) => {
                 if (enableObservability) {
-                    observability.logger.error(
+                    observability.log(
+                        'error',
                         'Failed to flush batch during addToBatch',
-                        error as Error,
                         {
+                            error: (error as Error).message,
                             eventType: event.type,
                             eventId: event.id,
                         },
@@ -242,9 +244,12 @@ export function createRuntime(
                 // Fire-and-forget calls to flushBatch need error handling
                 flushBatch().catch((error) => {
                     if (enableObservability) {
-                        observability.logger.error(
+                        observability.log(
+                            'error',
                             'Failed to flush batch during timeout',
-                            error as Error,
+                            {
+                                error: (error as Error).message,
+                            },
                         );
                     }
                 });
@@ -263,7 +268,8 @@ export function createRuntime(
             if (now - ackInfo.timestamp > ackTimeout) {
                 // ✅ SIMPLIFICADO: Apenas log e cleanup, SEM retry automático
                 pendingAcks.delete(eventId);
-                observability.logger.warn(
+                observability.log(
+                    'warn',
                     'ACK timeout: event expired without acknowledgment',
                     {
                         eventId,
@@ -306,7 +312,7 @@ export function createRuntime(
                     event,
                     timestamp: Date.now(),
                 });
-                observability.logger.debug('ACK tracking started', {
+                observability.log('debug', 'ACK tracking started', {
                     eventId: event.id,
                     eventType: event.type,
                     correlationId,
@@ -326,10 +332,11 @@ export function createRuntime(
                     .enqueue(event, options.priority || 0)
                     .catch((error) => {
                         if (enableObservability) {
-                            observability.logger.error(
+                            observability.log(
+                                'error',
                                 'Failed to enqueue event',
-                                error,
                                 {
+                                    error: (error as Error).message,
                                     eventType,
                                     data,
                                     correlationId,
@@ -375,7 +382,7 @@ export function createRuntime(
                         event,
                         timestamp: Date.now(),
                     });
-                    observability.logger.debug('ACK tracking started', {
+                    observability.log('debug', 'ACK tracking started', {
                         eventId: event.id,
                         eventType: event.type,
                         correlationId: finalCorrelationId,
@@ -396,10 +403,11 @@ export function createRuntime(
                             await flushBatch();
                         } catch (error) {
                             if (enableObservability) {
-                                observability.logger.error(
+                                observability.log(
+                                    'error',
                                     'Failed to flush batch during emit',
-                                    error as Error,
                                     {
+                                        error: (error as Error).message,
                                         eventType,
                                         eventId: event.id,
                                         correlationId: finalCorrelationId,
@@ -438,15 +446,12 @@ export function createRuntime(
                 }
             } catch (error) {
                 if (enableObservability) {
-                    observability.logger.error(
-                        'Failed to enqueue event',
-                        error as Error,
-                        {
-                            eventType,
-                            data,
-                            correlationId: finalCorrelationId,
-                        },
-                    );
+                    observability.log('error', 'Failed to enqueue event', {
+                        error: (error as Error).message,
+                        eventType,
+                        data,
+                        correlationId: finalCorrelationId,
+                    });
                 }
 
                 return {
@@ -463,9 +468,13 @@ export function createRuntime(
             // LIMITATION: OptimizedEventProcessor não suporta remoção de handlers específicos
             // Por enquanto, apenas logamos um warning
             if (enableObservability) {
-                observability.logger.warn(
+                observability.log(
+                    'warn',
                     'off() method limitation: cannot remove specific handler, use clearHandlers() instead',
-                    { eventType, handlerName: handler.name || 'anonymous' },
+                    {
+                        eventType,
+                        handlerName: handler.name || 'anonymous',
+                    },
                 );
             }
 
@@ -480,7 +489,7 @@ export function createRuntime(
         }> {
             if (!withStats) {
                 // Modo simples - sem estatísticas
-                observability.logger.info('⚡ RUNTIME PROCESSING EVENTS', {
+                observability.log('info', '⚡ RUNTIME PROCESSING EVENTS', {
                     mode: 'simple',
                     trace: {
                         source: 'runtime',
@@ -490,7 +499,8 @@ export function createRuntime(
                 });
 
                 await eventQueue.processAll(async (event) => {
-                    observability.logger.debug(
+                    observability.log(
+                        'debug',
                         '💬 RUNTIME - Processing event',
                         {
                             eventType: event.type,
@@ -519,7 +529,7 @@ export function createRuntime(
                     }
                 });
 
-                observability.logger.info('✅ RUNTIME EVENTS PROCESSED', {
+                observability.log('info', '✅ RUNTIME EVENTS PROCESSED', {
                     mode: 'simple',
                     trace: {
                         source: 'runtime',
@@ -535,7 +545,8 @@ export function createRuntime(
             let acked = 0;
             let failed = 0;
 
-            observability.logger.info(
+            observability.log(
+                'info',
                 '⚡ RUNTIME PROCESSING EVENTS WITH STATS',
                 {
                     mode: 'with-stats',
@@ -549,7 +560,8 @@ export function createRuntime(
 
             await eventQueue.processAll(async (event) => {
                 try {
-                    observability.logger.debug(
+                    observability.log(
+                        'debug',
                         '💬 RUNTIME - Processing event with stats',
                         {
                             eventType: event.type,
@@ -574,10 +586,11 @@ export function createRuntime(
                     }
                 } catch (error) {
                     failed++;
-                    observability.logger.error(
+                    observability.log(
+                        'error',
                         '❌ RUNTIME - Event processing failed',
-                        error as Error,
                         {
+                            error: (error as Error).message,
                             eventType: event.type,
                             eventId: event.id,
                             enableAcks,
@@ -597,7 +610,8 @@ export function createRuntime(
                 }
             });
 
-            observability.logger.info(
+            observability.log(
+                'info',
                 '✅ RUNTIME EVENTS PROCESSED WITH STATS',
                 {
                     mode: 'with-stats',
@@ -625,16 +639,20 @@ export function createRuntime(
                         await eventStore.markEventsProcessed([eventId]);
                     } catch (err) {
                         if (enableObservability) {
-                            observability.logger.error(
+                            observability.log(
+                                'error',
                                 'Failed to mark event as processed in EventStore',
-                                err as Error,
-                                { eventId },
+                                {
+                                    error: (err as Error).message,
+                                    eventId,
+                                },
                             );
                         }
                     }
                 }
                 if (enableObservability) {
-                    observability.logger.debug(
+                    observability.log(
+                        'debug',
                         '✅ RUNTIME - Event acknowledged (ACK)',
                         {
                             eventId,
@@ -650,7 +668,8 @@ export function createRuntime(
                 }
             } else {
                 if (enableObservability) {
-                    observability.logger.warn(
+                    observability.log(
+                        'warn',
                         '⚠️ RUNTIME - ACK for unknown event',
                         {
                             eventId,
@@ -672,7 +691,8 @@ export function createRuntime(
                 // ✅ SIMPLIFICADO: Apenas cleanup, SEM retry automático
                 pendingAcks.delete(eventId);
                 if (enableObservability) {
-                    observability.logger.warn(
+                    observability.log(
+                        'warn',
                         '❌ RUNTIME - Event NACK (no retry)',
                         {
                             eventId,
@@ -689,7 +709,8 @@ export function createRuntime(
                 }
             } else {
                 if (enableObservability) {
-                    observability.logger.warn(
+                    observability.log(
+                        'warn',
                         '⚠️ RUNTIME - NACK for unknown event',
                         {
                             eventId,
@@ -767,9 +788,12 @@ export function createRuntime(
                 return eventProcessor.getRecentEvents(limit);
             } catch (err) {
                 if (enableObservability) {
-                    observability.logger.error(
+                    observability.log(
+                        'error',
                         'Failed to get recent events snapshot',
-                        err as Error,
+                        {
+                            error: (err as Error).message,
+                        },
                     );
                 }
                 return [];
@@ -787,10 +811,9 @@ export function createRuntime(
                 return eventQueue.getQueueSnapshot(limit);
             } catch (err) {
                 if (enableObservability) {
-                    observability.logger.error(
-                        'Failed to get queue snapshot',
-                        err as Error,
-                    );
+                    observability.log('error', 'Failed to get queue snapshot', {
+                        error: (err as Error).message,
+                    });
                 }
                 return [];
             }
@@ -841,9 +864,12 @@ export function createRuntime(
                     await flushBatch();
                 } catch (error) {
                     if (enableObservability) {
-                        observability.logger.error(
+                        observability.log(
+                            'error',
                             'Failed to flush batch during cleanup',
-                            error as Error,
+                            {
+                                error: (error as Error).message,
+                            },
                         );
                     }
                     // Continue with cleanup even if batch flush fails

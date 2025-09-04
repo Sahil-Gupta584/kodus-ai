@@ -14,6 +14,7 @@
 
 import { createLogger } from '../../observability/logger.js';
 import { EnhancedContextBuilder } from './index.js';
+import { IdGenerator } from '../../utils/id-generator.js';
 import type {
     AgentRuntimeContext,
     ChatMessage,
@@ -204,7 +205,7 @@ export class ContextService {
             // Generate unique messageId for Progressive Persistence
             const messageId =
                 (message.metadata?.messageId as string) ||
-                `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                IdGenerator.messageId();
 
             const chatMessage: ChatMessage = {
                 ...message,
@@ -234,7 +235,7 @@ export class ContextService {
                 },
             );
             // Return generated ID even on error for consistency
-            return `msg_${Date.now()}_error`;
+            return IdGenerator.messageId();
         }
     }
 
@@ -523,159 +524,6 @@ export class ContextService {
             lastActivity,
         };
     }
-
-    // Removed createExecutionContext - now handled by agent-core
-    // ContextService focuses on basic operations: save, get, update
-
-    /*
-    static async createExecutionContext_OLD(params: {
-        executionId: string;
-        input: unknown;
-        agentExecutionOptions: {
-            thread: { id: string };
-            tenantId?: string;
-            correlationId?: string;
-            agentName?: string;
-        };
-        agentConfig: {
-            strategy: 'react' | 'rewoo' | 'plan-execute';
-            maxIterations?: number;
-        };
-        agentName: string; // From agent definition
-    }): Promise<UnifiedExecutionContext> {
-        const threadId = params.agentExecutionOptions.thread.id;
-        const agentName = params.agentName;
-        const { correlationId } = params.agentExecutionOptions;
-
-        logger.info('🚀 Creating complete execution context (ALL-IN-ONE)', {
-            threadId,
-            executionId: params.executionId,
-            agentName,
-            strategy: params.agentConfig.strategy,
-        });
-
-        try {
-            // 🏗️ 1. INITIALIZE SESSION (if needed)
-            await this.initializeSession(
-                threadId,
-                params.agentExecutionOptions.tenantId || 'default',
-            );
-
-            // 💬 2. ADD USER INPUT TO CONVERSATION
-            await this.addMessage(threadId, {
-                role: 'user' as any,
-                content:
-                    typeof params.input === 'string'
-                        ? params.input
-                        : JSON.stringify(params.input),
-                metadata: {
-                    agentName,
-                    executionId: params.executionId,
-                    correlationId,
-                    source: 'user-input',
-                },
-            });
-
-            // ⏳ 3. ADD PROCESSING PLACEHOLDER MESSAGE
-            const assistantMessageId = await this.addMessage(threadId, {
-                role: 'assistant' as any,
-                content: '⏳ Processing your request...',
-                metadata: {
-                    agentName,
-                    executionId: params.executionId,
-                    correlationId,
-                    status: 'processing',
-                    source: 'agent-placeholder',
-                },
-            });
-
-            // 🔥 4. GET ALL CONTEXT DATA in one place
-            const runtimeContext = await this.getContext(threadId);
-
-            // TODO: Implement proper tool and history retrieval
-            const availableTools: any[] = []; // Will be populated from ToolEngine later
-            const executionHistory: any[] = []; // Will be populated from session data later
-
-            // 🎯 CONVERT tools to Strategy format
-            const tools = availableTools.map((tool: any) => ({
-                name: tool.name,
-                description: tool.description || `Tool: ${tool.name}`,
-                parameters: tool.inputSchema?.parameters || {},
-                required: tool.inputSchema?.required || [],
-                optional: [],
-            }));
-
-            // ✅ 6. COMPLETE EXECUTION CONTEXT - Everything done!
-            const completeContext = {
-                // Input data
-                input:
-                    typeof params.input === 'string'
-                        ? params.input
-                        : JSON.stringify(params.input),
-                executionId: params.executionId,
-                threadId,
-
-                // Context data (from ContextService)
-                runtimeContext,
-                tools,
-                history: executionHistory,
-
-                // Agent configuration
-                agentConfig: {
-                    agentName,
-                    tenantId:
-                        params.agentExecutionOptions.tenantId || 'default',
-                    correlationId,
-                    strategy: params.agentConfig.strategy,
-                    maxIterations: params.agentConfig.maxIterations,
-                },
-
-                // Execution metadata
-                metadata: {
-                    startTime: Date.now(),
-                    correlationId,
-                    complexity: tools.length,
-                    assistantMessageId, // For later update
-                },
-
-                // Legacy compatibility (will be removed later)
-                agentContext: {
-                    sessionId: threadId,
-                    tenantId:
-                        params.agentExecutionOptions.tenantId || 'default',
-                    correlationId,
-                    thread: { id: threadId },
-                    agentName,
-                    executionId: params.executionId,
-                    allTools: [], // Empty for now
-                    agentExecutionOptions: params.agentExecutionOptions,
-                },
-            };
-
-            logger.debug('✅ Complete execution context created (ALL-IN-ONE)', {
-                threadId,
-                toolsCount: tools.length,
-                historyCount: executionHistory.length,
-                hasRuntimeContext: !!runtimeContext,
-                assistantMessageId,
-            });
-
-            return completeContext;
-        } catch (error) {
-            logger.error(
-                '❌ Failed to create execution context',
-                error instanceof Error ? error : undefined,
-                {
-                    threadId,
-                    executionId: params.executionId,
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                },
-            );
-            throw error;
-        }
-    }
-    */
 }
 
 // ──────────────────────────────────────────────────────────────────────────

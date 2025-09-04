@@ -56,14 +56,6 @@ export class AgentEngine<
             mode: 'direct-execution',
             hasMemoryManager: !!this.memoryManager,
         });
-
-        // Initialize the core components
-        this.initialize().catch((error) => {
-            this.engineLogger.error(
-                'Failed to initialize AgentEngine',
-                error as Error,
-            );
-        });
     }
 
     async execute(
@@ -113,13 +105,16 @@ export class AgentEngine<
                 );
             }
 
-            const result = await obs.trace(
-                `agent.execute`,
+            const result = await obs.traceAgent(
+                definition.name,
                 async () =>
                     this.executeAgent(definition, input, agentExecutionOptions),
                 {
                     correlationId,
-                    tenantId: this.config.tenantId,
+                    tenantId: agentExecutionOptions.tenantId,
+                    sessionId: agentExecutionOptions.sessionId,
+                    userId: agentExecutionOptions.userContext?.userId,
+                    input: input,
                 },
             );
 

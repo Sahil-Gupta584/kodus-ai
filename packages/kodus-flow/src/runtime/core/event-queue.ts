@@ -243,7 +243,7 @@ export class EventQueue {
             return this.lastCpuUsage;
         } catch (error) {
             if (this.enableObservability) {
-                this.observability.logger.debug('Failed to get CPU usage', {
+                this.observability.log('debug', 'Failed to get CPU usage', {
                     error,
                 });
             }
@@ -267,7 +267,7 @@ export class EventQueue {
         this.lastBackpressureActive = isActive;
 
         if (this.enableObservability && isActive) {
-            this.observability.logger.warn('⚠️ BACKPRESSURE ACTIVATED', {
+            this.observability.log('warn', '⚠️ BACKPRESSURE ACTIVATED', {
                 queueSize: this.queue.length,
                 memoryUsage: `${(metrics.memoryUsage * 100).toFixed(1)}%`,
                 cpuUsage: `${(metrics.cpuUsage * 100).toFixed(1)}%`,
@@ -380,7 +380,7 @@ export class EventQueue {
             };
 
             if (this.enableObservability) {
-                this.observability.logger.info('Event compressed', {
+                this.observability.log('info', 'Event compressed', {
                     eventType: event.type,
                     originalSize: size,
                     compressedSize: JSON.stringify(compressed).length,
@@ -395,7 +395,7 @@ export class EventQueue {
             return { event: compressed, compressed: true, originalSize: size };
         } catch (error) {
             if (this.enableObservability) {
-                this.observability.logger.warn('Failed to compress event', {
+                this.observability.log('warn', 'Failed to compress event', {
                     eventType: event.type,
                     size,
                     error: (error as Error).message,
@@ -419,7 +419,7 @@ export class EventQueue {
 
         if (isAlreadyProcessed || isAlreadyInQueue) {
             if (this.enableObservability) {
-                this.observability.logger.warn('🔄 DUAL EVENT', {
+                this.observability.log('warn', '🔄 DUAL EVENT', {
                     eventId: event.id,
                     eventType: event.type,
                     correlationId: event.metadata?.correlationId,
@@ -434,7 +434,8 @@ export class EventQueue {
         // Check if event is already processed (deduplication)
         if (isAlreadyProcessed) {
             if (this.enableObservability) {
-                this.observability.logger.warn(
+                this.observability.log(
+                    'warn',
                     '🔄 EVENT ALREADY PROCESSED - SKIPPING',
                     {
                         eventId: event.id,
@@ -449,7 +450,8 @@ export class EventQueue {
         // Check if event is already in queue (deduplication)
         if (isAlreadyInQueue) {
             if (this.enableObservability) {
-                this.observability.logger.warn(
+                this.observability.log(
+                    'warn',
                     '🔄 EVENT ALREADY IN QUEUE - SKIPPING',
                     {
                         eventId: event.id,
@@ -471,7 +473,7 @@ export class EventQueue {
         // Drop huge events if configured
         if (isHuge && this.dropHugeEvents) {
             if (this.enableObservability) {
-                this.observability.logger.warn('🚫 HUGE EVENT DROPPED', {
+                this.observability.log('warn', '🚫 HUGE EVENT DROPPED', {
                     eventId: event.id,
                     eventType: event.type,
                     eventSize,
@@ -488,7 +490,8 @@ export class EventQueue {
             this.queue.length >= this.maxQueueDepth
         ) {
             if (this.enableObservability) {
-                this.observability.logger.warn(
+                this.observability.log(
+                    'warn',
                     '🚫 QUEUE FULL - EVENT DROPPED',
                     {
                         eventId: event.id,
@@ -554,7 +557,7 @@ export class EventQueue {
                     queueItem.persistedAt = Date.now();
 
                     if (this.enableObservability) {
-                        this.observability.logger.info('💾 EVENT PERSISTED', {
+                        this.observability.log('info', '💾 EVENT PERSISTED', {
                             eventId: event.id,
                             eventType: event.type,
                             persistent: true,
@@ -563,10 +566,11 @@ export class EventQueue {
                     }
                 } catch (error) {
                     if (this.enableObservability) {
-                        this.observability.logger.error(
+                        this.observability.log(
+                            'error',
                             '❌ EVENT PERSISTENCE FAILED',
-                            error as Error,
                             {
+                                error: (error as Error).message,
                                 eventId: event.id,
                                 eventType: event.type,
                             },
@@ -575,7 +579,8 @@ export class EventQueue {
                 }
             } else {
                 if (this.enableObservability) {
-                    this.observability.logger.debug(
+                    this.observability.log(
+                        'debug',
                         '💾 EVENT NOT PERSISTED (not critical)',
                         {
                             eventId: event.id,
@@ -604,7 +609,7 @@ export class EventQueue {
         // Success enqueue is logged via observability below
 
         if (this.enableObservability) {
-            this.observability.logger.info('✅ EVENT ENQUEUED SUCCESSFULLY', {
+            this.observability.log('info', '✅ EVENT ENQUEUED SUCCESSFULLY', {
                 eventId: event.id,
                 eventType: event.type,
                 priority,
@@ -627,21 +632,18 @@ export class EventQueue {
             try {
                 await this.eventStore.appendEvents([event]);
                 if (this.enableObservability) {
-                    this.observability.logger.info('📚 EVENT STORED', {
+                    this.observability.log('info', '📚 EVENT STORED', {
                         eventId: event.id,
                         eventType: event.type,
                     });
                 }
             } catch (error) {
                 if (this.enableObservability) {
-                    this.observability.logger.error(
-                        '❌ EVENT STORE FAILED',
-                        error as Error,
-                        {
-                            eventId: event.id,
-                            eventType: event.type,
-                        },
-                    );
+                    this.observability.log('error', '❌ EVENT STORE FAILED', {
+                        error: (error as Error).message,
+                        eventId: event.id,
+                        eventType: event.type,
+                    });
                 }
             }
         }
@@ -656,7 +658,7 @@ export class EventQueue {
         const item = this.queue.shift();
 
         if (item && this.enableObservability) {
-            this.observability.logger.debug('📤 EVENT DEQUEUED', {
+            this.observability.log('debug', '📤 EVENT DEQUEUED', {
                 eventId: item.event.id,
                 eventType: item.event.type,
                 correlationId: item.event.metadata?.correlationId,
@@ -746,7 +748,8 @@ export class EventQueue {
         // Logged via observability right below
 
         if (this.enableObservability) {
-            this.observability.logger.info(
+            this.observability.log(
+                'info',
                 '🔧 PROCESSING BATCH WITH BACKPRESSURE',
                 {
                     batchSize: batch.length,
@@ -771,7 +774,7 @@ export class EventQueue {
             // Logged via observability debug below
 
             if (this.enableObservability) {
-                this.observability.logger.debug('📋 PROCESSING CHUNK', {
+                this.observability.log('debug', '📋 PROCESSING CHUNK', {
                     chunkIndex: Math.floor(i / chunkSize),
                     chunkSize: chunk.length,
                     totalChunks: Math.ceil(batch.length / chunkSize),
@@ -795,7 +798,8 @@ export class EventQueue {
                     // Logged via observability debug below
 
                     if (this.enableObservability) {
-                        this.observability.logger.debug(
+                        this.observability.log(
+                            'debug',
                             '🎯 PROCESSING INDIVIDUAL EVENT',
                             {
                                 eventId: event.id,
@@ -842,7 +846,8 @@ export class EventQueue {
                         );
 
                         if (this.enableObservability) {
-                            this.observability.logger.debug(
+                            this.observability.log(
+                                'debug',
                                 '🧹 Cleaned up processed events',
                                 {
                                     removedCount: eventsToRemove,
@@ -856,7 +861,8 @@ export class EventQueue {
                     // Logged via observability debug below
 
                     if (this.enableObservability) {
-                        this.observability.logger.debug(
+                        this.observability.log(
+                            'debug',
                             '✅ INDIVIDUAL EVENT PROCESSED SUCCESS',
                             {
                                 eventId: event.id,
@@ -881,10 +887,11 @@ export class EventQueue {
                     // Logged via observability error below
 
                     if (this.enableObservability) {
-                        this.observability.logger.error(
+                        this.observability.log(
+                            'error',
                             '❌ INDIVIDUAL EVENT PROCESSED ERROR',
-                            error as Error,
                             {
+                                error: (error as Error).message,
                                 eventId: event.id,
                                 eventType: event.type,
                                 successCount,
@@ -909,7 +916,8 @@ export class EventQueue {
         }
 
         if (this.enableObservability) {
-            this.observability.logger.info(
+            this.observability.log(
+                'info',
                 '🔧 BATCH WITH BACKPRESSURE COMPLETED',
                 {
                     batchSize: batch.length,
@@ -933,7 +941,7 @@ export class EventQueue {
         if (this.processing) {
             // Already logged via observability warn
             if (this.enableObservability) {
-                this.observability.logger.warn('🔄 QUEUE ALREADY PROCESSING', {
+                this.observability.log('warn', '🔄 QUEUE ALREADY PROCESSING', {
                     queueSize: this.queue.length,
                     processedEventsCount: this.processedEvents.size,
                     trace: {
@@ -951,7 +959,8 @@ export class EventQueue {
         // Logged via observability info below
 
         if (this.enableObservability) {
-            this.observability.logger.info(
+            this.observability.log(
+                'info',
                 '🚀 EVENT QUEUE - Processing started',
                 {
                     queueSize: this.queue.length,
@@ -973,7 +982,8 @@ export class EventQueue {
                 // Logged via observability debug below
 
                 if (this.enableObservability) {
-                    this.observability.logger.debug(
+                    this.observability.log(
+                        'debug',
                         '📦 EVENT QUEUE - Processing batch',
                         {
                             batchSize: batch.length,
@@ -1004,7 +1014,7 @@ export class EventQueue {
                 // Logged via observability info below
 
                 if (this.enableObservability) {
-                    this.observability.logger.info('✅ BATCH PROCESSED', {
+                    this.observability.log('info', '✅ BATCH PROCESSED', {
                         batchSize: batch.length,
                         processedCount,
                         remainingInQueue: this.queue.length,
@@ -1026,7 +1036,8 @@ export class EventQueue {
             // Logged via observability info below
 
             if (this.enableObservability) {
-                this.observability.logger.info(
+                this.observability.log(
+                    'info',
                     '🎉 QUEUE PROCESSING COMPLETED',
                     {
                         finalQueueSize: this.queue.length,
@@ -1043,25 +1054,22 @@ export class EventQueue {
             // Logged via observability error below
 
             if (this.enableObservability) {
-                this.observability.logger.error(
-                    '❌ QUEUE PROCESSING FAILED',
-                    error as Error,
-                    {
-                        queueSize: this.queue.length,
-                        processedEventsCount: this.processedEvents.size,
-                        trace: {
-                            source: 'event-queue',
-                            step: 'process-all-failed',
-                            timestamp: Date.now(),
-                        },
+                this.observability.log('error', '❌ QUEUE PROCESSING FAILED', {
+                    error: (error as Error).message,
+                    queueSize: this.queue.length,
+                    processedEventsCount: this.processedEvents.size,
+                    trace: {
+                        source: 'event-queue',
+                        step: 'process-all-failed',
+                        timestamp: Date.now(),
                     },
-                );
+                });
             }
             throw error;
         } finally {
             this.processing = false;
             if (this.enableObservability) {
-                this.observability.logger.info('🏁 QUEUE PROCESSING FINISHED', {
+                this.observability.log('info', '🏁 QUEUE PROCESSING FINISHED', {
                     finalQueueSize: this.queue.length,
                     finalProcessedEventsCount: this.processedEvents.size,
                     processing: this.processing,
@@ -1082,7 +1090,7 @@ export class EventQueue {
         // Logged via observability info below
 
         if (this.enableObservability) {
-            this.observability.logger.info('Event queue cleared', {
+            this.observability.log('info', 'Event queue cleared', {
                 queueSize: 0,
                 processedEventsCount: 0,
                 trace: {
@@ -1208,7 +1216,8 @@ export class EventQueue {
     ): AsyncGenerator<AnyEvent[]> {
         if (!this.enableEventStore || !this.eventStore) {
             if (this.enableObservability) {
-                this.observability.logger.warn(
+                this.observability.log(
+                    'warn',
                     'Event Store not enabled or configured',
                 );
             }
@@ -1231,7 +1240,7 @@ export class EventQueue {
         // Logged via observability info below
 
         if (this.enableObservability) {
-            this.observability.logger.info('Event queue destroyed', {
+            this.observability.log('info', 'Event queue destroyed', {
                 queueSize: 0,
                 processedEventsCount: 0,
                 trace: {

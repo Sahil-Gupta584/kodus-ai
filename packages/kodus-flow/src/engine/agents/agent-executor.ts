@@ -4,7 +4,6 @@ import {
     completeExecutionTracking,
     failExecutionTracking,
     addExecutionStep,
-    createAgentExecutionSpan,
 } from '../../observability/index.js';
 import { EngineError } from '../../core/errors.js';
 import { IdGenerator } from '../../utils/id-generator.js';
@@ -56,14 +55,6 @@ export class AgentExecutor<
             agentName: definition.name,
             mode: 'workflow-execution',
         });
-
-        // Initialize the core components
-        this.initialize().catch((error) => {
-            this.executorLogger.error(
-                'Failed to initialize AgentExecutor',
-                error as Error,
-            );
-        });
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -82,33 +73,32 @@ export class AgentExecutor<
         const sessionId = options?.sessionId;
         this.workflowExecutionId = IdGenerator.executionId();
 
-        // Start execution tracking
+        if (!this.executionTrackingId) {
+            const agentName = this.getDefinition()?.name || 'unknown-agent';
+            this.executionTrackingId = startExecutionTracking(
+                agentName,
+                correlationId,
+                {
+                    sessionId,
+                    tenantId: options?.tenantId,
+                    threadId: options?.thread?.id,
+                },
+                input,
+            );
+
+            addExecutionStep(
+                this.executionTrackingId,
+                'start',
+                'agent-executor',
+                {
+                    workflowExecutionId: this.workflowExecutionId,
+                    inputType: typeof input,
+                    hasOptions: !!options,
+                },
+            );
+        }
+
         const agentName = this.getDefinition()?.name || 'unknown-agent';
-        this.executionTrackingId = startExecutionTracking(
-            agentName,
-            correlationId,
-            {
-                sessionId,
-                tenantId: options?.tenantId,
-                threadId: options?.thread?.id,
-            },
-            input,
-        );
-
-        // Create optimized span for execution
-        const executionSpan = createAgentExecutionSpan(
-            agentName,
-            this.workflowExecutionId,
-            correlationId,
-        );
-
-        addExecutionStep(this.executionTrackingId, 'start', 'agent-executor', {
-            workflowExecutionId: this.workflowExecutionId,
-            inputType: typeof input,
-            hasOptions: !!options,
-            hasSpan: !!executionSpan,
-        });
-
         this.executorLogger.info('Agent workflow execution started', {
             agentName,
             correlationId,
@@ -173,15 +163,7 @@ export class AgentExecutor<
                 );
             }
 
-            // End optimized span on success
-            if (executionSpan) {
-                executionSpan.addAttributes({
-                    success: true,
-                    outputType: typeof result.output,
-                    hasOutput: !!result.output,
-                });
-                executionSpan.end();
-            }
+            // ✅ MELHORIA: Span automático gerenciado pelo traceAgent
 
             return result as AgentExecutionResult;
         } catch (error) {
@@ -200,16 +182,7 @@ export class AgentExecutor<
                 failExecutionTracking(this.executionTrackingId, error as Error);
             }
 
-            // End optimized span on error
-            if (executionSpan) {
-                executionSpan.recordException(error as Error);
-                executionSpan.addAttributes({
-                    success: false,
-                    errorName: (error as Error).name,
-                    errorMessage: (error as Error).message,
-                });
-                executionSpan.end();
-            }
+            // ✅ MELHORIA: Span automático gerenciado pelo traceAgent
 
             this.logError(
                 'Agent workflow execution failed',
