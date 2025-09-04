@@ -1,59 +1,15 @@
-import { createLogger } from '../../observability/index.js';
-import type { LLMAdapter } from '../../adapters/llm/index.js';
-import type { ActionResult } from '../planning/planner-factory.js';
 import {
-    isErrorResult,
-    getResultError,
+    AgentInputEnum,
     getResultContent,
-} from '../planning/planner-factory.js';
-import { UNIFIED_STATUS } from '../../core/types/planning-shared.js';
-
-export interface ResponseSynthesisContext {
-    originalQuery: string;
-
-    plannerType: string;
-
-    executionResults: ActionResult[];
-
-    planSteps?: Array<{
-        id: string;
-        description: string;
-        status:
-            | typeof UNIFIED_STATUS.COMPLETED
-            | typeof UNIFIED_STATUS.FAILED
-            | typeof UNIFIED_STATUS.SKIPPED;
-        result?: unknown;
-    }>;
-
-    plannerReasoning?: string;
-
-    metadata: {
-        totalSteps: number;
-        completedSteps: number;
-        failedSteps: number;
-        executionTime?: number;
-        iterationCount?: number;
-        [key: string]: unknown;
-    };
-}
-
-export interface SynthesizedResponse {
-    content: string;
-    needsClarification: boolean;
-    includesError: boolean;
-    metadata: {
-        synthesisStrategy: string;
-        discoveryCount: number;
-        primaryFindings: string[];
-        [key: string]: unknown;
-    };
-}
-
-export type SynthesisStrategy =
-    | 'conversational'
-    | 'summary'
-    | 'problem-solution'
-    | 'technical';
+    getResultError,
+    LLMAdapter,
+    ResponseSynthesisContext,
+    SynthesisStrategy,
+    SynthesizedResponse,
+    UNIFIED_STATUS,
+} from '../../core/types/allTypes.js';
+import { createLogger } from '../../observability/index.js';
+import { isErrorResult } from '../../core/utils/tool-result-parser.js';
 
 export class ResponseSynthesizer {
     private logger = createLogger('response-synthesizer');
@@ -355,7 +311,7 @@ ${this.composeStructuredExecutionTrace(context, analysis)}
 
         try {
             const response = await this.llmAdapter.call({
-                messages: [{ role: 'user', content: prompt }],
+                messages: [{ role: AgentInputEnum.USER, content: prompt }],
             });
 
             return (
@@ -400,7 +356,7 @@ Response:`;
 
         try {
             const response = await this.llmAdapter.call({
-                messages: [{ role: 'user', content: prompt }],
+                messages: [{ role: AgentInputEnum.USER, content: prompt }],
             });
             return (
                 response.content || this.createBasicResponse(context, analysis)
@@ -444,7 +400,7 @@ Response:`;
 
         try {
             const response = await this.llmAdapter.call({
-                messages: [{ role: 'user', content: prompt }],
+                messages: [{ role: AgentInputEnum.USER, content: prompt }],
             });
             return (
                 response.content || this.createBasicResponse(context, analysis)
@@ -502,7 +458,7 @@ Response:`;
 
         try {
             const response = await this.llmAdapter.call({
-                messages: [{ role: 'user', content: prompt }],
+                messages: [{ role: AgentInputEnum.USER, content: prompt }],
             });
             return (
                 response.content || this.createBasicResponse(context, analysis)

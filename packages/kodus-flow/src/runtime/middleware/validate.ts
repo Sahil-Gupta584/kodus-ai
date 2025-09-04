@@ -1,66 +1,22 @@
-/**
- * Validation middleware for workflow handlers
- *
- * Wraps a handler function with validation using Zod schemas
- */
+import { KernelError } from '../../core/errors.js';
+import {
+    TEvent,
+    EventHandler,
+    KernelErrorCode,
+    Middleware,
+    SchemaLike,
+    ValidateOptions,
+} from '../../core/types/allTypes.js';
 
-import type { Event } from '../../core/types/events.js';
-import type { Middleware } from './types.js';
-import { KernelError, type KernelErrorCode } from '../../core/errors.js';
-
-// Import EventHandler type from runtime index
-type EventHandler<E extends Event = Event> = (
-    event: E,
-) => Promise<Event | void> | Event | void;
-
-/**
- * Type for any schema-like object that has a parse method
- */
-export interface SchemaLike {
-    parse: (data: unknown) => unknown;
-    safeParse: (data: unknown) => { success: boolean; error?: unknown };
-}
-
-/**
- * Options for the validate middleware
- */
-export interface ValidateOptions {
-    /**
-     * Whether to throw an error on validation failure
-     * @default true
-     */
-    throwOnError?: boolean;
-
-    /**
-     * Custom error code to use when validation fails
-     * @default 'VALIDATION_ERROR'
-     */
-    errorCode?: KernelErrorCode;
-}
-
-/**
- * Middleware factory for validation
- *
- * @param schema - The schema to validate against
- * @param options - Validation options
- * @returns A middleware function that applies validation
- *
- * @example
- * ```ts
- * const runtime = createRuntime(context, observability, {
- *   middleware: [withValidateMiddleware(schema)],
- * });
- * ```
- */
 export function withValidateMiddleware(
     schema: SchemaLike,
     options?: ValidateOptions,
 ) {
-    const middleware = function <E extends Event>(
+    const middleware = function <E extends TEvent>(
         handler: EventHandler<E>,
     ): EventHandler<E> {
         return withValidate(schema, handler, options);
-    } as Middleware<Event>;
+    } as Middleware<TEvent>;
 
     middleware.kind = 'handler';
     (middleware as unknown as { displayName?: string }).displayName =
@@ -69,32 +25,7 @@ export function withValidateMiddleware(
     return middleware;
 }
 
-/**
- * Wraps a handler function with validation using a schema
- *
- * @param schema - The schema to validate against (must have parse/safeParse methods like Zod)
- * @param handler - The handler function to wrap
- * @param options - Validation options
- * @returns A new handler function with validation
- *
- * @example
- * ```ts
- * // With Zod
- * import { z } from 'zod';
- *
- * const userSchema = z.object({
- *   id: z.string(),
- *   name: z.string(),
- *   age: z.number().min(0)
- * });
- *
- * workflow.on(UserEvent, withValidate(userSchema, async (event) => {
- *   // event.payload is now validated
- *   return NextEvent();
- * }));
- * ```
- */
-export function withValidate<T extends Event>(
+export function withValidate<T extends TEvent>(
     schema: SchemaLike,
     handler: EventHandler<T>,
     options?: ValidateOptions,

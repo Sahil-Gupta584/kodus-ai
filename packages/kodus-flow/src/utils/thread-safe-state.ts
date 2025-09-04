@@ -1,26 +1,6 @@
-/**
- * @module utils/thread-safe-state
- * @description Thread-safe state management utilities for engines
- */
-
+import { StateManager, StateManagerStats } from '../core/types/allTypes.js';
 import { createLogger } from '../observability/index.js';
 
-/**
- * Thread-safe state manager interface
- */
-export interface StateManager {
-    get<T = unknown>(namespace: string, key: string): Promise<T | undefined>;
-    set(namespace: string, key: string, value: unknown): Promise<void>;
-    delete(namespace: string, key: string): Promise<boolean>;
-    clear(namespace?: string): Promise<void>;
-    has(namespace: string, key: string): Promise<boolean>;
-    keys(namespace: string): Promise<string[]>;
-    size(namespace?: string): Promise<number>;
-}
-
-/**
- * Thread-safe state manager using async locks
- */
 export class ConcurrentStateManager implements StateManager {
     private readonly states = new Map<string, Map<string, unknown>>();
     private readonly locks = new Map<string, Promise<void>>();
@@ -381,25 +361,6 @@ export class ConcurrentStateManager implements StateManager {
     }
 }
 
-/**
- * State manager statistics
- */
-export interface StateManagerStats {
-    namespaceCount: number;
-    totalKeys: number;
-    memoryUsage: number;
-    namespaces: Record<
-        string,
-        {
-            keyCount: number;
-            estimatedSize: number;
-        }
-    >;
-}
-
-/**
- * State manager error
- */
 export class StateManagerError extends Error {
     constructor(message: string) {
         super(message);

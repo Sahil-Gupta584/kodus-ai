@@ -1,13 +1,3 @@
-/**
- * Thread-Safe Map - Fix mínimo para evitar race conditions
- *
- * Substitui o Map simples do AgentContext.state com locks básicos
- * para evitar crash durante execução paralela de ferramentas
- */
-
-/**
- * Simple mutex implementation for Map operations
- */
 class SimpleMutex {
     private queue: Array<() => void> = [];
     private locked = false;

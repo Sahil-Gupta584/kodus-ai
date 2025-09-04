@@ -13,6 +13,7 @@ import {
 } from '@/shared/utils/langchainCommon/prompts/codeReviewCrossFileAnalysis';
 import {
     AnalysisContext,
+    CodeReviewVersion,
     CodeSuggestion,
     SuggestionType,
 } from '@/config/types/general/codeReview.type';
@@ -27,6 +28,7 @@ import {
     PromptRole,
     PromptRunnerService,
 } from '@kodus/kodus-common/llm';
+import { LabelType } from '@/shared/utils/codeManagement/labels';
 
 //#region Interfaces
 interface TokenUsage {
@@ -642,6 +644,7 @@ export class CrossFileAnalysisService {
             analysisType,
             prNumber,
             organizationAndTeamData,
+            context?.codeReviewConfig?.codeReviewVersion,
         );
     }
     //#endregion
@@ -655,6 +658,7 @@ export class CrossFileAnalysisService {
         analysisType: AnalysisType,
         prNumber: number,
         organizationAndTeamData: OrganizationAndTeamData,
+        codeReviewVersion: CodeReviewVersion,
     ): CodeSuggestion[] | null {
         try {
             if (!response) {
@@ -709,7 +713,9 @@ export class CrossFileAnalysisService {
                 .filter((suggestion) =>
                     this.validateSuggestion(suggestion, analysisType),
                 )
-                .map((suggestion) => this.enrichSuggestion(suggestion));
+                .map((suggestion) =>
+                    this.enrichSuggestion(suggestion, codeReviewVersion),
+                );
 
             this.logger.log({
                 message: `Successfully processed ${analysisType} response`,
@@ -766,7 +772,18 @@ export class CrossFileAnalysisService {
     /**
      * Enriquece sugestão com campos padrão se necessário
      */
-    private enrichSuggestion(suggestion: any): CodeSuggestion {
+    private enrichSuggestion(
+        suggestion: any,
+        codeReviewVersion: CodeReviewVersion,
+    ): CodeSuggestion {
+        if (codeReviewVersion === CodeReviewVersion.v2) {
+            if (suggestion.label === LabelType.PERFORMANCE_AND_OPTIMIZATION) {
+                suggestion.label = 'performance';
+            } else {
+                suggestion.label = 'bug';
+            }
+        }
+
         return {
             id: uuidv4(),
             relevantFile: suggestion.relevantFile,

@@ -3,39 +3,33 @@ import { getObservability } from '../observability/index.js';
 import { withObservability } from '../runtime/middleware/index.js';
 import { KernelError } from '../core/errors.js';
 
-import { SimpleContextStateService as ContextStateService } from '../core/context/services/simple-state-service.js';
-import {
-    createRuntime,
-    type Runtime,
-    type EmitOptions,
-    type EmitResult,
-    type RuntimeConfig,
-} from '../runtime/index.js';
-import type {
-    Event,
-    Persistor,
-    EventHandler,
-    EventStream,
-    TenantId,
-    CorrelationId,
-} from '../core/types/common-types.js';
-import type { Workflow } from '../core/types/workflow-types.js';
-import type { Middleware } from '../runtime/middleware/types.js';
-import { EVENT_TYPES } from '../core/types/events.js';
-import type {
-    EventType,
-    EventPayloads,
-    AnyEvent,
-} from '../core/types/events.js';
-import { createPersistorFromConfig } from '../persistor/factory.js';
-import type { Snapshot } from './snapshot.js';
+// import { SimpleContextStateService as ContextStateService } from '../core/context/services/simple-state-service.js';
+import { createRuntime } from '../runtime/index.js';
 import { stableHash } from './snapshot.js';
-import type { WorkflowContext } from '../core/types/workflow-types.js';
 import { IdGenerator } from '../utils/id-generator.js';
+import {
+    AnyEvent,
+    EmitOptions,
+    EmitResult,
+    EVENT_TYPES,
+    EventHandler,
+    EventPayloads,
+    EventStream,
+    EventType,
+    TEvent,
+    KernelConfig,
+    KernelState,
+    Middleware,
+    Persistor,
+    Runtime,
+    RuntimeConfig,
+    Snapshot,
+    Workflow,
+    WorkflowContext,
+} from '../core/types/allTypes.js';
+import { createPersistorFromConfig } from '../persistor/factory.js';
+import { ContextService } from '../core/contextNew/index.js';
 
-/**
- * Simple LRU Cache implementation for context caching
- */
 class LRUCache<T> {
     private readonly maxSize: number;
     private readonly cache = new Map<
@@ -134,105 +128,6 @@ class LRUCache<T> {
     }
 }
 
-/**
- * Kernel State - Foco em context e state management
- */
-export interface KernelState {
-    // Identification
-    id: string; // tenant:job format
-    tenantId: TenantId;
-    correlationId: CorrelationId;
-    jobId: string;
-
-    // Context management (ISOLATED PER TENANT)
-    contextData: Record<string, unknown>;
-    stateData: Record<string, unknown>;
-
-    // Execution state (ATOMIC)
-    status: 'initialized' | 'running' | 'paused' | 'completed' | 'failed';
-    startTime: number;
-    eventCount: number;
-
-    // Quota tracking
-    quotas: {
-        maxEvents?: number;
-        maxDuration?: number;
-        maxMemory?: number;
-    };
-
-    // IDEMPOTENCY & ATOMICITY
-    operationId?: string; // Para garantir idempotência
-    lastOperationHash?: string; // Hash da última operação
-    pendingOperations: Set<string>; // Operações em andamento
-}
-
-/**
- * Kernel Configuration
- */
-export interface KernelConfig {
-    tenantId: TenantId;
-    jobId?: string;
-
-    // REQUIRED: Workflow for execution
-    workflow: Workflow;
-
-    // Context configuration
-    // TODO: Remove contextFactory - using ContextBuilder instead
-
-    // Persistence
-    persistor?: Persistor;
-
-    // Runtime configuration (delegado para runtime)
-    runtimeConfig?: RuntimeConfig;
-
-    // Quotas
-    quotas?: {
-        maxEvents?: number;
-        maxDuration?: number;
-        maxMemory?: number;
-    };
-
-    // Performance optimizations
-    performance?: {
-        enableBatching?: boolean;
-        batchSize?: number;
-        batchTimeoutMs?: number;
-        enableCaching?: boolean;
-        cacheSize?: number;
-        enableLazyLoading?: boolean;
-        contextUpdateDebounceMs?: number;
-        autoSnapshot?: {
-            enabled?: boolean;
-            intervalMs?: number;
-            eventInterval?: number;
-            useDelta?: boolean;
-        };
-    };
-
-    // ISOLATION & ATOMICITY
-    isolation?: {
-        enableTenantIsolation?: boolean; // Isolamento completo por tenant
-        enableEventIsolation?: boolean; // Isolamento de eventos
-        enableContextIsolation?: boolean; // Isolamento de contexto
-        maxConcurrentOperations?: number; // Limite de operações concorrentes
-    };
-
-    // IDEMPOTENCY
-    idempotency?: {
-        enableOperationIdempotency?: boolean; // Idempotência por operação
-        enableEventIdempotency?: boolean; // Idempotência de eventos
-        operationTimeout?: number; // Timeout para operações
-        maxRetries?: number; // Máximo de retentativas
-    };
-
-    // Options
-    debug?: boolean;
-    monitor?: boolean;
-}
-
-/**
- * Execution Kernel - Central coordination layer
- */
 export class ExecutionKernel {
     private state: KernelState;
     private config: KernelConfig;
@@ -241,7 +136,7 @@ export class ExecutionKernel {
     private quotaTimers = new Set<NodeJS.Timeout>();
     private readonly maxQuotaTimers = 100;
 
-    private stateService: ContextStateService;
+    private stateService: any; // Legacy state service replaced by contextNew
 
     private runtime: Runtime | null = null;
     private workflowContext: WorkflowContext | null = null;
@@ -275,10 +170,11 @@ export class ExecutionKernel {
                 maxMemoryUsage: 100 * 1024 * 1024,
             });
 
-        this.stateService = new ContextStateService({
+        this.stateService = {
+            // Mock state service - replaced by contextNew
             tenantId: config.tenantId,
             jobId: config.jobId || IdGenerator.executionId(),
-        });
+        };
 
         // Initialize state
         const jobId = config.jobId || IdGenerator.executionId();
@@ -340,7 +236,7 @@ export class ExecutionKernel {
                     } else {
                         // Create default workflow context for testing
                         this.workflowContext = {
-                            sendEvent: async (event: Event) => {
+                            sendEvent: async (event: TEvent) => {
                                 if (this.runtime) {
                                     await this.runtime.emitAsync(
                                         event.type,
@@ -351,7 +247,7 @@ export class ExecutionKernel {
                             workflowName: 'default-workflow',
                             executionId: this.state.id,
                             correlationId: 'default-correlation',
-                            stateManager: new ContextStateService({}),
+                            stateManager: {}, // Mock state manager - replaced by contextNew
                             data: {},
                             currentSteps: [],
                             completedSteps: [],
@@ -385,8 +281,7 @@ export class ExecutionKernel {
                         persistor: this.persistor,
                         executionId: this.state.id,
                         tenantId: this.config.tenantId,
-                        middleware,
-                        // Configure batching if performance batching is enabled
+                        middleware: middleware as Middleware<TEvent>[],
                         batching: this.config.performance?.enableBatching
                             ? {
                                   enabled: true,
@@ -432,7 +327,7 @@ export class ExecutionKernel {
                     this.setupQuotaMonitoring();
 
                     // 6. Setup performance optimizations
-                    this.setupPerformanceOptimizations();
+                    await this.setupPerformanceOptimizations();
 
                     // 7. SÓ AGORA mudar status para 'running' (ATÔMICO)
                     this.state.status = 'running';
@@ -500,7 +395,7 @@ export class ExecutionKernel {
     /**
      * Run workflow with optimized event processing
      */
-    async run(event: Event): Promise<void> {
+    async run(event: AnyEvent): Promise<void> {
         if (!this.runtime) {
             throw new KernelError(
                 'KERNEL_INITIALIZATION_FAILED',
@@ -522,7 +417,7 @@ export class ExecutionKernel {
     /**
      * Send event to runtime with context preparation
      */
-    async sendEvent(event: Event): Promise<void> {
+    async sendEvent(event: AnyEvent): Promise<void> {
         if (!this.runtime) {
             throw new KernelError(
                 'KERNEL_INITIALIZATION_FAILED',
@@ -947,7 +842,7 @@ export class ExecutionKernel {
     /**
      * Prepare context for event processing
      */
-    private prepareContextForEvent(event: Event): void {
+    private prepareContextForEvent(event: AnyEvent): void {
         // Performance: Lazy load context data
         if (this.config.performance?.enableLazyLoading) {
             // Only load essential context data
@@ -959,14 +854,14 @@ export class ExecutionKernel {
             this.state.contextData['lastEventTime'] = Date.now();
             this.state.contextData['eventHistory'] =
                 this.state.contextData['eventHistory'] || [];
-            (this.state.contextData['eventHistory'] as Event[]).push(event);
+            (this.state.contextData['eventHistory'] as AnyEvent[]).push(event);
         }
     }
 
     /**
      * Update state from event
      */
-    private updateStateFromEvent(_event: Event): void {
+    private updateStateFromEvent(_event: AnyEvent): void {
         this.state.eventCount++;
 
         // Autosnapshot baseado em contagem de eventos
@@ -1032,18 +927,90 @@ export class ExecutionKernel {
     /**
      * Initialize context store
      */
-    private initializeContextStore(): void {
+    private async initializeContextStore(): Promise<void> {
         // Performance: Pre-allocate context data
         if (!this.config.performance?.enableLazyLoading) {
-            // TODO: Use ContextBuilder for base context creation
-            // For now, initialize empty context data
-            this.state.contextData = {
-                eventHistory: [],
-                metrics: {},
-                user: {},
-                system: {},
-            };
+            try {
+                // Try to get existing context or create basic structure
+                if (this.config.tenantId) {
+                    try {
+                        // 🎯 CLEAN API: Single method call via ContextService
+                        const runtimeContext = await ContextService.getContext(
+                            this.config.tenantId,
+                        );
+
+                        this.state.contextData = {
+                            eventHistory: runtimeContext.messages || [],
+                            metrics: runtimeContext.execution || {},
+                            user: runtimeContext.entities || {},
+                            system: {
+                                sessionId: runtimeContext.sessionId,
+                                threadId: runtimeContext.threadId,
+                                executionId: runtimeContext.executionId,
+                                phase: runtimeContext.state.phase,
+                                lastUserIntent:
+                                    runtimeContext.state.lastUserIntent,
+                            },
+                        };
+
+                        this.logger.info(
+                            '✅ Kernel context initialized via ContextService',
+                            {
+                                sessionId: runtimeContext.sessionId,
+                                threadId: runtimeContext.threadId,
+                                messagesCount: runtimeContext.messages.length,
+                                entitiesCount: Object.keys(
+                                    runtimeContext.entities,
+                                ).length,
+                            },
+                        );
+                    } catch (contextError) {
+                        // Fallback to basic structure if ContextService fails
+                        this.logger.warn(
+                            '⚠️ ContextService unavailable, using basic structure',
+                            {
+                                tenantId: this.config.tenantId,
+                                error:
+                                    contextError instanceof Error
+                                        ? contextError.message
+                                        : String(contextError),
+                            },
+                        );
+                        this.initializeBasicContextData();
+                    }
+                } else {
+                    // No tenantId available, use basic structure
+                    this.logger.info(
+                        'ℹ️ No tenantId provided, using basic context structure',
+                    );
+                    this.initializeBasicContextData();
+                }
+            } catch (importError) {
+                // ContextService not available, fallback to basic structure
+                this.logger.warn(
+                    '⚠️ ContextService import failed, using basic structure',
+                    {
+                        error:
+                            importError instanceof Error
+                                ? importError.message
+                                : String(importError),
+                    },
+                );
+                this.initializeBasicContextData();
+            }
         }
+    }
+
+    /**
+     * Fallback basic context initialization
+     */
+    private initializeBasicContextData(): void {
+        this.state.contextData = {
+            eventHistory: [],
+            metrics: {},
+            user: {},
+            system: {},
+        };
     }
 
     /**
@@ -1161,10 +1128,10 @@ export class ExecutionKernel {
     /**
      * Setup performance optimizations
      */
-    private setupPerformanceOptimizations(): void {
+    private async setupPerformanceOptimizations(): Promise<void> {
         // Initialize context store if not lazy loading
         if (!this.config.performance?.enableLazyLoading) {
-            this.initializeContextStore();
+            await this.initializeContextStore();
         }
 
         this.logger.info('Performance optimizations enabled', {
@@ -1581,7 +1548,7 @@ export class ExecutionKernel {
     createEvent<T extends EventType>(
         type: T,
         data?: EventPayloads[T],
-    ): Event<T> {
+    ): TEvent<T> {
         const runtime = this.getRuntimeSafely();
         return runtime.createEvent(type, data);
     }
@@ -1886,7 +1853,6 @@ export class ExecutionKernel {
             kernel: {
                 contextCacheSize: this.contextCache.size,
                 contextUpdateQueueSize: this.contextUpdateQueue.size,
-                // eventBatchQueueSize: removed - batching delegated to Runtime,
             },
         };
     }
@@ -2013,64 +1979,6 @@ export class ExecutionKernel {
         }
     }
 
-    // ===== ENHANCED STATUS & HEALTH =====
-
-    /**
-     * Get comprehensive health status
-     */
-    getHealthStatus(): {
-        status: 'healthy' | 'degraded' | 'unhealthy';
-        checks: {
-            runtime: boolean;
-            context: boolean;
-            memory: boolean;
-            performance: boolean;
-        };
-        details: Record<string, unknown>;
-    } {
-        const runtimeHealthy = !!this.runtime;
-        const contextHealthy = this.contextCache.size < 1000;
-        const memoryHealthy = true; // Event batch queue removed - always consider healthy
-        const performanceHealthy = this.contextUpdateQueue.size < 50;
-
-        const allHealthy =
-            runtimeHealthy &&
-            contextHealthy &&
-            memoryHealthy &&
-            performanceHealthy;
-        const anyHealthy =
-            runtimeHealthy ||
-            contextHealthy ||
-            memoryHealthy ||
-            performanceHealthy;
-
-        return {
-            status: allHealthy
-                ? 'healthy'
-                : !runtimeHealthy
-                  ? 'unhealthy'
-                  : anyHealthy
-                    ? 'degraded'
-                    : 'unhealthy',
-            checks: {
-                runtime: runtimeHealthy,
-                context: contextHealthy,
-                memory: memoryHealthy,
-                performance: performanceHealthy,
-            },
-            details: {
-                runtimeStats: this.runtime ? this.runtime.getStats() : null,
-                kernelStats: this.getStatus(),
-                memoryStats: this.runtime ? this.getMemoryStats() : null,
-            },
-        };
-    }
-
-    // ===== ATOMICITY & IDEMPOTENCY =====
-
-    /**
-     * Execute operation atomically with idempotency
-     */
     private async executeAtomicOperation<T>(
         operationId: string,
         operation: () => Promise<T>,
@@ -2140,6 +2048,7 @@ export class ExecutionKernel {
     /**
      * Check if operation is idempotent (same result)
      */
+    //TODO: Implement this
     private isIdempotentOperation(
         _operationId: string,
         _operation: () => Promise<unknown>,
@@ -2148,16 +2057,9 @@ export class ExecutionKernel {
             return false;
         }
 
-        // For now, we'll assume operations are not idempotent
-        // In a real implementation, you'd check against stored operation results
         return false;
     }
 
-    // ===== TENANT ISOLATION =====
-
-    /**
-     * Get isolated context for specific tenant
-     */
     private getTenantContext(
         tenantId: string,
         threadId?: string,

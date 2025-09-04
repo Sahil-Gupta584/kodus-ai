@@ -1,15 +1,5 @@
-/**
- * @file thread-helpers.ts
- * @description Helpers simples para criação de threads
- */
+import { Thread } from '../core/types/allTypes.js';
 
-import type { Thread } from '../core/types/common-types.js';
-
-// ===== UTILITÁRIOS FUNCIONAIS =====
-
-/**
- * Função pura para gerar hash determinístico
- */
 const simpleHash = (str: string): string => {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {

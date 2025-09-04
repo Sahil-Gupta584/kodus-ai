@@ -1,114 +1,13 @@
-/**
- * @module runtime/core/event-queue
- * @description Event Queue - Fila de eventos com backpressure adaptativo baseado em recursos
- *
- * Responsabilidades:
- * - Gerenciar fila de eventos sem limites fixos
- * - Controle de fluxo baseado em % de uso de recursos
- * - Processamento em chunks para performance
- * - Auto-ajuste baseado em métricas de sistema
- * - Integração com observabilidade
- */
-
 import * as os from 'os';
-import type { AnyEvent } from '../../core/types/events.js';
 import type { ObservabilitySystem } from '../../observability/index.js';
-import type { EventStore } from './event-store.js';
-
-/**
- * Configuração da fila de eventos baseada em recursos
- */
-export interface EventQueueConfig {
-    // Configuração baseada em recursos (0.0 - 1.0)
-    maxMemoryUsage?: number; // % máxima de uso de memória (default: 0.8 = 80%)
-    maxCpuUsage?: number; // % máxima de uso de CPU (default: 0.7 = 70%)
-    maxQueueDepth?: number; // Profundidade máxima da fila (default: sem limite)
-
-    // Configuração de processamento
-    enableObservability?: boolean;
-    batchSize?: number;
-    chunkSize?: number;
-    maxConcurrent?: number;
-
-    // Event Size Awareness
-    largeEventThreshold?: number;
-    hugeEventThreshold?: number;
-    enableCompression?: boolean;
-    maxEventSize?: number;
-    dropHugeEvents?: boolean;
-
-    // === PERSISTENCE FEATURES (from DurableEventQueue) ===
-    enablePersistence?: boolean; // Default: false
-    persistor?: import('../../persistor/index.js').Persistor;
-    executionId?: string;
-    persistCriticalEvents?: boolean; // Default: true
-    persistAllEvents?: boolean; // Default: false
-    maxPersistedEvents?: number; // Default: 1000
-    enableAutoRecovery?: boolean; // Default: true
-    recoveryBatchSize?: number; // Default: 100
-    criticalEventTypes?: string[]; // Events types to always persist
-    criticalEventPrefixes?: string[]; // Event prefixes to always persist (default: ['agent.', 'workflow.'])
-
-    // === EVENT STORE INTEGRATION ===
-    enableEventStore?: boolean; // Default: false
-    eventStore?: EventStore; // Event store instance
-
-    // Global concurrency control (used when integrated via Runtime)
-    enableGlobalConcurrency?: boolean; // Default: false
-
-    // Processed events cache size (for dedup)
-    maxProcessedEvents?: number; // Default: 10000
-}
-
-/**
- * Métricas de recursos do sistema
- */
-interface SystemMetrics {
-    timestamp: number; // Timestamp da medição
-    memoryUsage: number; // 0.0 - 1.0
-    cpuUsage: number; // 0.0 - 1.0
-    queueDepth: number;
-    processingRate: number; // eventos/segundo
-    averageProcessingTime: number; // ms
-}
-
-/**
- * Item da fila com metadados
- */
-export interface QueueItem {
-    event: AnyEvent;
-    timestamp: number;
-    priority: number;
-    retryCount: number;
-    size?: number;
-    isLarge?: boolean;
-    isHuge?: boolean;
-    compressed?: boolean;
-    originalSize?: number;
-
-    // Persistence metadata
-    persistent?: boolean;
-    persistedAt?: number;
-
-    // Retry metadata
-    lastRetryAt?: number;
-    nextRetryAt?: number;
-    retryDelays?: number[];
-    originalError?: string;
-}
-
-/**
- * Snapshot simplificado de itens na fila (para debug/observabilidade)
- */
-export interface QueueItemSnapshot {
-    eventId: string;
-    eventType: string;
-    priority: number;
-    retryCount: number;
-    timestamp: number;
-    correlationId?: string;
-    tenantId?: string;
-}
+import {
+    AnyEvent,
+    EventQueueConfig,
+    Persistor,
+    QueueItem,
+    QueueItemSnapshot,
+} from '../../core/types/allTypes.js';
+import { EventStore } from '../index.js';
 
 /**
  * Semáforo para controle de concorrência
@@ -181,7 +80,7 @@ export class EventQueue {
 
     // Persistence features
     private readonly enablePersistence: boolean;
-    private readonly persistor?: import('../../persistor/index.js').Persistor;
+    private readonly persistor?: Persistor;
     private readonly executionId: string;
     private readonly persistCriticalEvents: boolean;
     private readonly persistAllEvents: boolean;
@@ -197,20 +96,6 @@ export class EventQueue {
     private readonly enableEventStore: boolean;
     private readonly eventStore?: EventStore;
     private readonly useGlobalConcurrency: boolean;
-
-    // Future features (not implemented yet)
-    // private readonly maxPersistedEvents: number;
-    // private readonly enableAutoRecovery: boolean;
-    // private readonly recoveryBatchSize: number;
-
-    // Future retry features (not implemented yet)
-    // private readonly enableRetry: boolean;
-    // private readonly maxRetries: number;
-    // private readonly baseRetryDelay: number;
-    // private readonly maxRetryDelay: number;
-    // private readonly retryBackoffMultiplier: number;
-    // private readonly enableJitter: boolean;
-    // private readonly jitterRatio: number;
 
     constructor(
         private observability: ObservabilitySystem,
@@ -257,26 +142,19 @@ export class EventQueue {
 
         // Processed events capacity
         this.maxProcessedEvents = config.maxProcessedEvents ?? 1000; // ✅ REDUZIDO: 1k em vez de 10k para evitar memory leaks
-
-        // Future features (not implemented yet)
-        // this.maxPersistedEvents = config.maxPersistedEvents ?? 1000;
-        // this.enableAutoRecovery = config.enableAutoRecovery ?? true;
-        // this.recoveryBatchSize = config.recoveryBatchSize ?? 100;
-
-        // Future retry features (not implemented yet)
-        // this.enableRetry = config.enableRetry ?? false;
-        // this.maxRetries = config.maxRetries ?? 3;
-        // this.baseRetryDelay = config.baseRetryDelay ?? 1000;
-        // this.maxRetryDelay = config.maxRetryDelay ?? 30000;
-        // this.retryBackoffMultiplier = config.retryBackoffMultiplier ?? 2;
-        // this.enableJitter = config.enableJitter ?? true;
-        // this.jitterRatio = config.jitterRatio ?? 0.1;
     }
 
     /**
      * Obter métricas do sistema
      */
-    private getSystemMetrics(): SystemMetrics {
+    private getSystemMetrics(): {
+        timestamp: number;
+        memoryUsage: number;
+        cpuUsage: number;
+        queueDepth: number;
+        processingRate: number;
+        averageProcessingTime: number;
+    } {
         const memoryUsage = this.getMemoryUsage();
         const cpuUsage = this.getCpuUsage();
 
@@ -443,82 +321,6 @@ export class EventQueue {
         return false;
     }
 
-    /**
-     * Handle processing failure with retry logic
-     * TODO: Integrate with actual event processing
-     */
-    /* private async handleProcessingFailure(
-        item: QueueItem,
-        error: Error,
-    ): Promise<void> {
-        if (!this.enableRetry || item.retryCount >= this.maxRetries) {
-            // Max retries reached or retry disabled
-            if (this.enableObservability) {
-                this.observability.logger.error(
-                    'Event processing failed, no more retries',
-                    error,
-                    {
-                        eventId: item.event.id,
-                        eventType: item.event.type,
-                        retryCount: item.retryCount,
-                        maxRetries: this.maxRetries,
-                    },
-                );
-            }
-            return;
-        }
-
-        // Calculate retry delay with exponential backoff
-        const retryCount = item.retryCount + 1;
-        let delay =
-            this.baseRetryDelay *
-            Math.pow(this.retryBackoffMultiplier, retryCount - 1);
-        delay = Math.min(delay, this.maxRetryDelay);
-
-        // Add jitter if enabled
-        if (this.enableJitter) {
-            const jitter = delay * this.jitterRatio * (Math.random() * 2 - 1);
-            delay = Math.max(0, delay + jitter);
-        }
-
-        // Schedule retry
-        setTimeout(async () => {
-            const retryItem: QueueItem = {
-                ...item,
-                retryCount,
-                lastRetryAt: Date.now(),
-                nextRetryAt: Date.now() + delay,
-                originalError: error.message,
-            };
-
-            // Update retry delays history
-            if (!retryItem.retryDelays) retryItem.retryDelays = [];
-            retryItem.retryDelays.push(delay);
-
-            // Re-enqueue for retry with lower priority
-            const insertIndex = this.queue.findIndex(
-                (qi) => qi.priority < item.priority - 1,
-            );
-            if (insertIndex === -1) {
-                this.queue.push(retryItem);
-            } else {
-                this.queue.splice(insertIndex, 0, retryItem);
-            }
-
-            if (this.enableObservability) {
-                this.observability.logger.info('Event scheduled for retry', {
-                    eventId: item.event.id,
-                    retryCount,
-                    delay,
-                    nextRetryAt: retryItem.nextRetryAt,
-                });
-            }
-        }, delay);
-    } */
-
-    /**
-     * Generate hash for event (simple implementation)
-     */
     private generateEventHash(event: AnyEvent): string {
         try {
             const content = JSON.stringify({

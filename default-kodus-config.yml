@@ -21,13 +21,14 @@ reviewOptions:
     documentation_and_comments: true
     performance_and_optimization: true
     breaking_changes: true
+    bug: true
+    performance: true
 suggestionControl:
     groupingMode: 'full'
     limitationType: 'pr'
     maxSuggestions: 9
     severityLevelFilter: 'medium'
-    # ✨ CONFIGURAÇÃO SIMPLIFICADA - Controle de filtros para Kody Rules
-    applyFiltersToKodyRules: false
+    applyFiltersToKodyRules: true
     severityLimits:
         low: 0
         medium: 0

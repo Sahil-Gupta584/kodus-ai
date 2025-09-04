@@ -1,55 +1,13 @@
-/**
- * ✅ Unified Event System - Single event interface across all components
- *
- * This module consolidates the multiple event systems in the codebase:
- * - EventBus (observability)
- * - Kernel Events (runtime)
- * - Multi-Kernel Handler (request-response)
- * - Agent Events (lifecycle)
- */
-
 import { EventEmitter } from 'node:events';
-import type { EventType, EventPayloads } from './types/events.js';
 import { createLogger } from '../observability/index.js';
 import { IdGenerator } from '../utils/id-generator.js';
-
-// ✅ UNIFIED EVENT INTERFACE
-export interface UnifiedEventConfig {
-    // Event routing
-    enableObservability?: boolean;
-    enablePersistence?: boolean;
-    enableRequestResponse?: boolean;
-
-    // Performance
-    maxListeners?: number;
-    bufferSize?: number;
-    flushInterval?: number;
-
-    // Filtering
-    eventFilters?: string[];
-    componentFilters?: string[];
-
-    // Error handling
-    enableErrorHandling?: boolean;
-    maxRetries?: number;
-}
-
-export interface UnifiedEventContext {
-    correlationId?: string;
-    tenantId?: string;
-    timestamp?: number;
-    source?: string;
-    priority?: 'low' | 'medium' | 'high' | 'critical';
-    retryable?: boolean;
-}
-
-export interface EventResult<T = unknown> {
-    success: boolean;
-    data?: T;
-    error?: Error;
-    timestamp: number;
-    duration: number;
-}
+import {
+    EventPayloads,
+    EventResult,
+    EventType,
+    UnifiedEventConfig,
+    UnifiedEventContext,
+} from './types/allTypes.js';
 
 // ✅ UNIFIED EVENT MANAGER
 export class UnifiedEventManager extends EventEmitter {

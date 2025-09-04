@@ -1,48 +1,32 @@
-/**
- * @module engine/agents/agent_new/agent-executor
- * @description Executor para agentes via workflow - com lifecycle completo
- *
- * CARACTERÍSTICAS:
- * ✅ Execução via workflow com pause/resume
- * ✅ Lifecycle completo (usa AgentLifecycleHandler existente)
- * ✅ Snapshots e persistência
- * ✅ Middleware e observabilidade avançada
- * ✅ Ideal para agentes complexos e long-running
- */
-
-import { createLogger } from '../../observability/index.js';
+import {
+    createLogger,
+    startExecutionTracking,
+    completeExecutionTracking,
+    failExecutionTracking,
+    addExecutionStep,
+    createAgentExecutionSpan,
+} from '../../observability/index.js';
 import { EngineError } from '../../core/errors.js';
 import { IdGenerator } from '../../utils/id-generator.js';
-import type { ToolEngine } from '../tools/tool-engine.js';
 
-// Types do sistema
-import type {
+import { AgentCore } from './agent-core.js';
+
+import { AgentLifecycleHandler } from './agent-lifecycle.js';
+import {
+    AgentCoreConfig,
     AgentDefinition,
     AgentExecutionOptions,
     AgentExecutionResult,
-    AgentStartPayload,
-    AgentStopPayload,
+    AgentLifecycleResult,
     AgentPausePayload,
     AgentResumePayload,
     AgentSchedulePayload,
-    AgentLifecycleResult,
+    AgentStartPayload,
+    AgentStopPayload,
     AgentThought,
-} from '../../core/types/agent-types.js';
+} from '../../core/types/allTypes.js';
+import { ToolEngine } from '../tools/tool-engine.js';
 
-import type { AgentCoreConfig } from './agent-core.js';
-import { AgentCore } from './agent-core.js';
-
-// Importar o AgentLifecycleHandler existente
-import { AgentLifecycleHandler } from './agent-lifecycle.js';
-
-// ──────────────────────────────────────────────────────────────────────────────
-// 🚀 AGENT EXECUTOR IMPLEMENTATION
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Executor para agentes via workflow
- * Execução com lifecycle completo usando AgentLifecycleHandler existente
- */
 export class AgentExecutor<
     TInput = unknown,
     TOutput = unknown,
@@ -53,6 +37,7 @@ export class AgentExecutor<
     private isPaused = false;
     private pauseReason?: string;
     private snapshotId?: string;
+    private executionTrackingId?: string;
 
     // Usar o AgentLifecycleHandler existente
     private lifecycleHandler: AgentLifecycleHandler;
@@ -90,18 +75,46 @@ export class AgentExecutor<
      */
     async executeViaWorkflow(
         input: TInput,
-        options?: AgentExecutionOptions,
-    ): Promise<AgentExecutionResult<TOutput>> {
+        options: AgentExecutionOptions,
+    ): Promise<AgentExecutionResult> {
         const correlationId =
             options?.correlationId || IdGenerator.correlationId();
         const sessionId = options?.sessionId;
         this.workflowExecutionId = IdGenerator.executionId();
 
+        // Start execution tracking
+        const agentName = this.getDefinition()?.name || 'unknown-agent';
+        this.executionTrackingId = startExecutionTracking(
+            agentName,
+            correlationId,
+            {
+                sessionId,
+                tenantId: options?.tenantId,
+                threadId: options?.thread?.id,
+            },
+            input,
+        );
+
+        // Create optimized span for execution
+        const executionSpan = createAgentExecutionSpan(
+            agentName,
+            this.workflowExecutionId,
+            correlationId,
+        );
+
+        addExecutionStep(this.executionTrackingId, 'start', 'agent-executor', {
+            workflowExecutionId: this.workflowExecutionId,
+            inputType: typeof input,
+            hasOptions: !!options,
+            hasSpan: !!executionSpan,
+        });
+
         this.executorLogger.info('Agent workflow execution started', {
-            agentName: this.getDefinition()?.name,
+            agentName,
             correlationId,
             sessionId,
             workflowExecutionId: this.workflowExecutionId,
+            executionTrackingId: this.executionTrackingId,
             inputType: typeof input,
         });
 
@@ -142,14 +155,69 @@ export class AgentExecutor<
                 };
             }
 
-            return result as AgentExecutionResult<TOutput>;
+            // Complete execution tracking on success
+            if (this.executionTrackingId) {
+                addExecutionStep(
+                    this.executionTrackingId,
+                    'finish',
+                    'agent-executor',
+                    {
+                        workflowExecutionId: this.workflowExecutionId,
+                        hasOutput: !!result.output,
+                        outputType: typeof result.output,
+                    },
+                );
+                completeExecutionTracking(
+                    this.executionTrackingId,
+                    result.output,
+                );
+            }
+
+            // End optimized span on success
+            if (executionSpan) {
+                executionSpan.addAttributes({
+                    success: true,
+                    outputType: typeof result.output,
+                    hasOutput: !!result.output,
+                });
+                executionSpan.end();
+            }
+
+            return result as AgentExecutionResult;
         } catch (error) {
+            // Fail execution tracking on error
+            if (this.executionTrackingId) {
+                addExecutionStep(
+                    this.executionTrackingId,
+                    'error',
+                    'agent-executor',
+                    {
+                        workflowExecutionId: this.workflowExecutionId,
+                        errorName: (error as Error).name,
+                        errorMessage: (error as Error).message,
+                    },
+                );
+                failExecutionTracking(this.executionTrackingId, error as Error);
+            }
+
+            // End optimized span on error
+            if (executionSpan) {
+                executionSpan.recordException(error as Error);
+                executionSpan.addAttributes({
+                    success: false,
+                    errorName: (error as Error).name,
+                    errorMessage: (error as Error).message,
+                });
+                executionSpan.end();
+            }
+
             this.logError(
                 'Agent workflow execution failed',
                 error as Error,
                 'workflow-execution',
                 {
                     workflowExecutionId: this.workflowExecutionId,
+                    executionTrackingId: this.executionTrackingId,
                 },
             );
 
@@ -162,8 +230,8 @@ export class AgentExecutor<
      */
     async executeWithValidation(
         input: unknown,
-        options?: AgentExecutionOptions,
-    ): Promise<AgentExecutionResult<TOutput>> {
+        options: AgentExecutionOptions,
+    ): Promise<AgentExecutionResult> {
         const definition = this.getDefinition();
         if (!definition) {
             throw new EngineError('AGENT_ERROR', 'Agent definition not found');
@@ -455,39 +523,6 @@ export class AgentExecutor<
             pauseReason: this.pauseReason,
             snapshotId: this.snapshotId,
             lifecycleStatus: 'running', // TODO: Get from lifecycle handler
-        };
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // 📊 STATUS & MONITORING
-    // ──────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Get executor status
-     */
-    getExecutorStatus(): {
-        executorType: 'workflow';
-        agentName: string;
-        isReady: boolean;
-        lifecycleStatus: string;
-        workflowStatus: string;
-        activeExecutions: number;
-        totalExecutions: number;
-        isPaused: boolean;
-    } {
-        const status = this.getStatus();
-        const definition = this.getDefinition();
-        const workflowStatus = this.getWorkflowStatus();
-
-        return {
-            executorType: 'workflow',
-            agentName: definition?.name || 'unknown',
-            isReady: status.initialized && !this.isPaused,
-            lifecycleStatus: workflowStatus.lifecycleStatus,
-            workflowStatus: this.isPaused ? 'paused' : 'running',
-            activeExecutions: status.activeExecutions,
-            totalExecutions: status.eventCount,
-            isPaused: this.isPaused,
         };
     }
 

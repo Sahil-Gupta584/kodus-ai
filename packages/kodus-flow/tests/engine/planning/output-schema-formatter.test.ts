@@ -24,7 +24,6 @@ describe('🚀 Universal Output Schema Formatter', () => {
 
     // Helper para acessar método privado
     const formatOutputSchema = (schema: Record<string, unknown>): string => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return (composer as any).formatOutputSchema(schema);
     };
 
@@ -488,7 +487,6 @@ describe('🚀 Universal Output Schema Formatter', () => {
         });
 
         it('should handle null schema', () => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const result = formatOutputSchema(null as any);
             expect(result).toBe('');
         });

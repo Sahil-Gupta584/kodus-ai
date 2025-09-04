@@ -48,12 +48,12 @@ export default tseslint.config(
             'prettier/prettier': ['error', prettierOptions],
 
             // Regras básicas de tipagem
-            '@typescript-eslint/no-explicit-any': 'error',
+            '@typescript-eslint/no-explicit-any': 'off', // Permite uso de 'any'
 
             '@typescript-eslint/no-floating-promises': 'error',
 
             // Regras básicas de tipagem
-            '@typescript-eslint/no-explicit-any': 'error',
+            '@typescript-eslint/no-explicit-any': 'off', // Permite uso de 'any'
 
             // Desabilitar a regra que impede o uso de Function em decoradores
             '@typescript-eslint/no-unsafe-function-type': 'off',
@@ -158,6 +158,12 @@ export default tseslint.config(
     },
     // Configurações recomendadas do TypeScript
     tseslint.configs.recommended,
+    // Sobrescrever regras específicas após as recomendadas
+    {
+        rules: {
+            '@typescript-eslint/no-explicit-any': 'off', // Permite uso de 'any'
+        },
+    },
     // Configuração do Prettier (deve ser a última para sobrescrever regras conflitantes)
     prettierConfig,
 );

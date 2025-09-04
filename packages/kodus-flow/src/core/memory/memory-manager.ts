@@ -1,20 +1,18 @@
-/**
- * @module core/memory/memory-manager-v2
- * @description Enhanced memory manager with adapter support
- */
-
 import { createLogger } from '../../observability/logger.js';
-import type {
-    MemoryItem,
-    MemoryQuery,
-    MemoryVectorQuery,
-    MemoryVectorSearchResult,
-    MemoryManagerOptions,
-} from '../types/memory-types.js';
-import type { MemoryAdapter, AdapterType } from './types.js';
+
 import { StorageMemoryAdapter } from './storage-adapter.js';
 import { VectorStore } from './vector-store.js';
 import { IdGenerator } from '../../utils/id-generator.js';
+import {
+    AdapterType,
+    MemoryAdapter,
+    MemoryItem,
+    MemoryManagerOptions,
+    MemoryQuery,
+    MemoryVectorQuery,
+    MemoryVectorSearchResult,
+    StorageEnum,
+} from '../types/allTypes.js';
 
 const logger = createLogger('memory-manager-v2');
 
@@ -24,7 +22,6 @@ const logger = createLogger('memory-manager-v2');
  */
 export class MemoryManager {
     private primaryAdapter!: MemoryAdapter;
-    private backupAdapter?: MemoryAdapter;
     private vectorStore: VectorStore;
     private options: MemoryManagerOptions;
     private isInitialized = false;
@@ -35,13 +32,6 @@ export class MemoryManager {
             adapterConfig?: {
                 connectionString?: string;
                 options?: Record<string, unknown>;
-            };
-            backupAdapter?: {
-                type: AdapterType;
-                config: {
-                    connectionString?: string;
-                    options?: Record<string, unknown>;
-                };
             };
         } = {},
     ) {
@@ -80,8 +70,7 @@ export class MemoryManager {
         },
     ): Promise<void> {
         try {
-            // Create primary adapter
-            const adapterType = options.adapterType || 'memory';
+            const adapterType = options.adapterType || StorageEnum.INMEMORY;
             const adapterConfig = {
                 adapterType,
                 connectionString: options.adapterConfig?.connectionString,
@@ -98,26 +87,6 @@ export class MemoryManager {
                 retries: adapterConfig?.retries || 3,
             });
 
-            // Create backup adapter if specified
-            if (options.backupAdapter) {
-                const backupConfig = {
-                    adapterType: options.backupAdapter.type,
-                    connectionString:
-                        options.backupAdapter.config.connectionString,
-                    options: options.backupAdapter.config.options,
-                    timeout: 10000,
-                    retries: 3,
-                };
-
-                this.backupAdapter = new StorageMemoryAdapter({
-                    adapterType: options.backupAdapter.type,
-                    connectionString: backupConfig.connectionString,
-                    options: backupConfig.options,
-                    timeout: backupConfig.timeout || 10000,
-                    retries: backupConfig.retries || 3,
-                });
-            }
-
             logger.info('Memory adapters initialized', {
                 primary: adapterType,
                 backup: options.backupAdapter?.type,
@@ -131,7 +100,7 @@ export class MemoryManager {
                         error instanceof Error
                             ? error.message
                             : 'Unknown error',
-                    adapterType: options.adapterType || 'memory',
+                    adapterType: options.adapterType || StorageEnum.INMEMORY,
                     connectionString: options.adapterConfig?.connectionString
                         ? '[CONFIGURED]'
                         : '[NOT SET]',
@@ -143,12 +112,10 @@ export class MemoryManager {
             this.primaryAdapter = new (
                 await import('./storage-adapter.js')
             ).StorageMemoryAdapter({
-                adapterType: 'memory',
+                adapterType: StorageEnum.INMEMORY,
                 timeout: 5000,
                 retries: 1,
             });
-
-            this.backupAdapter = undefined; // No backup in fallback mode
         }
     }
 
@@ -161,13 +128,9 @@ export class MemoryManager {
         }
 
         try {
-            // Initialize adapters
             await this.initializeAdapters(this.options);
 
             await this.primaryAdapter.initialize();
-            if (this.backupAdapter) {
-                await this.backupAdapter.initialize();
-            }
 
             this.isInitialized = true;
             logger.info('Memory manager initialized');
@@ -216,15 +179,6 @@ export class MemoryManager {
         // Store in primary adapter
         await this.primaryAdapter.store(item);
 
-        // Store in backup adapter if available
-        if (this.backupAdapter) {
-            try {
-                await this.backupAdapter.store(item);
-            } catch (error) {
-                logger.warn('Failed to store in backup adapter', { error });
-            }
-        }
-
         // Auto-vectorize text content if enabled
         if (
             this.options.autoVectorizeText &&
@@ -237,7 +191,6 @@ export class MemoryManager {
             id,
             type: input.type,
             hasVector: this.options.autoVectorizeText,
-            hasBackup: !!this.backupAdapter,
         });
 
         return item;
@@ -250,24 +203,7 @@ export class MemoryManager {
         await this.ensureInitialized();
 
         // Try primary adapter first
-        let item = await this.primaryAdapter.retrieve(id);
-
-        // If not found and backup exists, try backup
-        if (!item && this.backupAdapter) {
-            try {
-                item = await this.backupAdapter.retrieve(id);
-
-                // If found in backup, sync to primary
-                if (item) {
-                    await this.primaryAdapter.store(item);
-                    logger.debug('Synced item from backup to primary', { id });
-                }
-            } catch (error) {
-                logger.warn('Failed to retrieve from backup adapter', {
-                    error,
-                });
-            }
-        }
+        const item = await this.primaryAdapter.retrieve(id);
 
         return item;
     }
@@ -302,18 +238,6 @@ export class MemoryManager {
 
         // Search in primary adapter
         let results = await this.primaryAdapter.search(memoryQuery);
-
-        // If no results and backup exists, try backup
-        if (results.length === 0 && this.backupAdapter) {
-            try {
-                results = await this.backupAdapter.search(memoryQuery);
-                logger.debug('Found results in backup adapter', {
-                    count: results.length,
-                });
-            } catch (error) {
-                logger.warn('Failed to search in backup adapter', { error });
-            }
-        }
 
         // Apply text filter if specified
         if (query.text) {
@@ -368,15 +292,6 @@ export class MemoryManager {
         // Delete from primary adapter
         const deleted = await this.primaryAdapter.delete(id);
 
-        // Delete from backup adapter if available
-        if (this.backupAdapter) {
-            try {
-                await this.backupAdapter.delete(id);
-            } catch (error) {
-                logger.warn('Failed to delete from backup adapter', { error });
-            }
-        }
-
         // Manter índice vetorial consistente
         try {
             await this.vectorStore.delete(id);
@@ -397,14 +312,6 @@ export class MemoryManager {
         await this.ensureInitialized();
 
         await this.primaryAdapter.clear();
-
-        if (this.backupAdapter) {
-            try {
-                await this.backupAdapter.clear();
-            } catch (error) {
-                logger.warn('Failed to clear backup adapter', { error });
-            }
-        }
 
         // Limpar índice vetorial também
         try {
@@ -455,9 +362,6 @@ export class MemoryManager {
         await this.ensureInitialized();
 
         const primaryStats = await this.primaryAdapter.getStats();
-        const backupStats = this.backupAdapter
-            ? await this.backupAdapter.getStats()
-            : undefined;
 
         return {
             itemCount: primaryStats.itemCount,
@@ -466,7 +370,6 @@ export class MemoryManager {
             averageAccessCount: 0, // TODO: Calculate
             adapterStats: {
                 primary: primaryStats,
-                backup: backupStats,
             },
         };
     }
@@ -477,11 +380,8 @@ export class MemoryManager {
     async isHealthy(): Promise<boolean> {
         try {
             const primaryHealthy = await this.primaryAdapter.isHealthy();
-            const backupHealthy = this.backupAdapter
-                ? await this.backupAdapter.isHealthy()
-                : true;
 
-            return primaryHealthy && backupHealthy;
+            return primaryHealthy;
         } catch {
             return false;
         }
@@ -492,10 +392,6 @@ export class MemoryManager {
      */
     async cleanup(): Promise<void> {
         await this.primaryAdapter.cleanup();
-
-        if (this.backupAdapter) {
-            await this.backupAdapter.cleanup();
-        }
     }
 
     /**

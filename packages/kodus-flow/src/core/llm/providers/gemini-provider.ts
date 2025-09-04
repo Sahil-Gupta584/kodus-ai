@@ -1,13 +1,10 @@
-/**
- * @module core/llm/providers/gemini-provider-simple
- * @description Simplified Google Gemini Provider para LLM Adapter
- *
- * Implementação simplificada que funciona com Gemini 2.0 Flash
- */
-
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createLogger } from '../../../observability/index.js';
-import type { LLMMessage, LLMResponse } from '../../../adapters/llm/index.js';
+import {
+    AgentInputEnum,
+    LLMMessage,
+    LLMResponse,
+} from '../../../core/types/allTypes.js';
 
 // Simple provider interface for legacy providers
 export interface LLMProvider {
@@ -175,11 +172,11 @@ export class GeminiProvider implements LLMProvider {
         return messages
             .map((msg) => {
                 switch (msg.role) {
-                    case 'system':
+                    case AgentInputEnum.SYSTEM:
                         return `SYSTEM: ${msg.content}`;
-                    case 'user':
+                    case AgentInputEnum.USER:
                         return `USER: ${msg.content}`;
-                    case 'assistant':
+                    case AgentInputEnum.ASSISTANT:
                         return `ASSISTANT: ${msg.content}`;
                     default:
                         return msg.content;
@@ -226,7 +223,7 @@ export class GeminiProvider implements LLMProvider {
             const response = await this.call(
                 [
                     {
-                        role: 'user',
+                        role: AgentInputEnum.USER,
                         content:
                             'Hello! This is a connection test. Please respond with just "OK".',
                     },
@@ -274,7 +271,7 @@ export function createGeminiProviderFromEnv(): GeminiProvider {
                 : 0.7,
             maxTokens: process.env.GEMINI_MAX_TOKENS
                 ? parseInt(process.env.GEMINI_MAX_TOKENS)
-                : 1000,
+                : 10000, // 🔥 AUMENTADO: De 1000 para 10000 tokens para respostas completas
             topP: process.env.GEMINI_TOP_P
                 ? parseFloat(process.env.GEMINI_TOP_P)
                 : 0.9,
