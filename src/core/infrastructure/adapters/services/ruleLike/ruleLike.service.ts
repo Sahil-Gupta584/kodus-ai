@@ -4,7 +4,7 @@ import {
     IRuleLikeRepository,
     RULE_LIKES_REPOSITORY_TOKEN,
 } from '@/core/domain/kodyRules/contracts/ruleLike.repository.contract';
-import { RuleLikeEntity } from '@/core/domain/kodyRules/entities/ruleLike.entity';
+import { RuleLikeEntity, RuleFeedbackType } from '@/core/domain/kodyRules/entities/ruleLike.entity';
 import { IRuleLikeService } from '@/core/domain/kodyRules/contracts/ruleLike.service.contract';
 
 @Injectable()
@@ -18,19 +18,16 @@ export class RuleLikesService implements IRuleLikeService {
         return this.likesRepo.getNativeCollection();
     }
 
-    async setLike(
+    async setFeedback(
         ruleId: string,
-        language: ProgrammingLanguage,
-        liked: boolean,
+        feedback: RuleFeedbackType,
         userId?: string,
-    ): Promise<{ liked: boolean; count: number }> {
-        const count = await this.likesRepo.setLike(
+    ): Promise<RuleLikeEntity | null> {
+        return this.likesRepo.setFeedback(
             ruleId,
-            language,
-            liked,
+            feedback,
             userId,
         );
-        return { liked, count };
     }
 
     async countByRule(ruleId: string): Promise<number> {
@@ -58,9 +55,9 @@ export class RuleLikesService implements IRuleLikeService {
         return this.likesRepo.getAllLikes();
     }
 
-    async getAllRulesWithLikes(
+    async getAllRulesWithFeedback(
         userId?: string,
-    ): Promise<{ ruleId: string; likeCount: number; userLiked: boolean }[]> {
-        return this.likesRepo.getAllRulesWithLikes(userId);
+    ): Promise<{ ruleId: string; positiveCount: number; negativeCount: number; userFeedback: RuleFeedbackType | null }[]> {
+        return this.likesRepo.getAllRulesWithFeedback(userId);
     }
 }

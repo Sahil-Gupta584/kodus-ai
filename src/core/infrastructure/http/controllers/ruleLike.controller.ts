@@ -1,6 +1,17 @@
-import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
+import {
+    Controller,
+    Get,
+    Post,
+    Body,
+    Param,
+    Query,
+    Inject,
+} from '@nestjs/common';
 import { ProgrammingLanguage } from '@/shared/domain/enums/programming-language.enum';
 import { IRuleLikeService } from '@/core/domain/kodyRules/contracts/ruleLike.service.contract';
+import { RuleFeedbackType } from '@/core/domain/kodyRules/entities/ruleLike.entity';
+import { SetRuleFeedbackDto } from '../dtos/set-rule-feedback.dto';
+import { REQUEST } from '@nestjs/core';
 import { SetRuleLikeUseCase } from '@/core/application/use-cases/rule-like/set-rule-like.use-case';
 import { CountRuleLikesUseCase } from '@/core/application/use-cases/rule-like/count-rule-likes.use-case';
 import { GetTopRulesByLanguageUseCase } from '@/core/application/use-cases/rule-like/get-top-rules-by-language.use-case';
@@ -17,16 +28,27 @@ export class RuleLikeController {
         private readonly findRuleLikesUseCase: FindRuleLikesUseCase,
         private readonly getAllRuleLikesUseCase: GetAllRuleLikesUseCase,
         private readonly getAllRulesWithLikesUseCase: GetAllRulesWithLikesUseCase,
+
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: { uuid: string; organization: { uuid: string } };
+        },
     ) {}
 
-    @Post(':ruleId')
-    async setLike(
+    @Post(':ruleId/feedback')
+    async setFeedback(
         @Param('ruleId') ruleId: string,
-        @Body('language') language: ProgrammingLanguage,
-        @Body('liked') liked: boolean,
-        @Body('userId') userId?: string,
+        @Body() body: SetRuleFeedbackDto,
     ) {
-        return this.setRuleLikeUseCase.execute(ruleId, language, liked, userId);
+        if (!this.request.user?.uuid) {
+            throw new Error('User not authenticated');
+        }
+
+        return this.setRuleLikeUseCase.execute(
+            ruleId,
+            body.feedback,
+            this.request.user.uuid,
+        );
     }
 
     @Get(':ruleId/count')
@@ -61,8 +83,8 @@ export class RuleLikeController {
         return this.getAllRuleLikesUseCase.execute();
     }
 
-    @Get('all-rules-with-likes')
-    async getAllRulesWithLikes() {
+    @Get('all-rules-with-feedback')
+    async getAllRulesWithFeedback() {
         return this.getAllRulesWithLikesUseCase.execute();
     }
 }

@@ -76,6 +76,8 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
             '/azure-repos/webhook',
             '/mcp',
             '/user-log/status-change',
+            '/kody-rules/find-library-kody-rules',
+            '/kody-rules/find-library-kody-rules-buckets',
         ];
 
         // Allow access to public routes
