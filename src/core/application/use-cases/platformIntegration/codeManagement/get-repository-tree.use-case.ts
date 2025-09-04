@@ -51,7 +51,7 @@ export class GetRepositoryTreeUseCase implements IUseCase {
             if (cached && params.useCache) {
                 repositoryTree = cached.tree;
             } else {
-                repositoryTree =
+                const fetchedTree =
                     await this.codeManagementService.getRepositoryTree({
                         organizationAndTeamData: {
                             organizationId: params.organizationId,
@@ -59,6 +59,8 @@ export class GetRepositoryTreeUseCase implements IUseCase {
                         },
                         repositoryId: params.repositoryId,
                     });
+
+                repositoryTree = fetchedTree || [];
 
                 await this.cacheService.addToCache(
                     key,
@@ -101,7 +103,7 @@ export class GetRepositoryTreeUseCase implements IUseCase {
                     repositoryId: params.repositoryId,
                 },
             });
-            return [];
+            return { repository: null, tree: [] };
         }
     }
 
