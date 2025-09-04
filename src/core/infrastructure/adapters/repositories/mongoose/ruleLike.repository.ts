@@ -144,7 +144,8 @@ export class RuleLikesRepository implements IRuleLikeRepository {
                         },
                     },
                     userFeedback: {
-                        $first: {
+                        $max: {
+                            // Use $max em vez de $first para garantir um resultado determinístico
                             $cond: [
                                 { $eq: ['$userId', userId] },
                                 '$feedback',

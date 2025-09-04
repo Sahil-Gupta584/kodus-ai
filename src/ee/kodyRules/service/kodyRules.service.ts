@@ -497,7 +497,7 @@ export class KodyRulesService implements IKodyRulesService {
                     }
 
                     // Filtro por severidade
-                    if (filters.severity && rule.severity.toLowerCase() !== filters.severity.toLowerCase()) {
+                    if (filters.severity && rule.severity?.toLowerCase() !== filters.severity?.toLowerCase()) {
                         return false;
                     }
 

@@ -5,7 +5,6 @@ import {
 } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { Inject, Injectable } from '@nestjs/common';
-import { REQUEST } from '@nestjs/core';
 
 @Injectable()
 export class FindLibraryKodyRulesUseCase {
@@ -14,19 +13,16 @@ export class FindLibraryKodyRulesUseCase {
         private readonly kodyRulesService: IKodyRulesService,
 
         private readonly logger: PinoLoggerService,
-
-        @Inject(REQUEST)
-        private readonly request: Request & {
-            user?: { uuid: string; organization: { uuid: string } };
-        },
-    ) { }
+    ) {}
 
     async execute(kodyRuleFilters?: KodyRuleFilters) {
         try {
             // Para rota pública, usa getLibraryKodyRulesWithFeedback mas sem userId
             // Isso traz as contagens gerais mas não o userFeedback
             const libraryKodyRules =
-                await this.kodyRulesService.getLibraryKodyRulesWithFeedback(kodyRuleFilters);
+                await this.kodyRulesService.getLibraryKodyRulesWithFeedback(
+                    kodyRuleFilters,
+                );
 
             return libraryKodyRules;
         } catch (error) {
