@@ -1,6 +1,8 @@
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
+import { GetRepositoryTreeDto } from '@/core/infrastructure/http/dtos/get-repository-tree.dto';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
+import { CacheService } from '@/shared/utils/cache/cache.service';
 import { RepositoryTreeType } from '@/shared/utils/enums/repositoryTree.enum';
 import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
 import { Inject, Injectable } from '@nestjs/common';
@@ -38,26 +40,39 @@ export class GetRepositoryTreeUseCase implements IUseCase {
         private readonly request: Request & { user },
         private readonly logger: PinoLoggerService,
         private readonly getAdditionalInfoHelper: GetAdditionalInfoHelper,
+
+        private readonly cacheService: CacheService,
     ) {}
 
-    public async execute(params: {
-        organizationId: string;
-        teamId: string;
-        repositoryId: string;
-        treeType?: RepositoryTreeType;
-    }) {
+    public async execute(params: GetRepositoryTreeDto) {
         try {
-            const repositoryTree =
-                await this.codeManagementService.getRepositoryTree({
-                    organizationAndTeamData: {
-                        organizationId: params.organizationId,
-                        teamId: params.teamId,
-                    },
-                    repositoryId: params.repositoryId,
-                });
+            const key = `repo-tree-${params.organizationId}-${params.repositoryId}`;
 
-            let tree;
+            const cached = await this.cacheService.getFromCache<{
+                tree: TreeItem[];
+            }>(key);
 
+            let repositoryTree: TreeItem[] = [];
+            if (cached && params.useCache) {
+                repositoryTree = cached.tree;
+            } else {
+                repositoryTree =
+                    await this.codeManagementService.getRepositoryTree({
+                        organizationAndTeamData: {
+                            organizationId: params.organizationId,
+                            teamId: params.teamId,
+                        },
+                        repositoryId: params.repositoryId,
+                    });
+
+                await this.cacheService.addToCache(
+                    key,
+                    { tree: repositoryTree },
+                    900000,
+                ); // 15 minutes
+            }
+
+            let tree: AllTreeItem[] = [];
             switch (params.treeType) {
                 case RepositoryTreeType.DIRECTORIES:
                     tree = this.formatDirectoriesOnly(repositoryTree);

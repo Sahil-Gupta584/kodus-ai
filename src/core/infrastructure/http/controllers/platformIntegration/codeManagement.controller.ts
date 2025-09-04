@@ -20,6 +20,7 @@ import { DeleteIntegrationUseCase } from '@/core/application/use-cases/platformI
 import { DeleteIntegrationAndRepositoriesUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/delete-integration-and-repositories.use-case';
 import { GetRepositoryTreeUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/get-repository-tree.use-case';
 import { RepositoryTreeType } from '@/shared/utils/enums/repositoryTree.enum';
+import { GetRepositoryTreeDto } from '../../dtos/get-repository-tree.dto';
 
 @Controller('code-management')
 export class CodeManagementController {
@@ -125,7 +126,13 @@ export class CodeManagementController {
 
     @Get('/get-prs')
     public async getPRs(
-        @Query() query: { teamId: string; number?: number; title: string; url?: string },
+        @Query()
+        query: {
+            teamId: string;
+            number?: number;
+            title: string;
+            url?: string;
+        },
     ) {
         return await this.getPRsUseCase.execute({
             teamId: query.teamId,
@@ -176,18 +183,15 @@ export class CodeManagementController {
     public async deleteIntegrationAndRepositories(
         @Query() query: { organizationId: string; teamId: string },
     ) {
-        return await this.deleteIntegrationAndRepositoriesUseCase.execute(query);
+        return await this.deleteIntegrationAndRepositoriesUseCase.execute(
+            query,
+        );
     }
 
     @Get('/get-repository-tree')
     public async getRepositoryTree(
         @Query()
-        query: {
-            organizationId: string;
-            teamId: string;
-            repositoryId: string;
-            treeType?: RepositoryTreeType;
-        },
+        query: GetRepositoryTreeDto,
     ): Promise<any> {
         return await this.getRepositoryTreeUseCase.execute(query);
     }
