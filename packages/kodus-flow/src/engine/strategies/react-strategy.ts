@@ -10,9 +10,6 @@ import type {
     ActionResult,
     AgentThought,
     ResultAnalysis,
-    Hypothesis,
-    Reflection,
-    EarlyStopping,
 } from './types.js';
 import { StrategyPromptFactory } from './prompts/index.js';
 import { ContextService } from '../../core/contextNew/index.js';
@@ -664,7 +661,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
                         approach: 'Error fallback',
                         confidence: 0.0,
                         action: {
-                            type: 'final_answer',
+                            type: 'tool_call',
                             content: `I encountered an error while processing your request. Please try rephrasing your question.`,
                         },
                     },
@@ -680,7 +677,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     reason: 'Thought generation error prevents safe execution',
                 },
                 action: {
-                    type: 'final_answer',
+                    type: 'tool_call',
                     content: `I encountered an error while processing your request. Please try rephrasing your question.`,
                 },
                 metadata: {
@@ -993,285 +990,85 @@ export class ReActStrategy extends BaseExecutionStrategy {
     }
 
     private parseLLMResponse(content: string, iteration: number): AgentThought {
-        // 🔥 MELHORADO: Tentar parsing múltiplas vezes com diferentes abordagens
-        let parseResult = EnhancedJSONParser.parseWithValidation(
-            content,
-            (
-                data: unknown,
-            ): data is {
-                reasoning: string;
-                confidence: number;
-                hypotheses: unknown[];
-                reflection: unknown;
-                earlyStopping: unknown;
-                action: unknown;
-            } => {
-                const d = data as any;
-                return (
-                    typeof data === 'object' &&
-                    data !== null &&
-                    'reasoning' in d &&
-                    'confidence' in d &&
-                    'hypotheses' in d &&
-                    'reflection' in d &&
-                    'earlyStopping' in d &&
-                    'action' in d &&
-                    typeof d.reasoning === 'string' &&
-                    typeof d.confidence === 'number' &&
-                    Array.isArray(d.hypotheses) &&
-                    typeof d.reflection === 'object' &&
-                    typeof d.earlyStopping === 'object' &&
-                    typeof d.action === 'object' &&
-                    d.action !== null
-                );
-            },
-        );
+        const parseResult = EnhancedJSONParser.parse(content);
 
-        // 🔥 NOVO: Se falhar, tentar extrair JSON de dentro de texto
-        if (!parseResult.success) {
-            this.logger.debug(
-                'Enhanced JSON parse failed, trying fallback extraction',
-                {
-                    originalContent: content.substring(0, 200),
-                },
-            );
+        if (!parseResult || typeof parseResult !== 'object') {
+            throw new Error('Failed to parse JSON from LLM response');
+        }
 
-            // Try to extract JSON from markdown code blocks or text
-            const jsonMatch = content.match(
-                /```(?:json)?\s*(\{[\s\S]*?\})\s*```/,
+        const data = parseResult as any;
+
+        // Extract reasoning (required)
+        if (!data.reasoning || typeof data.reasoning !== 'string') {
+            throw new Error(
+                'Missing or invalid reasoning field in LLM response',
             );
-            if (jsonMatch?.[1]) {
-                try {
-                    const extractedJson = jsonMatch[1];
-                    parseResult = EnhancedJSONParser.parseWithValidation(
-                        extractedJson,
-                        (
-                            data: unknown,
-                        ): data is {
-                            reasoning: string;
-                            confidence: number;
-                            hypotheses: unknown[];
-                            reflection: unknown;
-                            earlyStopping: unknown;
-                            action: unknown;
-                        } => {
-                            const d = data as any;
-                            return (
-                                typeof data === 'object' &&
-                                data !== null &&
-                                'reasoning' in d &&
-                                'confidence' in d &&
-                                'hypotheses' in d &&
-                                'reflection' in d &&
-                                'earlyStopping' in d &&
-                                'action' in d &&
-                                typeof d.reasoning === 'string' &&
-                                typeof d.confidence === 'number' &&
-                                Array.isArray(d.hypotheses) &&
-                                typeof d.reflection === 'object' &&
-                                typeof d.earlyStopping === 'object' &&
-                                typeof d.action === 'object' &&
-                                d.action !== null
-                            );
-                        },
-                    );
-                } catch (extractError) {
-                    this.logger.debug('JSON extraction failed', {
-                        extractError,
-                    });
-                }
+        }
+
+        // Extract action from multiple possible locations
+        let actionData: any = null;
+
+        // Priority 1: Direct action field
+        if (data.action) {
+            actionData = data.action;
+        }
+        // Priority 2: Action from first hypothesis
+        else if (
+            data.hypotheses &&
+            Array.isArray(data.hypotheses) &&
+            data.hypotheses.length > 0
+        ) {
+            const firstHypothesis = data.hypotheses[0];
+            if (firstHypothesis && firstHypothesis.action) {
+                actionData = firstHypothesis.action;
             }
         }
 
-        // 🔥 NOVO: Último fallback - tentar parsing manual se tudo falhar
-        if (!parseResult.success) {
-            this.logger.warn(
-                'All JSON parsing methods failed, using manual fallback',
-                {
-                    iteration,
-                    contentLength: content.length,
-                },
+        if (!actionData) {
+            throw new Error(
+                'Missing action field in LLM response (neither direct nor in hypotheses)',
             );
-
-            try {
-                const manualParsed = this.manualJSONFallback(content);
-                if (manualParsed) {
-                    return {
-                        reasoning: manualParsed.reasoning,
-                        confidence: 0.3, // Low confidence for manual fallback
-                        hypotheses: [
-                            {
-                                approach: 'Manual fallback parsing',
-                                confidence: 0.3,
-                                action: this.parseActionFromJSON(
-                                    manualParsed.action,
-                                ),
-                            },
-                        ],
-                        reflection: {
-                            shouldContinue: true,
-                            reasoning:
-                                'Manual parsing successful but with low confidence',
-                            alternatives: ['Retry with better JSON format'],
-                        },
-                        earlyStopping: {
-                            shouldStop: false,
-                            reason: 'Manual parsing successful, can continue',
-                        },
-                        action: this.parseActionFromJSON(manualParsed.action),
-                        metadata: {
-                            iteration,
-                            timestamp: Date.now(),
-                            parseMethod: 'manual-fallback',
-                        },
-                    };
-                }
-            } catch (manualError) {
-                this.logger.error(
-                    'Manual parsing fallback failed',
-                    manualError instanceof Error ? manualError : undefined,
-                );
-            }
-
-            // Final fallback - create a basic response
-            return {
-                reasoning: `Unable to parse LLM response after multiple attempts. Original content length: ${content.length}`,
-                confidence: 0.0, // Zero confidence due to parsing failure
-                hypotheses: [
-                    {
-                        approach: 'Final fallback due to parsing failure',
-                        confidence: 0.0,
-                        action: {
-                            type: 'final_answer',
-                            content:
-                                'I encountered a parsing error while processing your request. Please try rephrasing your question.',
-                        },
-                    },
-                ],
-                reflection: {
-                    shouldContinue: false,
-                    reasoning:
-                        'All parsing methods failed, cannot proceed safely',
-                    alternatives: [],
-                },
-                earlyStopping: {
-                    shouldStop: true,
-                    reason: 'Parsing failure prevents safe execution',
-                },
-                action: {
-                    type: 'final_answer',
-                    content:
-                        'I encountered a parsing error while processing your request. Please try rephrasing your question.',
-                },
-                metadata: {
-                    iteration,
-                    timestamp: Date.now(),
-                    parseMethod: 'final-fallback',
-                    error: parseResult.error,
-                },
-            };
         }
 
-        const parsed = parseResult.data;
+        // Extract optional fields with defaults
+        const confidence =
+            typeof data.confidence === 'number' ? data.confidence : 0.8;
 
-        // 🔥 NOVO: Validar e processar os novos campos
-        const confidence = this.validateConfidence(parsed.confidence);
-        const hypotheses = this.validateHypotheses(parsed.hypotheses);
-        const reflection = this.validateReflection(parsed.reflection);
-        const earlyStopping = this.validateEarlyStopping(parsed.earlyStopping);
-
-        // 🔥 NOVO: Selecionar a melhor ação baseada em confidence e early stopping
-        const selectedAction = this.selectBestAction(hypotheses, earlyStopping);
-
-        return {
-            reasoning: parsed.reasoning,
+        // Create AgentThought
+        const thought: AgentThought = {
+            reasoning: data.reasoning,
             confidence,
-            hypotheses,
-            reflection,
-            earlyStopping,
-            action: selectedAction,
+            action: this.parseActionFromJSON(actionData),
             metadata: {
                 iteration,
                 timestamp: Date.now(),
-                parseMethod: 'enhanced-json',
-                confidenceValidated: true,
-                hypothesesCount: hypotheses.length,
-                earlyStoppingChecked: true,
+                parseMethod: 'enhanced-json-flexible',
             },
         };
-    }
 
-    /**
-     * 🔥 NOVO: Fallback manual para parsing JSON quando tudo falha
-     */
-    private manualJSONFallback(
-        content: string,
-    ): { reasoning: string; action: any } | null {
-        try {
-            // Try to find reasoning
-            const reasoningMatch = content.match(
-                /"reasoning"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
-            );
-            const reasoning = reasoningMatch?.[1] ?? 'Fallback reasoning';
-
-            // Try to find action type
-            let actionType = 'final_answer';
-            if (content.includes('"tool_call"')) {
-                actionType = 'tool_call';
-            }
-
-            // For tool_call, try to extract tool name and input
-            if (actionType === 'tool_call') {
-                const toolNameMatch = content.match(
-                    /"toolName"\s*:\s*"([^"]+)"/,
-                );
-                const inputMatch = content.match(
-                    /"input"\s*:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})/,
-                );
-
-                if (toolNameMatch?.[1]) {
-                    try {
-                        return {
-                            reasoning,
-                            action: {
-                                type: 'tool_call',
-                                toolName: toolNameMatch[1],
-                                input: inputMatch?.[1]
-                                    ? JSON.parse(inputMatch[1])
-                                    : {},
-                            },
-                        };
-                    } catch {
-                        return {
-                            reasoning,
-                            action: {
-                                type: 'tool_call',
-                                toolName: toolNameMatch[1],
-                                input: {},
-                            },
-                        };
-                    }
-                }
-            }
-
-            // For final_answer, try to extract content
-            const contentMatch = content.match(
-                /"content"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
-            );
-            const finalContent =
-                contentMatch?.[1] ?? 'Unable to extract content from response';
-
-            return {
-                reasoning,
-                action: {
-                    type: 'final_answer',
-                    content: finalContent,
-                },
-            };
-        } catch (error) {
-            this.logger.debug('Manual JSON fallback failed', { error });
-            return null;
+        // Add optional fields if present
+        if (data.hypotheses && Array.isArray(data.hypotheses)) {
+            thought.hypotheses = data.hypotheses;
         }
+
+        if (data.reflection && typeof data.reflection === 'object') {
+            thought.reflection = data.reflection;
+        }
+
+        if (data.earlyStopping && typeof data.earlyStopping === 'object') {
+            thought.earlyStopping = data.earlyStopping;
+        }
+
+        this.logger.debug('Successfully parsed LLM response', {
+            reasoningLength: data.reasoning.length,
+            confidence,
+            actionType: actionData.type,
+            hasHypotheses: !!data.hypotheses,
+            hasReflection: !!data.reflection,
+            hasEarlyStopping: !!data.earlyStopping,
+        });
+
+        return thought;
     }
 
     private parseActionFromJSON(actionData: any): AgentAction {
@@ -1293,160 +1090,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
         return {
             type: 'final_answer',
             content: 'Unable to determine action type',
-        };
-    }
-
-    /**
-     * 🔥 NOVO: Validar confidence score (0.0-1.0)
-     */
-    private validateConfidence(confidence: number): number {
-        if (typeof confidence !== 'number' || isNaN(confidence)) {
-            this.logger.warn('Invalid confidence value, using default 0.5', {
-                confidence,
-            });
-            return 0.5;
-        }
-
-        if (confidence < 0) {
-            this.logger.warn('Confidence below 0, clamping to 0', {
-                confidence,
-            });
-            return 0.0;
-        }
-
-        if (confidence > 1) {
-            this.logger.warn('Confidence above 1, clamping to 1', {
-                confidence,
-            });
-            return 1.0;
-        }
-
-        return confidence;
-    }
-
-    /**
-     * 🔥 NOVO: Validar hypotheses array
-     */
-    private validateHypotheses(hypothesesData: any[]): Hypothesis[] {
-        if (!Array.isArray(hypothesesData) || hypothesesData.length === 0) {
-            // Fallback: criar hypothesis básica
-            return [
-                {
-                    approach: 'Primary approach',
-                    confidence: 0.5,
-                    action: {
-                        type: 'final_answer',
-                        content: 'Fallback response',
-                    },
-                },
-            ];
-        }
-
-        return hypothesesData.map((hyp, index) => {
-            try {
-                const confidence = this.validateConfidence(
-                    hyp.confidence || 0.5,
-                );
-                const action = this.parseActionFromJSON(hyp.action);
-
-                return {
-                    approach: hyp.approach || `Hypothesis ${index + 1}`,
-                    confidence,
-                    action,
-                };
-            } catch (error) {
-                this.logger.warn('Invalid hypothesis, using fallback', {
-                    index,
-                    error,
-                });
-                return {
-                    approach: `Hypothesis ${index + 1} (fallback)`,
-                    confidence: 0.3,
-                    action: {
-                        type: 'final_answer',
-                        content: 'Fallback due to invalid hypothesis',
-                    },
-                };
-            }
-        });
-    }
-
-    /**
-     * 🔥 NOVO: Validar reflection object
-     */
-    private validateReflection(reflectionData: any): Reflection {
-        if (!reflectionData || typeof reflectionData !== 'object') {
-            return {
-                shouldContinue: true,
-                reasoning: 'No reflection provided, continuing',
-                alternatives: [],
-            };
-        }
-
-        return {
-            shouldContinue: reflectionData.shouldContinue !== false,
-            reasoning: reflectionData.reasoning || 'No reasoning provided',
-            alternatives: Array.isArray(reflectionData.alternatives)
-                ? reflectionData.alternatives
-                : [],
-        };
-    }
-
-    /**
-     * 🔥 NOVO: Validar early stopping decision
-     */
-    private validateEarlyStopping(earlyStoppingData: any): EarlyStopping {
-        if (!earlyStoppingData || typeof earlyStoppingData !== 'object') {
-            return {
-                shouldStop: false,
-                reason: 'No early stopping decision provided',
-            };
-        }
-
-        return {
-            shouldStop: earlyStoppingData.shouldStop === true,
-            reason: earlyStoppingData.reason || 'Early stopping triggered',
-        };
-    }
-
-    /**
-     * 🔥 NOVO: Selecionar melhor ação baseada em confidence e early stopping
-     */
-    private selectBestAction(
-        hypotheses: Hypothesis[],
-        earlyStopping: EarlyStopping,
-    ): AgentAction {
-        // 1. Early stopping tem prioridade máxima
-        if (earlyStopping.shouldStop) {
-            this.logger.info('🚨 Early stopping triggered', {
-                reason: earlyStopping.reason,
-            });
-            return {
-                type: 'final_answer',
-                content: `Early stopping: ${earlyStopping.reason}`,
-            };
-        }
-
-        // 2. Selecionar hypothesis com maior confidence
-        if (hypotheses.length > 0) {
-            const bestHypothesis = hypotheses.reduce((best, current) =>
-                current.confidence > best.confidence ? current : best,
-            );
-
-            this.logger.debug('Selected best hypothesis', {
-                confidence: bestHypothesis.confidence,
-                approach: bestHypothesis.approach,
-                actionType: bestHypothesis.action.type,
-            });
-
-            return bestHypothesis.action;
-        }
-
-        // 3. Fallback para resposta final
-        this.logger.warn('No valid hypotheses found, using fallback');
-        return {
-            type: 'final_answer',
-            content: 'Unable to determine best action from hypotheses',
         };
     }
 
@@ -1781,23 +1424,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
 
             const parsedThought = this.parseLLMResponse(content, iteration);
 
-            // Se ainda não for final_answer, força manualmente
-            if (parsedThought.action.type !== 'final_answer') {
-                this.logger.warn(
-                    'LLM did not provide final_answer despite forcing, creating fallback',
-                );
-
-                const fallbackContent = this.generateFallbackAnswer(
-                    previousSteps,
-                    reason,
-                );
-
-                parsedThought.action = {
-                    type: 'final_answer',
-                    content: fallbackContent,
-                };
-            }
-
             const actionResult = await this.executeAction(
                 parsedThought.action,
                 context,
@@ -1866,7 +1492,8 @@ export class ReActStrategy extends BaseExecutionStrategy {
                 duration: Date.now() - stepStartTime,
                 action: {
                     type: 'final_answer',
-                    content: this.generateFallbackAnswer(previousSteps, reason),
+                    content:
+                        'Agent not working as expected enter a contact to support',
                 },
                 metadata: {
                     iteration,
@@ -1877,25 +1504,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
                 },
             };
         }
-    }
-
-    /**
-     * Gera resposta fallback quando não conseguimos resposta adequada
-     */
-    private generateFallbackAnswer(
-        previousSteps: ExecutionStep[],
-        reason: string,
-    ): string {
-        const toolResults = previousSteps
-            .filter((step) => step.result?.type === 'tool_result')
-            .map((step) => this.summarizeToolResult(step.result!))
-            .join('\n');
-
-        if (toolResults) {
-            return `Based on the executed tools:\n\n${toolResults}\n\n${reason}. Here's a summary of what was accomplished.`;
-        }
-
-        return `I was unable to complete the full analysis due to: ${reason}. Please try rephrasing your question or providing more specific details.`;
     }
 
     /**
