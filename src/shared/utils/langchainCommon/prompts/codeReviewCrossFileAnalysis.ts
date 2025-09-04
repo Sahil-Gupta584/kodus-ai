@@ -130,7 +130,7 @@ Generate suggestions in JSON format:
   "oneSentenceSummary": "brief description of the cross-file issue",
   "relevantLinesStart": number,
   "relevantLinesEnd": number,
-  "label": "refactoring|error_handling|maintainability|potential_issues",
+  "label": "refactoring|error_handling|maintainability|potential_issues|performance_and_optimization",
   "rankScore": 0,
 }
 \`\`\`
