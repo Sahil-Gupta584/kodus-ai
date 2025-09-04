@@ -365,12 +365,10 @@ function extractTextFromData(data: Record<string, unknown>): string {
         parts.push('Operation successful');
     }
 
-    // Fallback to JSON string (truncated)
+    // Fallback to JSON string (completo)
     if (parts.length === 0) {
         const jsonStr = JSON.stringify(data, null, 2);
-        parts.push(
-            jsonStr.length > 200 ? jsonStr.substring(0, 200) + '...' : jsonStr,
-        );
+        parts.push(jsonStr);
     }
 
     return parts.join('. ');

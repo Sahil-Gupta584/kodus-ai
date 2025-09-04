@@ -69,6 +69,9 @@ export class ReActStrategy extends BaseExecutionStrategy {
 
             this.logger.debug('🚀 ReAct strategy started', { threadId });
 
+            // 🔥 NOVO: Track repeated actions to prevent loops
+            const actionHistory: string[] = [];
+
             while (iteration < this.config.maxIterations) {
                 // 🔥 FORÇA FINAL ANSWER na última iteração se não tiver resposta final
                 const isLastIteration =
@@ -97,12 +100,41 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     break;
                 }
 
+                // 🔥 NOVO: Check for potential loops
+                const potentialLoop = this.detectLoop(steps, actionHistory);
+                if (potentialLoop && iteration > 2) {
+                    this.logger.warn(
+                        '⚠️ Potential loop detected, forcing final answer',
+                        {
+                            repeatedAction: potentialLoop,
+                            iteration,
+                        },
+                    );
+                    const finalStep = await this.forceFinalAnswer(
+                        context,
+                        iteration,
+                        steps,
+                        `Detected repeated action: ${potentialLoop}. Preventing infinite loop.`,
+                    );
+                    steps.push(finalStep);
+                    break;
+                }
+
                 const step = await this.executeIteration(
                     context,
                     iteration,
                     steps,
                 );
                 steps.push(step);
+
+                // 🔥 NOVO: Track action for loop detection
+                if (step.action?.type === 'tool_call' && step.action.toolName) {
+                    actionHistory.push(
+                        `${step.action.type}:${step.action.toolName}`,
+                    );
+                } else if (step.action?.type) {
+                    actionHistory.push(step.action.type);
+                }
 
                 this.logger.debug('✅ Iteration completed', {
                     threadId,
@@ -220,18 +252,92 @@ export class ReActStrategy extends BaseExecutionStrategy {
         try {
             const threadId = context.agentContext.thread?.id;
 
-            const thought = await this.generateThought(
-                context,
+            this.logger.debug('🚀 Starting iteration execution', {
+                threadId,
                 iteration,
-                previousSteps,
-            );
+                previousStepsCount: previousSteps.length,
+                hasLLMAdapter: !!this.llmAdapter,
+            });
+
+            // 🔥 VALIDATION: Check if we have all required components
+            if (!this.llmAdapter) {
+                throw new Error(
+                    'LLM adapter not available for iteration execution',
+                );
+            }
+
+            let thought: AgentThought;
+            try {
+                thought = await this.generateThought(
+                    context,
+                    iteration,
+                    previousSteps,
+                );
+
+                this.logger.debug('💭 Thought generated', {
+                    threadId,
+                    iteration,
+                    actionType: thought.action.type,
+                    hasReasoning: !!thought.reasoning,
+                });
+            } catch (thoughtError) {
+                // 🔥 CORREÇÃO: Se thought generation falhar, ainda criar step com informações básicas
+                this.logger.error(
+                    '💥 Thought generation failed in iteration',
+                    thoughtError instanceof Error ? thoughtError : undefined,
+                    {
+                        iteration,
+                        threadId,
+                    },
+                );
+
+                thought = {
+                    reasoning: `Thought generation failed: ${thoughtError instanceof Error ? thoughtError.message : String(thoughtError)}`,
+                    confidence: 0.0,
+                    hypotheses: [],
+                    reflection: {
+                        shouldContinue: false,
+                        reasoning: 'Thought generation failed',
+                        alternatives: [],
+                    },
+                    earlyStopping: {
+                        shouldStop: true,
+                        reason: 'Thought generation error',
+                    },
+                    action: {
+                        type: 'final_answer',
+                        content: `I encountered an error while processing your request: ${thoughtError instanceof Error ? thoughtError.message : String(thoughtError)}`,
+                    },
+                    metadata: {
+                        iteration,
+                        timestamp: Date.now(),
+                        error: true,
+                    },
+                };
+            }
 
             const actionResult = await this.executeAction(
                 thought.action,
                 context,
             );
 
+            this.logger.debug('⚡ Action executed', {
+                threadId,
+                iteration,
+                actionType: thought.action.type,
+                resultType: actionResult.type,
+                hasContent: !!actionResult.content,
+            });
+
             const observation = await this.analyzeResult(actionResult);
+
+            this.logger.debug('👁️ Result analyzed', {
+                threadId,
+                iteration,
+                isComplete: observation.isComplete,
+                shouldContinue: observation.shouldContinue,
+                isSuccessful: observation.isSuccessful,
+            });
 
             if (threadId) {
                 try {
@@ -263,7 +369,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
                 id: `react-step-${iteration}-${Date.now()}`,
                 type: 'think',
                 type2: 'think' as any,
-                status: 'pending',
+                status: 'completed',
                 timestamp: stepStartTime,
                 duration: Date.now() - stepStartTime,
                 thought,
@@ -274,28 +380,93 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     iteration,
                     strategy: 'react',
                     stepSequence: 'think-act-observe',
+                    completedAt: Date.now(),
                 },
             };
 
-            return step;
-        } catch (error) {
-            this.logger.warn(`⚠️ Iteration ${iteration + 1} failed`, {
-                error: error instanceof Error ? error.message : String(error),
+            this.logger.debug('✅ Step completed successfully', {
+                threadId,
+                iteration,
+                stepId: step.id,
+                actionType: thought.action.type,
+                resultType: actionResult.type,
             });
 
-            // Retorna step de erro
+            return step;
+        } catch (error) {
+            this.logger.error(
+                `❌ Iteration ${iteration + 1} failed`,
+                error instanceof Error ? error : undefined,
+                {
+                    iteration,
+                },
+            );
+
+            // 🔥 CORREÇÃO: Criar step de erro com informações básicas
+            // Como thought pode não estar definida aqui, usar fallback
+            const errorThought: AgentThought = {
+                reasoning: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
+                confidence: 0.0,
+                hypotheses: [],
+                reflection: {
+                    shouldContinue: false,
+                    reasoning: 'Unexpected error occurred',
+                    alternatives: [],
+                },
+                earlyStopping: {
+                    shouldStop: true,
+                    reason: 'Unexpected error',
+                },
+                action: {
+                    type: 'final_answer',
+                    content: `An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}`,
+                },
+                metadata: {
+                    iteration,
+                    timestamp: Date.now(),
+                    error: true,
+                },
+            };
+
+            const errorAction: AgentAction = {
+                type: 'final_answer',
+                content: `Error: ${error instanceof Error ? error.message : String(error)}`,
+            };
+
+            const errorResult: ActionResult = {
+                type: 'error',
+                success: false,
+                content: error instanceof Error ? error.message : String(error),
+                metadata: {
+                    timestamp: Date.now(),
+                    source: 'react-strategy',
+                    executionTime: Date.now() - stepStartTime,
+                    error: true,
+                },
+            };
+
+            // Retorna step de erro com informações completas
             return {
                 id: `react-step-error-${iteration}-${Date.now()}`,
                 type: 'think',
                 type2: 'think' as any,
-                status: 'pending',
+                status: 'failed',
                 timestamp: stepStartTime,
                 duration: Date.now() - stepStartTime,
+                thought: errorThought,
+                action: errorAction,
+                result: errorResult,
+                observation: await this.analyzeResult(errorResult),
                 metadata: {
                     iteration,
                     strategy: 'react',
                     error:
                         error instanceof Error ? error.message : String(error),
+                    errorStack:
+                        error instanceof Error ? error.stack : undefined,
+                    failedAt: Date.now(),
+                    originalThought: false,
+                    originalAction: false,
                 },
             };
         }
@@ -306,121 +477,413 @@ export class ReActStrategy extends BaseExecutionStrategy {
         iteration: number,
         previousSteps: ExecutionStep[],
     ): Promise<AgentThought> {
-        if (!this.llmAdapter.call) {
-            throw new Error('LLM adapter must support call method');
-        }
+        const thoughtStartTime = Date.now();
 
-        context.mode = 'executor';
-        context.step = previousSteps[previousSteps.length - 1];
-        // 🔥 MELHORADO: Histórico detalhado para o LLM entender o progresso
-        context.history = previousSteps.map((step) => ({
-            type: step.type || 'unknown',
-            thought: step.thought
-                ? {
-                      reasoning: step.thought.reasoning,
-                      action: step.action,
-                  }
-                : undefined,
-            action: step.action,
-            result: step.result
-                ? {
-                      type: step.result.type,
-                      content: step.result.content,
-                      success: step.result.type !== 'error',
-                  }
-                : undefined,
-        })) as ExecutionStep[];
-        const prompts = this.promptFactory.createReActPrompt(context);
-
-        let response;
         try {
-            response = await this.llmAdapter.call({
-                messages: [
-                    {
-                        role: AgentInputEnum.SYSTEM,
-                        content: prompts.systemPrompt,
-                    },
-                    { role: AgentInputEnum.USER, content: prompts.userPrompt },
-                ],
+            this.logger.debug('🧠 Starting thought generation', {
+                iteration,
+                previousStepsCount: previousSteps.length,
+                hasLLMAdapter: !!this.llmAdapter?.call,
             });
-        } catch (llmError) {
-            const errorMessage =
-                llmError instanceof Error ? llmError.message : String(llmError);
 
+            if (!this.llmAdapter?.call) {
+                throw new Error('LLM adapter must support call method');
+            }
+
+            context.mode = 'executor';
+            context.step = previousSteps[previousSteps.length - 1];
+
+            // 🔥 MELHORADO: Histórico detalhado para o LLM entender o progresso
+            context.history = previousSteps.map((step, index) => {
+                this.logger.debug('📋 Processing step for history', {
+                    stepIndex: index,
+                    stepId: step.id,
+                    stepType: step.type,
+                    hasThought: !!step.thought,
+                    hasAction: !!step.action,
+                    hasResult: !!step.result,
+                    thoughtReasoning: step.thought?.reasoning,
+                    actionType: step.action?.type,
+                    resultType: step.result?.type,
+                });
+
+                return {
+                    type: step.type || 'unknown',
+                    thought: step.thought
+                        ? {
+                              reasoning: step.thought.reasoning,
+                              action: step.action,
+                          }
+                        : undefined,
+                    action: step.action,
+                    result: step.result
+                        ? {
+                              type: step.result.type,
+                              content: step.result.content,
+                              success: step.result.type !== 'error',
+                          }
+                        : undefined,
+                };
+            }) as ExecutionStep[];
+
+            // 🔥 NOVO: Adicionar informações sobre iteração atual
+            context.currentIteration = iteration;
+            context.maxIterations = this.config.maxIterations;
+
+            this.logger.debug('📝 Context prepared for LLM', {
+                iteration,
+                historyLength: context.history.length,
+                hasCollectedInfo: !!context.collectedInfo,
+                currentIteration: context.currentIteration,
+                maxIterations: context.maxIterations,
+            });
+
+            const prompts = this.promptFactory.createReActPrompt(context);
+
+            this.logger.debug('🤖 Calling LLM', {
+                iteration,
+                systemPromptLength: prompts.systemPrompt.length,
+                userPromptLength: prompts.userPrompt.length,
+            });
+
+            let response;
+            try {
+                response = await this.llmAdapter.call({
+                    messages: [
+                        {
+                            role: AgentInputEnum.SYSTEM,
+                            content: prompts.systemPrompt,
+                        },
+                        {
+                            role: AgentInputEnum.USER,
+                            content: prompts.userPrompt,
+                        },
+                    ],
+                });
+
+                this.logger.debug('✅ LLM call successful', {
+                    iteration,
+                    hasResponse: !!response,
+                    responseType: typeof response,
+                    hasContent: !!response?.content,
+                });
+            } catch (llmError) {
+                const errorMessage =
+                    llmError instanceof Error
+                        ? llmError.message
+                        : String(llmError);
+
+                this.logger.error(
+                    '❌ LLM call failed',
+                    llmError instanceof Error ? llmError : undefined,
+                    {
+                        iteration,
+                    },
+                );
+
+                return {
+                    reasoning: `LLM encountered an error: ${errorMessage}`,
+                    confidence: 0.0, // Very low confidence due to error
+                    hypotheses: [
+                        {
+                            approach: 'Error fallback',
+                            confidence: 0.0,
+                            action: {
+                                type: 'final_answer',
+                                content: `I encountered an error while processing your request: ${errorMessage}. Please try rephrasing your question.`,
+                            },
+                        },
+                    ],
+                    reflection: {
+                        shouldContinue: false,
+                        reasoning: 'LLM error occurred, cannot proceed safely',
+                        alternatives: [],
+                    },
+                    earlyStopping: {
+                        shouldStop: true,
+                        reason: 'LLM error prevents safe execution',
+                    },
+                    action: {
+                        type: 'final_answer',
+                        content: `I encountered an error while processing your request: ${errorMessage}. Please try rephrasing your question.`,
+                    },
+                    metadata: {
+                        iteration,
+                        timestamp: Date.now(),
+                        fallbackUsed: true,
+                        errorReason: 'llm_error',
+                        thoughtGenerationTime: Date.now() - thoughtStartTime,
+                    },
+                };
+            }
+
+            let content: string;
+            if (typeof response.content === 'string') {
+                content = response.content;
+            } else if (response.content) {
+                content = JSON.stringify(response.content);
+            } else {
+                throw new Error('LLM returned empty or invalid response');
+            }
+
+            this.logger.debug('📄 LLM response content extracted', {
+                iteration,
+                contentLength: content.length,
+                contentPreview: content.substring(0, 200),
+            });
+
+            const thought = await this.parseLLMResponse(content, iteration);
+
+            this.logger.debug('💭 Thought successfully generated', {
+                iteration,
+                actionType: thought.action.type,
+                hasReasoning: !!thought.reasoning,
+                thoughtGenerationTime: Date.now() - thoughtStartTime,
+            });
+
+            return thought;
+        } catch (error) {
+            this.logger.error(
+                '💥 Thought generation failed',
+                error instanceof Error ? error : undefined,
+                {
+                    iteration,
+                    thoughtGenerationTime: Date.now() - thoughtStartTime,
+                },
+            );
+
+            // Fallback thought
             return {
-                reasoning: `LLM encountered an error: ${errorMessage}`,
+                reasoning: `Thought generation failed: ${error instanceof Error ? error.message : String(error)}`,
+                confidence: 0.0, // Very low confidence due to thought generation error
+                hypotheses: [
+                    {
+                        approach: 'Error fallback',
+                        confidence: 0.0,
+                        action: {
+                            type: 'tool_call',
+                            content: `I encountered an error while processing your request. Please try rephrasing your question.`,
+                        },
+                    },
+                ],
+                reflection: {
+                    shouldContinue: false,
+                    reasoning:
+                        'Thought generation failed, cannot proceed safely',
+                    alternatives: [],
+                },
+                earlyStopping: {
+                    shouldStop: true,
+                    reason: 'Thought generation error prevents safe execution',
+                },
                 action: {
-                    type: 'final_answer',
-                    content: `I encountered an error while processing your request: ${errorMessage}. Please try rephrasing your question.`,
+                    type: 'tool_call',
+                    content: `I encountered an error while processing your request. Please try rephrasing your question.`,
                 },
                 metadata: {
                     iteration,
                     timestamp: Date.now(),
                     fallbackUsed: true,
-                    errorReason: 'llm_error',
+                    errorReason: 'thought_generation_error',
+                    thoughtGenerationTime: Date.now() - thoughtStartTime,
                 },
             };
         }
-
-        let content: string;
-        if (typeof response.content === 'string') {
-            content = response.content;
-        } else if (response.content) {
-            content = JSON.stringify(response.content);
-        } else {
-            throw new Error('LLM returned empty or invalid response');
-        }
-
-        return this.parseLLMResponse(content, iteration);
     }
 
     private async executeAction(
         action: AgentAction,
         context: StrategyExecutionContext,
     ): Promise<ActionResult> {
-        switch (action.type) {
-            case 'tool_call':
-                const result = await SharedStrategyMethods.executeTool(
-                    action,
-                    context,
-                );
-                return {
-                    type: 'tool_result',
-                    content: result,
-                    metadata: {
+        const actionStartTime = Date.now();
+
+        try {
+            this.logger.debug('🔧 Starting action execution', {
+                actionType: action.type,
+                threadId: context.agentContext.thread?.id,
+            });
+
+            switch (action.type) {
+                case 'tool_call':
+                    this.logger.debug('🛠️ Executing tool call', {
                         toolName: action.toolName,
-                        arguments: action.input,
-                        timestamp: Date.now(),
-                        source: 'react-strategy',
-                    },
-                };
+                        hasInput: !!action.input,
+                        inputType: typeof action.input,
+                        threadId: context.agentContext.thread?.id,
+                    });
 
-            case 'final_answer':
-                return {
-                    type: 'final_answer',
-                    content: action.content,
-                    metadata: {
-                        timestamp: Date.now(),
-                        source: 'react-strategy',
-                    },
-                };
+                    try {
+                        const result = await SharedStrategyMethods.executeTool(
+                            action,
+                            context,
+                        );
 
-            default:
-                throw new Error(`Unknown action type: ${action.type}`);
+                        this.logger.debug('✅ Tool executed successfully', {
+                            toolName: action.toolName,
+                            hasResult: !!result,
+                            resultType: typeof result,
+                            executionTime: Date.now() - actionStartTime,
+                            threadId: context.agentContext.thread?.id,
+                        });
+
+                        return {
+                            type: 'tool_result',
+                            content: result,
+                            success: !!result,
+                            metadata: {
+                                toolName: action.toolName,
+                                arguments: action.input,
+                                timestamp: Date.now(),
+                                source: 'react-strategy',
+                                executionTime: Date.now() - actionStartTime,
+                            },
+                        };
+                    } catch (toolError) {
+                        this.logger.error(
+                            '❌ Tool execution failed',
+                            toolError instanceof Error ? toolError : undefined,
+                            {
+                                toolName: action.toolName,
+                                executionTime: Date.now() - actionStartTime,
+                                threadId: context.agentContext.thread?.id,
+                            },
+                        );
+
+                        return {
+                            type: 'error',
+                            success: false,
+                            content:
+                                toolError instanceof Error
+                                    ? toolError.message
+                                    : String(toolError),
+                            metadata: {
+                                toolName: action.toolName,
+                                arguments: action.input,
+                                timestamp: Date.now(),
+                                source: 'react-strategy',
+                                executionTime: Date.now() - actionStartTime,
+                                error: true,
+                                errorMessage:
+                                    toolError instanceof Error
+                                        ? toolError.message
+                                        : String(toolError),
+                            },
+                        };
+                    }
+
+                case 'final_answer':
+                    this.logger.debug('🎯 Providing final answer', {
+                        hasContent: !!action.content,
+                        contentLength: action.content
+                            ? action.content.length
+                            : 0,
+                        threadId: context.agentContext.thread?.id,
+                    });
+
+                    return {
+                        type: 'final_answer',
+                        content: action.content,
+                        success: true,
+                        metadata: {
+                            timestamp: Date.now(),
+                            source: 'react-strategy',
+                            executionTime: Date.now() - actionStartTime,
+                        },
+                    };
+
+                default:
+                    this.logger.error('❌ Unknown action type', undefined, {
+                        actionType: action.type,
+                        threadId: context.agentContext.thread?.id,
+                    });
+                    return {
+                        type: 'error',
+                        success: false,
+                        content: `Unknown action type: ${action.type}`,
+                        metadata: {
+                            timestamp: Date.now(),
+                            source: 'react-strategy',
+                            executionTime: Date.now() - actionStartTime,
+                            error: true,
+                            errorMessage: `Unknown action type: ${action.type}`,
+                        },
+                    };
+            }
+        } catch (error) {
+            this.logger.error(
+                '💥 Action execution failed',
+                error instanceof Error ? error : undefined,
+                {
+                    actionType: action.type,
+                    executionTime: Date.now() - actionStartTime,
+                },
+            );
+            throw error;
         }
     }
 
     private async analyzeResult(result: ActionResult): Promise<ResultAnalysis> {
-        return {
-            isComplete: result.type === 'final_answer',
-            isSuccessful: result.type !== 'error',
-            shouldContinue: result.type === 'tool_result',
-            feedback: this.generateFeedback(result),
-            metadata: {
+        const analysisStartTime = Date.now();
+
+        try {
+            this.logger.debug('🔍 Starting result analysis', {
                 resultType: result.type,
-                timestamp: Date.now(),
-            },
-        };
+                hasContent: !!result.content,
+                contentType: typeof result.content,
+            });
+
+            const isComplete = result.type === 'final_answer';
+            const isSuccessful = result.type !== 'error';
+            const shouldContinue = result.type === 'tool_result';
+            const feedback = this.generateFeedback(result);
+
+            const analysis = {
+                isComplete,
+                isSuccessful,
+                shouldContinue,
+                feedback,
+                metadata: {
+                    resultType: result.type,
+                    timestamp: Date.now(),
+                    analysisTime: Date.now() - analysisStartTime,
+                },
+            };
+
+            this.logger.debug('✅ Result analysis completed', {
+                resultType: result.type,
+                isComplete,
+                isSuccessful,
+                shouldContinue,
+                hasFeedback: !!feedback,
+                feedbackLength: feedback.length,
+                analysisTime: Date.now() - analysisStartTime,
+            });
+
+            return analysis;
+        } catch (error) {
+            this.logger.error(
+                '💥 Result analysis failed',
+                error instanceof Error ? error : undefined,
+                {
+                    resultType: result.type,
+                    analysisTime: Date.now() - analysisStartTime,
+                },
+            );
+
+            // Fallback analysis
+            return {
+                isComplete: result.type === 'final_answer',
+                isSuccessful: false,
+                shouldContinue: false,
+                feedback: `Analysis failed: ${error instanceof Error ? error.message : String(error)}`,
+                metadata: {
+                    resultType: result.type,
+                    timestamp: Date.now(),
+                    analysisTime: Date.now() - analysisStartTime,
+                    error: true,
+                },
+            };
+        }
     }
 
     private shouldStop(
@@ -451,6 +914,59 @@ export class ReActStrategy extends BaseExecutionStrategy {
         return false;
     }
 
+    /**
+     * 🔥 NOVO: Detecta loops baseados em ações repetidas
+     */
+    private detectLoop(
+        steps: ExecutionStep[],
+        actionHistory: string[],
+    ): string | null {
+        if (actionHistory.length < 3) {
+            return null;
+        }
+
+        // Check for repeated tool calls in last 3 actions
+        const lastThreeActions = actionHistory.slice(-3);
+        const uniqueActions = new Set(lastThreeActions);
+
+        // If all 3 actions are the same, it's likely a loop
+        if (uniqueActions.size === 1 && lastThreeActions.length === 3) {
+            return lastThreeActions[0] ?? null;
+        }
+
+        // Check for pattern: A, B, A (where A is the same action)
+        if (
+            lastThreeActions.length === 3 &&
+            lastThreeActions[0] === lastThreeActions[2] &&
+            lastThreeActions[1] !== lastThreeActions[0]
+        ) {
+            return lastThreeActions[0] ?? null;
+        }
+
+        // Check for tool calls with same parameters (more sophisticated)
+        const recentToolCalls = steps
+            .slice(-3)
+            .filter((step) => step.action?.type === 'tool_call')
+            .map((step) => ({
+                toolName: (step.action as any)?.toolName,
+                input: JSON.stringify((step.action as any)?.input),
+            }));
+
+        if (recentToolCalls.length >= 2) {
+            // Check if last 2 tool calls are identical
+            const lastTwo = recentToolCalls.slice(-2);
+            if (
+                lastTwo.length === 2 &&
+                lastTwo[0]?.toolName === lastTwo[1]?.toolName &&
+                lastTwo[0]?.input === lastTwo[1]?.input
+            ) {
+                return `${lastTwo[0]?.toolName} with same parameters`;
+            }
+        }
+
+        return null;
+    }
+
     private extractFinalResult(steps: ExecutionStep[]): unknown {
         for (let i = steps.length - 1; i >= 0; i--) {
             const step = steps[i];
@@ -474,42 +990,85 @@ export class ReActStrategy extends BaseExecutionStrategy {
     }
 
     private parseLLMResponse(content: string, iteration: number): AgentThought {
-        const parseResult = EnhancedJSONParser.parseWithValidation(
-            content,
-            (data: unknown): data is { reasoning: string; action: unknown } => {
-                return (
-                    typeof data === 'object' &&
-                    data !== null &&
-                    'reasoning' in data &&
-                    'action' in data &&
-                    typeof (data as any).reasoning === 'string' &&
-                    typeof (data as any).action === 'object' &&
-                    (data as any).action !== null
-                );
-            },
-        );
+        const parseResult = EnhancedJSONParser.parse(content);
 
-        if (parseResult.success) {
-            const parsed = parseResult.data;
+        if (!parseResult || typeof parseResult !== 'object') {
+            throw new Error('Failed to parse JSON from LLM response');
+        }
 
-            return {
-                reasoning: parsed.reasoning,
-                action: this.parseActionFromJSON(parsed.action),
-                metadata: {
-                    iteration,
-                    timestamp: Date.now(),
-                    parseMethod: 'enhanced-json',
-                },
-            };
-        } else {
-            this.logger.error(
-                `Enhanced JSON parse failed - invalid response format: ${parseResult.error}`,
-            );
+        const data = parseResult as any;
 
+        // Extract reasoning (required)
+        if (!data.reasoning || typeof data.reasoning !== 'string') {
             throw new Error(
-                `Invalid JSON response from LLM: ${parseResult.error}. Expected format: {"reasoning": "...", "action": {...}}`,
+                'Missing or invalid reasoning field in LLM response',
             );
         }
+
+        // Extract action from multiple possible locations
+        let actionData: any = null;
+
+        // Priority 1: Direct action field
+        if (data.action) {
+            actionData = data.action;
+        }
+        // Priority 2: Action from first hypothesis
+        else if (
+            data.hypotheses &&
+            Array.isArray(data.hypotheses) &&
+            data.hypotheses.length > 0
+        ) {
+            const firstHypothesis = data.hypotheses[0];
+            if (firstHypothesis && firstHypothesis.action) {
+                actionData = firstHypothesis.action;
+            }
+        }
+
+        if (!actionData) {
+            throw new Error(
+                'Missing action field in LLM response (neither direct nor in hypotheses)',
+            );
+        }
+
+        // Extract optional fields with defaults
+        const confidence =
+            typeof data.confidence === 'number' ? data.confidence : 0.8;
+
+        // Create AgentThought
+        const thought: AgentThought = {
+            reasoning: data.reasoning,
+            confidence,
+            action: this.parseActionFromJSON(actionData),
+            metadata: {
+                iteration,
+                timestamp: Date.now(),
+                parseMethod: 'enhanced-json-flexible',
+            },
+        };
+
+        // Add optional fields if present
+        if (data.hypotheses && Array.isArray(data.hypotheses)) {
+            thought.hypotheses = data.hypotheses;
+        }
+
+        if (data.reflection && typeof data.reflection === 'object') {
+            thought.reflection = data.reflection;
+        }
+
+        if (data.earlyStopping && typeof data.earlyStopping === 'object') {
+            thought.earlyStopping = data.earlyStopping;
+        }
+
+        this.logger.debug('Successfully parsed LLM response', {
+            reasoningLength: data.reasoning.length,
+            confidence,
+            actionType: actionData.type,
+            hasHypotheses: !!data.hypotheses,
+            hasReflection: !!data.reflection,
+            hasEarlyStopping: !!data.earlyStopping,
+        });
+
+        return thought;
     }
 
     private parseActionFromJSON(actionData: any): AgentAction {
@@ -742,10 +1301,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
                 getCurrentPlan: () => null,
             };
 
-            const finalContext =
-                await ContextService.buildFinalResponseContext(plannerContext);
-
-            console.log('finalContext', finalContext);
+            await ContextService.buildFinalResponseContext(plannerContext);
 
             return (
                 (await plannerContext.getFinalResult().result.content) ?? 'Kody'
@@ -868,23 +1424,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
 
             const parsedThought = this.parseLLMResponse(content, iteration);
 
-            // Se ainda não for final_answer, força manualmente
-            if (parsedThought.action.type !== 'final_answer') {
-                this.logger.warn(
-                    'LLM did not provide final_answer despite forcing, creating fallback',
-                );
-
-                const fallbackContent = this.generateFallbackAnswer(
-                    previousSteps,
-                    reason,
-                );
-
-                parsedThought.action = {
-                    type: 'final_answer',
-                    content: fallbackContent,
-                };
-            }
-
             const actionResult = await this.executeAction(
                 parsedThought.action,
                 context,
@@ -953,7 +1492,8 @@ export class ReActStrategy extends BaseExecutionStrategy {
                 duration: Date.now() - stepStartTime,
                 action: {
                     type: 'final_answer',
-                    content: this.generateFallbackAnswer(previousSteps, reason),
+                    content:
+                        'Agent not working as expected enter a contact to support',
                 },
                 metadata: {
                     iteration,
@@ -967,25 +1507,6 @@ export class ReActStrategy extends BaseExecutionStrategy {
     }
 
     /**
-     * Gera resposta fallback quando não conseguimos resposta adequada
-     */
-    private generateFallbackAnswer(
-        previousSteps: ExecutionStep[],
-        reason: string,
-    ): string {
-        const toolResults = previousSteps
-            .filter((step) => step.result?.type === 'tool_result')
-            .map((step) => this.summarizeToolResult(step.result!))
-            .join('\n');
-
-        if (toolResults) {
-            return `Based on the executed tools:\n\n${toolResults}\n\n${reason}. Here's a summary of what was accomplished.`;
-        }
-
-        return `I was unable to complete the full analysis due to: ${reason}. Please try rephrasing your question or providing more specific details.`;
-    }
-
-    /**
      * 🔥 NOVO: Resume resultado da ferramenta para o contexto do LLM
      */
     private summarizeToolResult(result: ActionResult): string {
@@ -996,11 +1517,7 @@ export class ReActStrategy extends BaseExecutionStrategy {
                         ? result.content
                         : JSON.stringify(result.content);
 
-                // Limitar tamanho para não sobrecarregar o prompt
-                if (contentStr.length > 300) {
-                    return `Tool executed successfully - ${contentStr.substring(0, 300)}...`;
-                }
-
+                // Resultado completo sem truncamento
                 return `Tool executed successfully - ${contentStr}`;
             } catch {
                 return 'Tool executed successfully';

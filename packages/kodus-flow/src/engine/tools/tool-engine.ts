@@ -2,8 +2,8 @@ import {
     createLogger,
     getObservability,
     startToolSpan,
-    applyErrorToSpan,
     markSpanOk,
+    applyErrorToSpan,
 } from '../../observability/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import {
@@ -89,7 +89,6 @@ export class ToolEngine {
 
             const result = await obs.telemetry.withSpan(span, async () => {
                 try {
-                    // ✅ SIMPLIFIED: Only timeout protection - Circuit Breaker handles retries
                     const timeoutPromise = new Promise<never>((_, reject) => {
                         setTimeout(() => {
                             reject(
@@ -100,7 +99,6 @@ export class ToolEngine {
                         }, timeout);
                     });
 
-                    // Create execution promise
                     const executionPromise = this.executeToolInternal<
                         TInput,
                         TOutput
@@ -117,7 +115,12 @@ export class ToolEngine {
 
                     return res;
                 } catch (innerError) {
-                    applyErrorToSpan(span, innerError);
+                    applyErrorToSpan(
+                        span,
+                        innerError instanceof Error
+                            ? innerError
+                            : new Error(String(innerError)),
+                    );
                     throw innerError;
                 }
             });
@@ -191,7 +194,6 @@ export class ToolEngine {
         let error: Error | undefined;
 
         try {
-            // 🔥 ENHANCED: Create tool context with contextNew integration
             const context = await this.createEnhancedToolContext(
                 tool.name,
                 callId,
@@ -201,7 +203,6 @@ export class ToolEngine {
                 options,
             );
 
-            // Execute tool using execute function
             result = await tool.execute(input, context);
         } catch (err) {
             error = err as Error;
@@ -212,9 +213,6 @@ export class ToolEngine {
         return result;
     }
 
-    /**
-     * 🔥 ENHANCED: Create tool context with contextNew integration
-     */
     private async createEnhancedToolContext(
         toolName: string,
         callId: string,
@@ -614,16 +612,12 @@ export class ToolEngine {
         return !!this.kernelHandler;
     }
 
-    /**
-     * Execute tool directly with timeout protection
-     * Note: Retry logic is handled by Circuit Breaker at higher level
-     */
     async executeTool<TInput = unknown, TOutput = unknown>(
         toolName: string,
         input: TInput,
     ): Promise<TOutput> {
         const callId = IdGenerator.callId();
-        const timeout = this.config.timeout || 60000; // ✅ 60s timeout para ferramentas MCP
+        const timeout = this.config.timeout || 80000;
         const startTime = Date.now();
         const obs = getObservability();
 
@@ -637,7 +631,6 @@ export class ToolEngine {
 
             const result = await obs.telemetry.withSpan(span, async () => {
                 try {
-                    // ✅ SIMPLIFIED: Only timeout protection - Circuit Breaker handles retries
                     const timeoutPromise = new Promise<never>((_, reject) => {
                         setTimeout(() => {
                             reject(
@@ -654,7 +647,6 @@ export class ToolEngine {
                         TOutput
                     >(toolName as ToolId, input, callId);
 
-                    // Race between execution and timeout
                     const res = await Promise.race([
                         executionPromise,
                         timeoutPromise,
@@ -662,7 +654,12 @@ export class ToolEngine {
                     markSpanOk(span);
                     return res;
                 } catch (innerError) {
-                    applyErrorToSpan(span, innerError);
+                    applyErrorToSpan(
+                        span,
+                        innerError instanceof Error
+                            ? innerError
+                            : new Error(String(innerError)),
+                    );
                     throw innerError;
                 }
             });
@@ -692,11 +689,6 @@ export class ToolEngine {
         }
     }
 
-    // ===== 🚀 NEW: DEPENDENCY RESOLUTION METHODS =====
-
-    /**
-     * Resolve tool execution order based on dependencies
-     */
     private resolveToolDependencies(
         tools: ToolCall[],
         dependencies: ToolDependency[],

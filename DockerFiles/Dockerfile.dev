@@ -1,50 +1,38 @@
-# Declaração global do argumento de build com valor padrão
 ARG API_CLOUD_MODE=false
 
-# 1) Estágio base: instalar dependências apenas 1x
-FROM --platform=linux/amd64 node:22.14.0-slim AS deps
+FROM node:22.14.0-slim AS deps
 
-# Redefinir ARG e definir ENV neste estágio
 ARG API_CLOUD_MODE
 ENV API_CLOUD_MODE=${API_CLOUD_MODE}
 
 WORKDIR /usr/src/app
 
-# Instalar certificados raiz e git no estágio final
 RUN apt-get update && apt-get install -y ca-certificates git make g++ python3 && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
-# Copiamos somente os arquivos de dependências
 COPY package.json yarn.lock ./
 COPY packages/kodus-flow ./packages/kodus-flow
 COPY packages/kodus-common/package.json ./packages/kodus-common/
 
-# Instalamos todas as dependências (dev + prod) e garantimos que @types estejam instalados
 RUN yarn install --check-files --frozen-lockfile --production=false
 
 # -------------------------------------------------------------
-# 2) Estágio build-code: compila o código e gera ./dist
 FROM deps AS build-code
 
-# Redefinir ARG e definir ENV neste estágio
 ARG API_CLOUD_MODE
 ENV API_CLOUD_MODE=${API_CLOUD_MODE}
 
-# Copiamos apenas os arquivos necessários para o build
 COPY tsconfig*.json ./
 COPY nest-cli.json ./
 COPY packages/kodus-flow ./packages/kodus-flow
 COPY packages/kodus-common ./packages/kodus-common
 COPY src ./src
 
-# Aqui podemos (opcionalmente) aumentar o heap de novo para o build
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
-# Compilamos o código principal + workflows
 RUN yarn build
 
-# Instalar pgvector (otimizado para cache)
 RUN apt-get update && apt-get install -y git build-essential postgresql-client postgresql-server-dev-all && \
     cd /tmp && \
     git clone --branch v0.5.1 --depth 1 https://github.com/pgvector/pgvector.git && \
@@ -58,33 +46,26 @@ RUN apt-get update && apt-get install -y git build-essential postgresql-client p
     rm -rf /var/lib/apt/lists/*
 
 # -------------------------------------------------------------
-# 3) Estágio final de desenvolvimento
-FROM --platform=linux/amd64 node:22.14.0-slim AS development
+FROM node:22.14.0-slim AS development
 
-# Redefinir ARG e definir ENV neste estágio
 ARG API_CLOUD_MODE
 ENV API_CLOUD_MODE=${API_CLOUD_MODE}
 
 WORKDIR /usr/src/app
 EXPOSE 3001
 
-# Instalar certificados raiz e git no estágio final
 RUN apt-get update && \
     apt-get install -y ca-certificates git python3 make g++ && \
     rm -rf /var/lib/apt/lists/*
 
-# Copiar dependências do estágio deps
 COPY --from=deps /usr/src/app/node_modules ./node_modules
 COPY --from=deps /usr/src/app/packages ./packages
 
-# Copiar arquivos de configuração
 COPY package.json yarn.lock ./
 COPY tsconfig*.json ./
 COPY nest-cli.json ./
 
-# Agora copiamos apenas os artefatos finais do build
 COPY --from=build-code /usr/src/app/dist ./dist
 RUN mkdir -p /usr/src/app/certs
 
-# Comando de inicialização em modo desenvolvimento
 CMD ["yarn", "start:dev"]

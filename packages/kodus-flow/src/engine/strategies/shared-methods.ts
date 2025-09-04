@@ -4,26 +4,17 @@ import type {
     AgentAction,
     ActionResult,
     ResultAnalysis,
-    AgentThought,
     ExecutionPlan,
 } from './types.js';
 import type { ToolDefinition } from '../../core/types/allTypes.js';
 
-// 🔧 IMPORTS PARA EXECUÇÃO DE TOOLS
 import { createLogger } from '../../observability/index.js';
 import { ToolEngine } from '../tools/tool-engine.js';
 
-// Métodos compartilhados entre estratégias
 export class SharedStrategyMethods {
-    // 🔧 STATIC PROPERTIES PARA EXECUÇÃO DE TOOLS
     private static readonly logger = createLogger('shared-strategy-methods');
     private static toolEngine?: ToolEngine;
 
-    // 🔧 DEPENDENCY INJECTION
-    /**
-     * Configure ToolEngine for SharedStrategyMethods
-     * This removes duplication and establishes single source of truth
-     */
     static setToolEngine(toolEngine: ToolEngine): void {
         this.toolEngine = toolEngine;
         this.logger.info('🔧 ToolEngine configured for SharedStrategyMethods', {
@@ -31,12 +22,6 @@ export class SharedStrategyMethods {
         });
     }
 
-    // === LLM METHODS (compartilhados) ===
-
-    /**
-     * Chama LLM (placeholder - integrar com agent-core.ts)
-     * TODO: Integrar com LLM adapter do agent-core.ts
-     */
     static async callLLM(
         prompt: string,
         _context: StrategyExecutionContext,
@@ -68,44 +53,10 @@ export class SharedStrategyMethods {
         }
     }
 
-    /**
-     * Gera thought baseado no contexto
-     */
-    static async generateThought(
-        context: StrategyExecutionContext,
-        stepIndex: number,
-    ): Promise<AgentThought> {
-        const prompt = `
-            Contexto atual:
-            - Input: ${context.input}
-            - Tools disponíveis: ${context.agentContext.availableTools.map((t) => t.name).join(', ')}
-            - Step: ${stepIndex + 1}
-
-            Baseado neste contexto, qual é a próxima ação?
-        `;
-
-        const response = await this.callLLM(prompt, context);
-
-        return {
-            reasoning: response.reasoning || 'Thinking about next action...',
-            action: response.action || {
-                type: 'final_answer',
-                content: 'No action needed',
-            },
-        };
-    }
-
-    // === TOOL EXECUTION METHODS (compartilhados) ===
-
-    /**
-     * 🔥 EXECUTA TOOL - PURE DELEGATION
-     * Simplified: ToolEngine handles all enterprise features (circuit breaker, observability, timeout)
-     */
     static async executeTool(
         action: AgentAction,
         context: StrategyExecutionContext,
     ): Promise<unknown> {
-        // Basic validation
         if (action.type !== 'tool_call' || !action.toolName) {
             throw new Error('Invalid tool call action');
         }
@@ -155,39 +106,6 @@ export class SharedStrategyMethods {
         }
     }
 
-    /**
-     * Executa ação (think/act/observe comum)
-     */
-    static async executeAction(
-        action: AgentAction,
-        context: StrategyExecutionContext,
-    ): Promise<ActionResult> {
-        if (action.type === 'tool_call') {
-            const toolResult = await this.executeTool(action, context);
-            return {
-                type: 'tool_result',
-                content: toolResult,
-                metadata: {
-                    toolName: action.toolName,
-                    arguments: action.input,
-                    executionTime: Date.now(),
-                },
-            };
-        } else if (action.type === 'final_answer') {
-            return {
-                type: 'final_answer',
-                content: action.content,
-            };
-        } else {
-            throw new Error(`Unknown action type: ${action.type}`);
-        }
-    }
-
-    // === OBSERVATION METHODS (compartilhados) ===
-
-    /**
-     * Analisa resultado (lógica comum de observe)
-     */
     static async analyzeResult(
         result: ActionResult,
         context: StrategyExecutionContext,

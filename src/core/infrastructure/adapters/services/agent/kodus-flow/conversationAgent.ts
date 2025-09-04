@@ -171,12 +171,6 @@ export class ConversationAgentProvider {
             hosts: [{ name: this.config.host, port: this.config.port }],
         }).toString();
 
-        console.log(
-            'Creating orchestration with MongoDB URI:',
-            uri,
-            this.config,
-        );
-
         await startKodusOtel();
         const externalTracer = await createOtelTracerAdapter();
 
@@ -193,7 +187,6 @@ export class ConversationAgentProvider {
                     collections: {
                         logs: 'observability_logs',
                         telemetry: 'observability_telemetry',
-                        metrics: 'observability_metrics',
                         errors: 'observability_errors',
                     },
                     batchSize: 100,
@@ -212,21 +205,11 @@ export class ConversationAgentProvider {
                         maxDurationMs: 5 * 60 * 1000,
                     },
                 },
-                correlation: {
-                    enabled: true,
-                    generateIds: true,
-                    propagateContext: true,
-                },
             },
             storage: {
                 type: StorageEnum.MONGODB,
                 connectionString: uri,
                 database: this.config.database,
-                collections: {
-                    memory: 'kodus-agent-memory',
-                    sessions: 'kodus-agent-sessions',
-                    snapshots: 'kodus-execution-snapshots',
-                },
             },
         });
     }

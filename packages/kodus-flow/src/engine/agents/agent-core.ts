@@ -464,14 +464,19 @@ export abstract class AgentCore<
                 },
             );
 
+            // 🔧 FIX: Ensure full content is transmitted without truncation
+            const finalContent =
+                typeof result.output === 'string'
+                    ? result.output
+                    : result.output
+                      ? JSON.stringify(result.output, null, 2)
+                      : 'Processing completed';
+
             await ContextService.updateMessage(
                 completeContext.threadId,
                 completeContext.metadata.assistantMessageId!,
                 {
-                    content:
-                        typeof result.output === 'string'
-                            ? result.output
-                            : String(result.output || 'Processing completed'),
+                    content: finalContent,
                     metadata: {
                         agentName: agent.name,
                         correlationId,
@@ -503,11 +508,14 @@ export abstract class AgentCore<
                 },
             );
 
+            // 🔧 FIX: Ensure full error content is transmitted
+            const errorContent = `❌ Error processing your request: ${error instanceof Error ? error.message : String(error)}`;
+
             await ContextService.updateMessage(
                 completeContext.threadId,
                 completeContext.metadata.assistantMessageId!,
                 {
-                    content: `❌ Error processing your request: ${error instanceof Error ? error.message : String(error)}`,
+                    content: errorContent,
                     metadata: {
                         agentName: agent.name,
                         correlationId,

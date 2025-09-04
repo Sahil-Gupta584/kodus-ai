@@ -70,19 +70,21 @@ export const withObservability: MiddlewareFactoryType<
                         errorAttributes['runtime.event.type'] = String(
                             event.type,
                         );
-                        applyErrorToSpan(span, err, errorAttributes);
+                        applyErrorToSpan(
+                            span,
+                            err instanceof Error ? err : new Error(String(err)),
+                            errorAttributes,
+                        );
                         throw err;
                     }
                 });
             } catch (error) {
-                // handler error already recorded; just rethrow
                 throw error;
             }
         };
     }) as Middleware<TEvent>;
 
     middleware.kind = 'handler';
-    // Avoid assigning to Function.name (read-only). Use displayName instead.
     (middleware as unknown as { displayName?: string }).displayName =
         'withObservability';
 
