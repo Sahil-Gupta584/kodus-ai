@@ -1,5 +1,4 @@
-import { createLogger } from '../observability/index.js';
-import { getObservability } from '../observability/index.js';
+import { createLogger, getObservability } from '../observability/index.js';
 import { withObservability } from '../runtime/middleware/index.js';
 import { KernelError } from '../core/errors.js';
 

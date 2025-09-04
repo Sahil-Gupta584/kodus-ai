@@ -1,5 +1,5 @@
 import { LLMAdapter } from '../../core/types/allTypes.js';
-import { createLogger } from '../../observability/index.js';
+import { createLogger, getObservability } from '../../observability/index.js';
 import { BaseExecutionStrategy } from './strategy-interface.js';
 import { SharedStrategyMethods } from './shared-methods.js';
 import type {
@@ -74,54 +74,66 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
         const steps: ExecutionStep[] = [];
         let toolCallsCount = 0;
 
-        try {
-            this.validateContext(context);
+        // ✅ CORREÇÃO: Usar traceAgent para toda execução da estratégia
+        return await getObservability().traceAgent(
+            'plan-execute-strategy',
+            async () => {
+                try {
+                    this.validateContext(context);
 
-            // Fase 1: PLAN - Criar plano de execução
-            const planStepStart = Date.now();
-            const plan = await this.createPlan(context);
-            steps.push({
-                id: `plan-${planStepStart}`,
-                type: 'plan' as any,
-                type2: 'plan',
-                timestamp: planStepStart,
-                duration: Date.now() - planStepStart,
-                status: 'completed',
-                thought2: `Created plan with ${plan.steps?.length || 0} steps`,
-                result2: plan,
-            });
+                    // Fase 1: PLAN - Criar plano de execução
+                    const planStepStart = Date.now();
+                    const plan = await this.createPlan(context);
+                    steps.push({
+                        id: `plan-${planStepStart}`,
+                        type: 'plan' as any,
+                        type2: 'plan',
+                        timestamp: planStepStart,
+                        duration: Date.now() - planStepStart,
+                        status: 'completed',
+                        thought2: `Created plan with ${plan.steps?.length || 0} steps`,
+                        result2: plan,
+                    });
 
-            // Fase 2: EXECUTE - Executar plano step by step
-            const executionResults = await this.executePlan(
-                plan,
-                context,
-                startTime,
-            );
-            steps.push(...executionResults.steps);
-            toolCallsCount = executionResults.toolCallsCount;
+                    // Fase 2: EXECUTE - Executar plano step by step
+                    const executionResults = await this.executePlan(
+                        plan,
+                        context,
+                        startTime,
+                    );
+                    steps.push(...executionResults.steps);
+                    toolCallsCount = executionResults.toolCallsCount;
 
-            // Fase 3: FINALIZE - Criar resultado final
-            const finalResult = this.buildFinalResult(
-                plan,
-                executionResults.steps,
-                startTime,
-                toolCallsCount,
-            );
+                    // Fase 3: FINALIZE - Criar resultado final
+                    const finalResult = this.buildFinalResult(
+                        plan,
+                        executionResults.steps,
+                        startTime,
+                        toolCallsCount,
+                    );
 
-            const execTime = Date.now() - startTime;
-            return {
-                ...finalResult,
-                executionTime: execTime,
-                steps,
-            };
-        } catch (error) {
-            return this.buildErrorResult(
-                error,
-                steps,
-                startTime,
-                toolCallsCount,
-            );
-        }
+                    const execTime = Date.now() - startTime;
+                    return {
+                        ...finalResult,
+                        executionTime: execTime,
+                        steps,
+                    };
+                } catch (error) {
+                    return this.buildErrorResult(
+                        error,
+                        steps,
+                        startTime,
+                        toolCallsCount,
+                    );
+                }
+            },
+            {
+                correlationId: context.agentContext.correlationId,
+                tenantId: context.agentContext.tenantId,
+                sessionId: context.agentContext.sessionId,
+                input: context.input,
+            },
+        );
     }
 
     /**

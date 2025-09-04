@@ -70,7 +70,7 @@ export class MemoryMonitor {
             }, this.config.leakDetection.sampleIntervalMs);
         }
 
-        this.observability.logger.info('Memory monitor started', {
+        this.observability.log('info', 'Memory monitor started', {
             intervalMs: this.config.intervalMs,
             thresholds: this.config.thresholds,
             leakDetection: this.config.leakDetection,
@@ -97,7 +97,7 @@ export class MemoryMonitor {
             this.leakDetectionId = undefined;
         }
 
-        this.observability.logger.info('Memory monitor stopped');
+        this.observability.log('info', 'Memory monitor stopped');
     }
 
     /**
@@ -136,7 +136,7 @@ export class MemoryMonitor {
         this.checkThresholds(metrics);
 
         // Log de métricas
-        this.observability.logger.debug('Memory metrics', {
+        this.observability.log('debug', 'Memory metrics', {
             heapUsedMb: metrics.heapUsedMb,
             heapTotalMb: metrics.heapTotalMb,
             rssMb: metrics.rssMb,
@@ -276,7 +276,7 @@ export class MemoryMonitor {
         }
 
         // Log do alerta
-        this.observability.logger.warn('Memory alert', {
+        this.observability.log('warn', 'Memory alert', {
             type: fullAlert.type,
             severity: fullAlert.severity,
             message: fullAlert.message,
@@ -381,9 +381,10 @@ export class MemoryMonitor {
     forceGC(): void {
         if (global.gc) {
             global.gc();
-            this.observability.logger.info('Forced garbage collection');
+            this.observability.log('info', 'Forced garbage collection');
         } else {
-            this.observability.logger.warn(
+            this.observability.log(
+                'warn',
                 'Garbage collection not available (use --expose-gc flag)',
             );
         }

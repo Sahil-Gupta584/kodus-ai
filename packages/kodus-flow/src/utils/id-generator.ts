@@ -67,6 +67,21 @@ export class IdGenerator {
         return `tenant_${random}`;
     }
 
+    static generateTraceId(): string {
+        const timestamp = Date.now().toString(36);
+        const random = Math.random().toString(36).substring(2, 8);
+        return `trace_${timestamp}_${random}`;
+    }
+
+    /**
+     * Generate a span ID (unique per span)
+     */
+    static generateSpanId(): string {
+        const timestamp = Date.now().toString(36);
+        const count = Math.random().toString(36).padStart(4, '0');
+        return `span_${timestamp}_${count}`;
+    }
+
     /**
      * Generate random string using crypto.randomBytes
      * Converted to base62 for URL-safe IDs
@@ -150,6 +165,16 @@ export class IdGenerator {
     static spanId(): string {
         const random = this.generateRandomString(8);
         return `span_${random}`;
+    }
+
+    /**
+     * Generate unique message ID for chat messages
+     * Format: msg_[timestamp]_[random]
+     */
+    static messageId(): string {
+        const timestamp = Date.now().toString(36);
+        const random = this.generateRandomString(9);
+        return `msg_${timestamp}_${random}`;
     }
 }
 

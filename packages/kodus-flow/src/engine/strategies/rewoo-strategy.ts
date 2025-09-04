@@ -1,6 +1,6 @@
 import { LLMAdapter } from '../../core/types/allTypes.js';
 import { RewooEvidenceItem } from './prompts/index.js';
-import { createLogger } from '../../observability/index.js';
+import { createLogger, getObservability } from '../../observability/index.js';
 import { BaseExecutionStrategy } from './strategy-interface.js';
 import { SharedStrategyMethods } from './shared-methods.js';
 import type {
@@ -81,121 +81,160 @@ export class ReWooStrategy extends BaseExecutionStrategy {
         const steps: ExecutionStep[] = [];
         const config = { ...this.defaultRewooConfig };
 
-        // 1) SKETCH --------------------------------------------------
-        const sketchStepStart = Date.now();
-        const sketches = await this.sketch(context, config).catch((e) => {
-            throw new Error(
-                `Sketch failed: ${e instanceof Error ? e.message : String(e)}`,
-            );
-        });
-        steps.push({
-            id: `sketch-${sketchStepStart}`,
-            type: 'sketch' as any,
-            type2: 'sketch',
-            timestamp: sketchStepStart,
-            duration: Date.now() - sketchStepStart,
-            status: 'completed',
-            thought2: `Generated ${sketches.length} sub-questions`,
-            result2: sketches,
-        });
+        // ✅ CORREÇÃO: Usar traceAgent para toda execução da estratégia
+        return await getObservability().traceAgent(
+            'rewoo-strategy',
+            async () => {
+                try {
+                    // 1) SKETCH --------------------------------------------------
+                    const sketchStepStart = Date.now();
+                    const sketches = await this.sketch(context, config).catch(
+                        (e) => {
+                            throw new Error(
+                                `Sketch failed: ${e instanceof Error ? e.message : String(e)}`,
+                            );
+                        },
+                    );
+                    steps.push({
+                        id: `sketch-${sketchStepStart}`,
+                        type: 'sketch' as any,
+                        type2: 'sketch',
+                        timestamp: sketchStepStart,
+                        duration: Date.now() - sketchStepStart,
+                        status: 'completed',
+                        thought2: `Generated ${sketches.length} sub-questions`,
+                        result2: sketches,
+                    });
 
-        // 2) WORK (parallel tools) -----------------------------------
-        const workStart = Date.now();
-        const evidences = await this.work(sketches, context, config);
-        steps.push({
-            id: `work-${workStart}`,
-            type: 'work' as any,
-            type2: 'work',
-            timestamp: workStart,
-            duration: Date.now() - workStart,
-            status: 'completed',
-            result2: evidences,
-        });
+                    // 2) WORK (parallel tools) -----------------------------------
+                    const workStart = Date.now();
+                    const evidences = await this.work(
+                        sketches,
+                        context,
+                        config,
+                    );
+                    steps.push({
+                        id: `work-${workStart}`,
+                        type: 'work' as any,
+                        type2: 'work',
+                        timestamp: workStart,
+                        duration: Date.now() - workStart,
+                        status: 'completed',
+                        result2: evidences,
+                    });
 
-        // 3) ORGANIZE -------------------------------------------------
-        const organizeStart = Date.now();
-        const organized = await this.organize(context, evidences, config).catch(
-            (e) => {
-                throw new Error(
-                    `Organize failed: ${e instanceof Error ? e.message : String(e)}`,
-                );
+                    // 3) ORGANIZE -------------------------------------------------
+                    const organizeStart = Date.now();
+                    const organized = await this.organize(
+                        context,
+                        evidences,
+                        config,
+                    ).catch((e) => {
+                        throw new Error(
+                            `Organize failed: ${e instanceof Error ? e.message : String(e)}`,
+                        );
+                    });
+                    steps.push({
+                        id: `organize-${organizeStart}`,
+                        type: 'organize' as any,
+                        type2: 'organize',
+                        timestamp: organizeStart,
+                        duration: Date.now() - organizeStart,
+                        status: 'completed',
+                        result2: organized,
+                    });
+
+                    // 4) VERIFY (optional loop) ----------------------------------
+                    const finalAnswer = organized.answer;
+                    // let verification: RewooVerificationReport | null = null;
+
+                    // for (let pass = 0; pass < config.maxVerifyPasses; pass++) {
+                    //     const verifyStart = Date.now();
+                    //     verification = await this.verify(
+                    //         ctx.input,
+                    //         organized,
+                    //         evidences,
+                    //         config,
+                    //     ).catch(() => null);
+                    //     steps.push({
+                    //         id: `verify-${verifyStart}`,
+                    //         type: 'verify',
+                    //         timestamp: verifyStart,
+                    //         duration: Date.now() - verifyStart,
+                    //         status: verification ? 'completed' : 'failed',
+                    //         result: verification ?? {
+                    //             verified: false,
+                    //             score: 0,
+                    //             issues: ['verification failed'],
+                    //         },
+                    //     });
+
+                    //     if (!verification) break;
+                    //     if (verification.verified && verification.score >= 0.75) {
+                    //         finalAnswer = verification.normalizedAnswer || organized.answer;
+                    //         break;
+                    //     }
+
+                    //     // If not verified, attempt a single corrective organize using issues
+                    //     if (verification.issues && verification.issues.length) {
+                    //         const corrective = await this.organize(
+                    //             ctx.input +
+                    //                 '\nConstraints:' +
+                    //                 verification.issues.join('; '),
+                    //             evidences,
+                    //             config,
+                    //         ).catch(() => organized);
+                    //         organized.answer = corrective.answer;
+                    //         organized.citations = corrective.citations;
+                    //         organized.confidence = Math.max(
+                    //             organized.confidence,
+                    //             corrective.confidence,
+                    //         );
+                    //         finalAnswer = organized.answer;
+                    //     }
+                    // }
+
+                    const execTime = Date.now() - start;
+                    return {
+                        output: finalAnswer,
+                        success: true,
+                        strategy: 'rewoo',
+                        steps,
+                        executionTime: execTime,
+                        complexity: steps.length,
+                        metadata: {
+                            citations: organized.citations,
+                            // TODO: Revisar confidence.
+                            // confidence: (verification?.score ?? organized.confidence) || 0,
+                            evidenceCount: evidences.length,
+                        },
+                    };
+                } catch (error) {
+                    this.logger.error(
+                        '❌ ReWoo strategy execution failed',
+                        error instanceof Error ? error : undefined,
+                    );
+                    return {
+                        output: null,
+                        success: false,
+                        strategy: 'rewoo',
+                        steps,
+                        executionTime: Date.now() - start,
+                        complexity: steps.length,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    };
+                }
+            },
+            {
+                correlationId: context.agentContext.correlationId,
+                tenantId: context.agentContext.tenantId,
+                sessionId: context.agentContext.sessionId,
+                input: context.input,
             },
         );
-        steps.push({
-            id: `organize-${organizeStart}`,
-            type: 'organize' as any,
-            type2: 'organize',
-            timestamp: organizeStart,
-            duration: Date.now() - organizeStart,
-            status: 'completed',
-            result2: organized,
-        });
-
-        // 4) VERIFY (optional loop) ----------------------------------
-        const finalAnswer = organized.answer;
-        // let verification: RewooVerificationReport | null = null;
-
-        // for (let pass = 0; pass < config.maxVerifyPasses; pass++) {
-        //     const verifyStart = Date.now();
-        //     verification = await this.verify(
-        //         ctx.input,
-        //         organized,
-        //         evidences,
-        //         config,
-        //     ).catch(() => null);
-        //     steps.push({
-        //         id: `verify-${verifyStart}`,
-        //         type: 'verify',
-        //         timestamp: verifyStart,
-        //         duration: Date.now() - verifyStart,
-        //         status: verification ? 'completed' : 'failed',
-        //         result: verification ?? {
-        //             verified: false,
-        //             score: 0,
-        //             issues: ['verification failed'],
-        //         },
-        //     });
-
-        //     if (!verification) break;
-        //     if (verification.verified && verification.score >= 0.75) {
-        //         finalAnswer = verification.normalizedAnswer || organized.answer;
-        //         break;
-        //     }
-
-        //     // If not verified, attempt a single corrective organize using issues
-        //     if (verification.issues && verification.issues.length) {
-        //         const corrective = await this.organize(
-        //             ctx.input +
-        //                 '\nConstraints:' +
-        //                 verification.issues.join('; '),
-        //             evidences,
-        //             config,
-        //         ).catch(() => organized);
-        //         organized.answer = corrective.answer;
-        //         organized.citations = corrective.citations;
-        //         organized.confidence = Math.max(
-        //             organized.confidence,
-        //             corrective.confidence,
-        //         );
-        //         finalAnswer = organized.answer;
-        //     }
-        // }
-
-        const execTime = Date.now() - start;
-        return {
-            output: finalAnswer,
-            success: true,
-            strategy: 'rewoo',
-            steps,
-            executionTime: execTime,
-            complexity: steps.length,
-            metadata: {
-                citations: organized.citations,
-                // TODO: Revisar confidence.
-                // confidence: (verification?.score ?? organized.confidence) || 0,
-                evidenceCount: evidences.length,
-            },
-        };
     }
 
     private async sketch(

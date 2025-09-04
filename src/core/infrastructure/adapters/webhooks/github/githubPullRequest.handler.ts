@@ -11,8 +11,6 @@ import { ChatWithKodyFromGitUseCase } from '@/core/application/use-cases/platfor
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { getMappedPlatform } from '@/shared/utils/webhooks';
 import { GenerateIssuesFromPrClosedUseCase } from '@/core/application/use-cases/issues/generate-issues-from-pr-closed.use-case';
-import { PullRequest } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
-import { IMappedPullRequest } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-common.type';
 import { KodyRulesSyncService } from '../../services/kodyRules/kodyRulesSync.service';
 
 /**

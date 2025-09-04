@@ -12,6 +12,8 @@ import {
     WorkflowContext,
 } from '../../core/types/allTypes.js';
 import type { ObservabilitySystem } from '../../observability/index.js';
+import { WORKFLOW } from '../../observability/types.js';
+import { SPAN_NAMES } from '../../observability/semantic-conventions.js';
 
 export class EventChainTracker {
     private events: string[] = [];
@@ -194,7 +196,8 @@ export class OptimizedEventProcessor {
      * Processar evento com todas as otimizações
      */
     async processEvent(event: AnyEvent): Promise<void> {
-        this.observability.logger.debug(
+        this.observability.log(
+            'debug',
             '🔍 EVENT PROCESSOR - Processing event',
             {
                 eventId: event.id,
@@ -227,7 +230,7 @@ export class OptimizedEventProcessor {
             // Observabilidade com trace
             if (this.enableObservability) {
                 await this.observability.trace(
-                    `event.process.${event.type}`,
+                    SPAN_NAMES.WORKFLOW_STEP,
                     async () => {
                         await this.processEventInternal(
                             event,
@@ -236,8 +239,21 @@ export class OptimizedEventProcessor {
                     },
                     {
                         correlationId: processingContext.correlationId,
-                        executionId: this.context.executionId,
                         tenantId: this.context.tenantId,
+                        attributes: {
+                            [WORKFLOW.NAME]: 'event-processing',
+                            [WORKFLOW.STEP]: event.type,
+                            [WORKFLOW.EXECUTION_ID]: this.context.executionId,
+                            eventType: event.type,
+                            eventSize: (() => {
+                                try {
+                                    const str = JSON.stringify(event);
+                                    return str ? str.length : 0;
+                                } catch {
+                                    return 0;
+                                }
+                            })(),
+                        },
                     },
                 );
             } else {
@@ -245,15 +261,12 @@ export class OptimizedEventProcessor {
             }
         } catch (error) {
             if (this.enableObservability) {
-                this.observability.logger.error(
-                    'Event processing failed',
-                    error as Error,
-                    {
-                        eventType: event.type,
-                        depth: processingContext.depth,
-                        chainLength: processingContext.eventChain.length,
-                    },
-                );
+                this.observability.log('error', 'Event processing failed', {
+                    error: (error as Error).message,
+                    eventType: event.type,
+                    depth: processingContext.depth,
+                    chainLength: processingContext.eventChain.length,
+                });
             }
             throw error;
         }
@@ -269,7 +282,8 @@ export class OptimizedEventProcessor {
         this.processingDepth++;
         context.eventChain.push(event.type);
 
-        this.observability.logger.debug(
+        this.observability.log(
+            'debug',
             '⚡ EVENT PROCESSOR - Internal processing',
             {
                 eventId: event.id,
@@ -291,10 +305,11 @@ export class OptimizedEventProcessor {
                 context.eventChain.includes(event.type) &&
                 context.eventChain.length > 1
             ) {
-                this.observability.logger.error(
+                this.observability.log(
+                    'error',
                     '❌ EVENT PROCESSOR - Event loop detected',
-                    new Error(`Event loop detected: ${event.type}`),
                     {
+                        error: `Event loop detected: ${event.type}`,
                         eventId: event.id,
                         eventType: event.type,
                         eventChain: Array.from(
@@ -313,7 +328,8 @@ export class OptimizedEventProcessor {
             // Obter handlers otimizados (middleware de handler já aplicado no registro)
             const handlers = this.getHandlersOptimized(event.type);
 
-            this.observability.logger.debug(
+            this.observability.log(
+                'debug',
                 '🔍 EVENT PROCESSOR - Handlers found',
                 {
                     eventId: event.id,
@@ -371,7 +387,8 @@ export class OptimizedEventProcessor {
             // Log de resultados para debug
             const failed = results.filter((r) => r.status === 'rejected');
             if (failed.length > 0) {
-                this.observability.logger.warn(
+                this.observability.log(
+                    'warn',
                     `❌ EVENT PROCESSOR - ${failed.length}/${results.length} handlers failed`,
                     {
                         eventType: event.type,

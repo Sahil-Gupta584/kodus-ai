@@ -6,11 +6,8 @@ import {
     ProgressNotification,
 } from '@modelcontextprotocol/sdk/types.js';
 import { IdGenerator } from '../../utils/index.js';
-import {
-    createLogger,
-    ObservabilitySystem,
-    TelemetrySystem,
-} from '../../observability/index.js';
+import { createLogger, TelemetrySystem } from '../../observability/index.js';
+import type { ObservabilitySystem } from '../../observability/index.js';
 import { zodToJSONSchema } from '../utils/zod-to-json-schema.js';
 // ContextStateService removed - using contextNew architecture
 import { EventStore } from '../../runtime/index.js';

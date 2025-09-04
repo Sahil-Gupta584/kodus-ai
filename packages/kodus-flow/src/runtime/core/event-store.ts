@@ -47,7 +47,7 @@ export class EventStore {
             } as any);
 
         if (this.config.enableObservability) {
-            this.observability.logger.info('EventStore initialized', {
+            this.observability.log('info', 'EventStore initialized', {
                 executionId: this.config.executionId,
                 persistorType: this.config.persistorType,
                 enableReplay: this.config.enableReplay,
@@ -100,30 +100,28 @@ export class EventStore {
                 }
 
                 if (this.config.enableObservability) {
-                    this.observability.logger.error(
-                        'Persistor append failed',
-                        persistorError as Error,
-                        {
-                            eventCount: events.length,
-                            executionId: this.config.executionId,
-                        },
-                    );
+                    this.observability.log('error', 'Persistor append failed', {
+                        error: (persistorError as Error).message,
+                        eventCount: events.length,
+                        executionId: this.config.executionId,
+                    });
                 }
                 throw persistorError;
             }
 
             if (this.config.enableObservability) {
-                this.observability.logger.debug('Events appended to store', {
+                this.observability.log('debug', 'Events appended to store', {
                     eventCount: events.length,
                     sequenceNumber: this.sequenceNumber,
                 });
             }
         } catch (error) {
             if (this.config.enableObservability) {
-                this.observability.logger.error(
+                this.observability.log(
+                    'error',
                     'Failed to append events to store',
-                    error as Error,
                     {
+                        error: (error as Error).message,
                         eventCount: events.length,
                         executionId: this.config.executionId,
                     },
@@ -154,7 +152,7 @@ export class EventStore {
         }
 
         if (this.config.enableObservability && updatedCount > 0) {
-            this.observability.logger.debug('Events marked as processed', {
+            this.observability.log('debug', 'Events marked as processed', {
                 processedCount: updatedCount,
                 totalRequested: eventIds.length,
             });
@@ -174,7 +172,8 @@ export class EventStore {
     ): AsyncGenerator<AnyEvent[]> {
         if (!this.config.enableReplay) {
             if (this.config.enableObservability) {
-                this.observability.logger.warn(
+                this.observability.log(
+                    'warn',
                     'Replay disabled in configuration',
                 );
             }
@@ -188,7 +187,7 @@ export class EventStore {
         } = options;
 
         if (this.config.enableObservability) {
-            this.observability.logger.info('Starting event replay', {
+            this.observability.log('info', 'Starting event replay', {
                 fromTimestamp,
                 toTimestamp,
                 onlyUnprocessed,
@@ -255,7 +254,7 @@ export class EventStore {
             }
 
             if (this.config.enableObservability) {
-                this.observability.logger.info('Event replay completed', {
+                this.observability.log('info', 'Event replay completed', {
                     totalReplayed,
                     fromTimestamp,
                     toTimestamp,
@@ -264,15 +263,12 @@ export class EventStore {
             }
         } catch (error) {
             if (this.config.enableObservability) {
-                this.observability.logger.error(
-                    'Event replay failed',
-                    error as Error,
-                    {
-                        fromTimestamp,
-                        toTimestamp,
-                        executionId: this.config.executionId,
-                    },
-                );
+                this.observability.log('error', 'Event replay failed', {
+                    error: (error as Error).message,
+                    fromTimestamp,
+                    toTimestamp,
+                    executionId: this.config.executionId,
+                });
             }
             throw error;
         }
@@ -332,7 +328,7 @@ export class EventStore {
         }
 
         if (this.config.enableObservability) {
-            this.observability.logger.info('EventStore cleanup completed', {
+            this.observability.log('info', 'EventStore cleanup completed', {
                 cleanedCount,
                 olderThanMs,
                 remainingEvents: this.metadataCache.size,

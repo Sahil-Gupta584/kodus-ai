@@ -714,11 +714,11 @@ export class ChatWithKodyFromGitUseCase {
                 originalComment: {
                     suggestionCommentId: originalKodyComment?.id,
                     suggestionFilePath: comment?.path,
-                    text: originalKodyComment?.body,
+                    suggestionText: originalKodyComment?.body,
                     diffHunk: originalKodyComment?.diff_hunk,
                 },
                 othersReplies: othersReplies.map((reply) => ({
-                    text: reply.body,
+                    historyConversationText: reply.body,
                 })),
             },
         };

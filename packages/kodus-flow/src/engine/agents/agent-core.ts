@@ -4,10 +4,6 @@ import { EngineError } from '../../core/errors.js';
 import { createAgentError } from '../../core/error-unified.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import { ContextService } from '../../core/contextNew/index.js';
-import {
-    createDefaultMultiKernelHandler,
-    MultiKernelHandler,
-} from '../core/multi-kernel-handler.js';
 
 import {
     AgentCapability,
@@ -66,7 +62,7 @@ export abstract class AgentCore<
     protected deliveryIntervalId?: NodeJS.Timeout;
     protected isProcessingQueue = false;
 
-    protected kernelHandler?: MultiKernelHandler;
+    // Removido - dependências de kernel simplificadas
 
     protected toolCircuitBreaker?: CircuitBreaker;
 
@@ -241,20 +237,10 @@ export abstract class AgentCore<
         this.logger = createLogger(`agent-core:${agentName}`);
         this.initializeCircuitBreaker();
 
-        // KernelHandler sempre habilitado - será injetado via setKernelHandler()
-        // Apenas criar local KernelHandler se tenant for 'isolated'
-        if (this.config.tenantId === 'isolated') {
-            this.kernelHandler = createDefaultMultiKernelHandler(
-                this.config.tenantId,
-            );
-        }
+        // Removido - dependências de kernel simplificadas
         this.thinkingTimeout = this.config.thinkingTimeout || 1200000;
 
         this.initializeStrategyComponents();
-
-        if (this.config.enableMessaging) {
-            this.startDeliveryProcessor();
-        }
 
         if (this.toolEngine) {
             // ToolEngine configured directly in AgentCore (ContextNew architecture)
@@ -627,43 +613,16 @@ export abstract class AgentCore<
         );
     }
 
-    protected async initialize(): Promise<void> {
-        this.logger.info('Initializing AgentCore');
-
-        // Initialize local KernelHandler if it exists (isolated mode)
-        if (this.kernelHandler && this.config.tenantId === 'isolated') {
-            try {
-                await this.kernelHandler.initialize();
-                this.logger.info(
-                    'Isolated KernelHandler initialized successfully',
-                );
-            } catch (error) {
-                this.logger.error(
-                    'Failed to initialize isolated KernelHandler',
-                    error as Error,
-                );
-                // Don't throw here, just log the error
-            }
-        }
-
-        this.logger.info('AgentCore initialized');
-    }
-
-    /**
-     * Registrar um agente (BÁSICO + AVANÇADO)
-     */
     protected registerAgent(
         agent: AgentDefinition<unknown, unknown, unknown>,
         capabilities?: AgentCapability,
     ): void {
         this.agents.set(agent.name, agent);
 
-        // Registrar capabilities se fornecidas
         if (capabilities && this.config.enableAdvancedCoordination) {
             this.agentCapabilities.set(agent.name, capabilities);
         }
 
-        // Inicializar inbox do agente se messaging estiver habilitado
         if (this.config.enableMessaging && !this.agentInboxes.has(agent.name)) {
             this.agentInboxes.set(agent.name, []);
         }
@@ -845,7 +804,6 @@ export abstract class AgentCore<
                     entityTypes: Object.keys(entities),
                 },
             );
-            // Don't throw - session updates shouldn't break execution flow
         }
     }
 
@@ -859,165 +817,14 @@ export abstract class AgentCore<
 
     setToolEngine(toolEngine: ToolEngine): void {
         this.toolEngine = toolEngine;
-
-        // ToolEngine configured directly (ContextNew architecture)
-
-        // Inject KernelHandler if available
-        if (this.kernelHandler) {
-            toolEngine.setKernelHandler(this.kernelHandler);
-        }
-
-        // 🔥 CONFIGURE SHARED STRATEGY METHODS (Remove duplication)
         SharedStrategyMethods.setToolEngine(toolEngine);
+
         this.logger.info(
             '🔧 SharedStrategyMethods configured with ToolEngine',
             {
                 toolCount: toolEngine.listTools().length,
             },
         );
-
-        this.logger.info('ToolEngine set for AgentCore', {
-            toolCount: toolEngine.listTools().length,
-            hasKernelHandler: !!this.kernelHandler,
-        });
-    }
-
-    /**
-     * Set KernelHandler (for dependency injection)
-     */
-    setKernelHandler(kernelHandler: MultiKernelHandler): void {
-        this.kernelHandler = kernelHandler;
-
-        // Also set KernelHandler for ToolEngine if available
-        if (this.toolEngine && 'setKernelHandler' in this.toolEngine) {
-            this.logger.info(
-                '🔧 [AGENT] Setting KernelHandler for ToolEngine',
-                {
-                    toolEngineExists: !!this.toolEngine,
-                    hasSetKernelHandler: 'setKernelHandler' in this.toolEngine,
-                },
-            );
-            (this.toolEngine as ToolEngine).setKernelHandler(kernelHandler);
-        } else {
-            this.logger.warn(
-                '🔧 [AGENT] ToolEngine not available for KernelHandler setup',
-                {
-                    toolEngineExists: !!this.toolEngine,
-                    hasSetKernelHandler: this.toolEngine
-                        ? 'setKernelHandler' in this.toolEngine
-                        : false,
-                },
-            );
-        }
-
-        // ✅ ADD: Register event handlers for agent events
-        this.registerAgentEventHandlers();
-
-        this.logger.info('KernelHandler set for AgentCore');
-    }
-
-    /**
-     * Register event handlers for agent events
-     */
-    private registerAgentEventHandlers(): void {
-        if (!this.kernelHandler) {
-            this.logger.warn('No KernelHandler available for event handlers');
-            return;
-        }
-
-        this.logger.info('🔧 [AGENT] Registering agent event handlers', {
-            agentName: this.config.agentName,
-            trace: {
-                source: 'agent-core',
-                step: 'register-event-handlers',
-                timestamp: Date.now(),
-            },
-        });
-
-        // Register handler for agent.tool.error events
-        this.kernelHandler.registerHandler(
-            'agent.tool.error',
-            async (event: AnyEvent) => {
-                this.logger.info(
-                    '🔧 [AGENT] Processing agent.tool.error event',
-                    {
-                        eventId: event.id,
-                        eventType: event.type,
-                        correlationId: event.metadata?.correlationId,
-                        hasData: !!event.data,
-                        dataKeys: event.data
-                            ? Object.keys(event.data as Record<string, unknown>)
-                            : [],
-                        trace: {
-                            source: 'agent-core',
-                            step: 'process-agent-tool-error',
-                            timestamp: Date.now(),
-                        },
-                    },
-                );
-
-                const { agentName, toolName, correlationId, error } =
-                    event.data as {
-                        agentName: string;
-                        toolName: string;
-                        correlationId: string;
-                        error: string;
-                    };
-
-                // ✅ ADD: Log detalhado para debug
-                this.logger.error(
-                    '🤖 [AGENT] Tool execution failed',
-                    (error as unknown) instanceof Error
-                        ? (error as unknown as Error)
-                        : new Error(String(error)),
-                    {
-                        agent: agentName,
-                        toolName,
-                        correlationId,
-                        trace: {
-                            source: 'agent-core',
-                            step: 'tool-error-handler',
-                            timestamp: Date.now(),
-                        },
-                    },
-                );
-
-                if (this.kernelHandler) {
-                    await this.kernelHandler.emitAsync('agent.error', {
-                        agent: agentName,
-                        error:
-                            (error as unknown) instanceof Error
-                                ? (error as unknown as Error).message
-                                : String(error),
-                        correlationId,
-                    });
-                }
-            },
-        );
-
-        this.logger.info('✅ [AGENT] Agent event handlers registered', {
-            agentName: this.config.agentName,
-            handlersRegistered: ['agent.tool.error'],
-            trace: {
-                source: 'agent-core',
-                step: 'event-handlers-registered',
-                timestamp: Date.now(),
-            },
-        });
-    }
-
-    /**
-     * Get KernelHandler (for dependency access)
-     */
-    getKernelHandler(): MultiKernelHandler | null {
-        return this.kernelHandler || null;
-    }
-
-    /**
-     * Get KernelHandler status
-     */
-    hasKernelHandler(): boolean {
-        return !!this.kernelHandler;
     }
 
     getAgent(
@@ -1042,67 +849,6 @@ export abstract class AgentCore<
 
     getEventHistory(): AnyEvent[] {
         return [...this.eventHistory];
-    }
-
-    private startDeliveryProcessor(): void {
-        if (!this.config.enableMessaging) return;
-
-        this.deliveryIntervalId = setInterval(async () => {
-            await this.processDeliveryQueue();
-        }, this.config.deliveryRetryInterval);
-    }
-
-    private async processDeliveryQueue(): Promise<void> {
-        if (this.isProcessingQueue || this.deliveryQueue.length === 0) {
-            return;
-        }
-
-        this.isProcessingQueue = true;
-
-        try {
-            const message = this.deliveryQueue.shift();
-            if (message) {
-                await this.deliverMessage(message);
-            }
-        } finally {
-            this.isProcessingQueue = false;
-        }
-    }
-
-    private async deliverMessage(message: TrackedMessage): Promise<void> {
-        try {
-            if (!this.agentInboxes.has(message.toAgent)) {
-                message.status = 'failed';
-                message.error = `Target agent not found: ${message.toAgent}`;
-                return;
-            }
-
-            const inbox = this.agentInboxes.get(message.toAgent)!;
-            inbox.push(message);
-
-            message.status = 'delivered';
-            message.deliveredAt = Date.now();
-
-            this.logger.debug('Message delivered', {
-                messageId: message.id,
-                toAgent: message.toAgent,
-            });
-        } catch (error) {
-            message.status = 'failed';
-            message.error =
-                error instanceof Error ? error.message : 'Unknown error';
-            message.deliveryAttempts++;
-
-            this.logger.error('Message delivery failed', error as Error, {
-                messageId: message.id,
-                toAgent: message.toAgent,
-                attempts: message.deliveryAttempts,
-            });
-
-            if (message.deliveryAttempts < message.maxAttempts) {
-                this.deliveryQueue.push(message);
-            }
-        }
     }
 
     async cleanup(): Promise<void> {
@@ -1146,13 +892,6 @@ export abstract class AgentCore<
             tenantId: this.config.tenantId,
             timestamp: Date.now(),
         };
-
-        if (this.kernelHandler) {
-            Object.assign(baseContext, {
-                kernelEnabled: true,
-                kernelContext: 'available',
-            });
-        }
 
         if (this.config.enableMultiAgent) {
             Object.assign(baseContext, {
@@ -1787,10 +1526,8 @@ export abstract class AgentCore<
 
     private initializeStrategyComponents(): void {
         if (this.config.llmAdapter) {
-            // Configure LLM adapter
             this.llmAdapter = this.config.llmAdapter;
 
-            // Create strategy based on planner type
             const strategyType =
                 this.config.plannerOptions.type.toLowerCase() as
                     | 'react'
