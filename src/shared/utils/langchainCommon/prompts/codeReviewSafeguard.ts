@@ -160,6 +160,7 @@ DISCUSSION
             "relevantLinesStart": number,
             "relevantLinesEnd": number,
             "label": string,
+            "severity": string,
             "action": "no_changes, discard or update",
             "reason": string
         }, {...}

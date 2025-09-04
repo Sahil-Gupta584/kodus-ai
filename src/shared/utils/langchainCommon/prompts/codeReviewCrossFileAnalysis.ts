@@ -32,22 +32,22 @@ ${JSON.stringify(
 
 ## Analysis Focus
 
-### DUPLICATE_IMPLEMENTATION → refactoring
+### refactoring
 - Same logic implemented across multiple files in the diff
 - Similar functions/methods that could be consolidated
 - Repeated patterns indicating need for shared utilities
 
-### ERROR_HANDLING_MISMATCH → error_handling
+### error_handling
 - Different error handling patterns for similar scenarios across files
 - Inconsistent error propagation between components
 - Mixed approaches to validation/exception handling
 
-### CONFIGURATION_DRIFT → maintainability
+### maintainability
 - Hardcoded values duplicated across files that should use shared constants
 - Similar configurations with different values
 - Magic numbers/strings repeated in multiple files
 
-### INTERFACE_CONSISTENCY → potential_issues
+### potential_issues
 - Function signature changes not reflected in usage within the diff
 - Behavioral changes without updating calling code
 - Inconsistent API usage patterns across files
@@ -55,7 +55,7 @@ ${JSON.stringify(
 - Missing validations in one implementation while present in another
 - Inconsistent error handling for similar operations
 
-### REDUNDANT_OPERATIONS → performance_and_optimization
+### performance_and_optimization
 - Unnecessary database calls when data already validated elsewhere
 - Redundant null checks when validation exists in another layer
 - Duplicate validations across different components

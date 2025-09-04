@@ -19,6 +19,8 @@ reviewOptions:
     potential_issues: true
     documentation_and_comments: true
     performance_and_optimization: true
+    bug: true
+    performance: true
 suggestionControl:
     groupingMode: 'full'
     limitationType: 'pr'
