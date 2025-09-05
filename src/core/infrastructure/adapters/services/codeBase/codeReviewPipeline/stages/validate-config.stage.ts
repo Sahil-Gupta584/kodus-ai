@@ -76,6 +76,11 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                         status: AutomationStatus.SKIPPED,
                         message: cadenceResult.reason,
                     };
+
+                    if (cadenceResult.shouldSaveSkipped) {
+                        draft.automaticReviewStatus =
+                            cadenceResult.automaticReviewStatus;
+                    }
                 });
             }
 
