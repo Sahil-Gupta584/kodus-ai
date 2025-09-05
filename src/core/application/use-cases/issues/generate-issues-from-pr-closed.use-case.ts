@@ -56,7 +56,7 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
                 }
             }
 
-            const pr = await this.pullRequestService.findByNumberAndRepository(
+            const pr = await this.pullRequestService.findByNumberAndRepositoryName(
                 prData.context.pullRequest.number,
                 prData.context.repository.name,
                 {

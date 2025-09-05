@@ -10,8 +10,10 @@ import {
     IPullRequestManagerService,
 } from '@/core/domain/codeBase/contracts/PullRequestManagerService.contract';
 import { PinoLoggerService } from '../../../logger/pino.service';
-import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
-import { PipelineStatus } from '../../../pipeline/interfaces/pipeline-context.interface';
+import {
+    AutomationMessage,
+    AutomationStatus,
+} from '@/core/domain/automation/enums/automation-status';
 
 @Injectable()
 export class ValidateNewCommitsStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -94,7 +96,10 @@ export class ValidateNewCommitsStage extends BasePipelineStage<CodeReviewPipelin
             });
 
             return this.updateContext(context, (draft) => {
-                draft.status = PipelineStatus.SKIP;
+                draft.statusInfo = {
+                    status: AutomationStatus.SKIPPED,
+                    message: AutomationMessage.NO_NEW_COMMITS_SINCE_LAST,
+                };
                 if (lastExecutionResult) {
                     draft.lastExecution = lastExecutionResult;
                 }
@@ -180,7 +185,10 @@ export class ValidateNewCommitsStage extends BasePipelineStage<CodeReviewPipelin
             });
 
             return this.updateContext(context, (draft) => {
-                draft.status = PipelineStatus.SKIP;
+                draft.statusInfo = {
+                    status: AutomationStatus.SKIPPED,
+                    message: AutomationMessage.ONLY_MERGE_COMMITS_SINCE_LAST,
+                };
                 if (lastExecutionResult) {
                     draft.lastExecution = lastExecutionResult;
                 }

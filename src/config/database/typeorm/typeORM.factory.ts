@@ -28,7 +28,7 @@ export class TypeORMFactory implements TypeOrmOptionsFactory {
             },
         };
 
-        const optionsTypeOrm: OptionsOrm = {
+        const optionsTypeOrm: TypeOrmModuleOptions = {
             type: 'postgres',
             host: this.config.host,
             port: this.config.port,

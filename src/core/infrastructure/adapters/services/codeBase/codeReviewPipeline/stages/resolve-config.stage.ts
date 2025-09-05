@@ -10,7 +10,10 @@ import {
     IPullRequestManagerService,
 } from '@/core/domain/codeBase/contracts/PullRequestManagerService.contract';
 import { PinoLoggerService } from '../../../logger/pino.service';
-import { PipelineStatus } from '../../../pipeline/interfaces/pipeline-context.interface';
+import {
+    AutomationMessage,
+    AutomationStatus,
+} from '@/core/domain/automation/enums/automation-status';
 
 @Injectable()
 export class ResolveConfigStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -95,7 +98,10 @@ export class ResolveConfigStage extends BasePipelineStage<CodeReviewPipelineCont
                 });
 
                 return this.updateContext(context, (draft) => {
-                    draft.status = PipelineStatus.SKIP;
+                    draft.statusInfo = {
+                        status: AutomationStatus.SKIPPED,
+                        message: AutomationMessage.NO_FILES_IN_PR,
+                    };
                 });
             }
 
@@ -175,7 +181,10 @@ export class ResolveConfigStage extends BasePipelineStage<CodeReviewPipelineCont
                 });
 
                 return this.updateContext(context, (draft) => {
-                    draft.status = PipelineStatus.SKIP;
+                    draft.statusInfo = {
+                        status: AutomationStatus.SKIPPED,
+                        message: AutomationMessage.FAILED_RESOLVE_CONFIG,
+                    };
                 });
             }
         }

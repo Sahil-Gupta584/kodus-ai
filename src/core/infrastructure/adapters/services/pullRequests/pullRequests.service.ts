@@ -60,14 +60,26 @@ export class PullRequestsService implements IPullRequestsService {
         return this.pullRequestsRepository.find(filter);
     }
 
-    findByNumberAndRepository(
+    findByNumberAndRepositoryName(
         prNumber: number,
         repositoryName: string,
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null> {
-        return this.pullRequestsRepository.findByNumberAndRepository(
+        return this.pullRequestsRepository.findByNumberAndRepositoryName(
             prNumber,
             repositoryName,
+            organizationAndTeamData,
+        );
+    }
+
+    findByNumberAndRepositoryId(
+        prNumber: number,
+        repositoryId: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<PullRequestsEntity | null> {
+        return this.pullRequestsRepository.findByNumberAndRepositoryId(
+            prNumber,
+            repositoryId,
             organizationAndTeamData,
         );
     }
@@ -174,7 +186,7 @@ export class PullRequestsService implements IPullRequestsService {
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<PullRequestsEntity | null> {
         try {
-            const existingPR = await this.findByNumberAndRepository(
+            const existingPR = await this.findByNumberAndRepositoryName(
                 pullRequestNumber,
                 repositoryName,
                 organizationAndTeamData,
@@ -334,7 +346,7 @@ export class PullRequestsService implements IPullRequestsService {
             }
 
             const existingPR =
-                await this.pullRequestsRepository.findByNumberAndRepository(
+                await this.pullRequestsRepository.findByNumberAndRepositoryName(
                     pullRequest?.number,
                     repository.name,
                     organizationAndTeamData,
@@ -749,7 +761,7 @@ export class PullRequestsService implements IPullRequestsService {
                 }
             }
 
-            const newPrEntity = await this.findByNumberAndRepository(
+            const newPrEntity = await this.findByNumberAndRepositoryName(
                 pullRequest?.number,
                 repository?.name,
                 organizationAndTeamData,
@@ -1078,5 +1090,6 @@ export class PullRequestsService implements IPullRequestsService {
             ''
         );
     }
+
     //#endregion
 }

@@ -77,7 +77,7 @@ export class PullRequestsRepository implements IPullRequestsRepository {
         }
     }
 
-    async findByNumberAndRepository(
+    async findByNumberAndRepositoryName(
         pullRequestNumber: number,
         repositoryName: string,
         organizationAndTeamData: OrganizationAndTeamData,
@@ -86,6 +86,26 @@ export class PullRequestsRepository implements IPullRequestsRepository {
             const pullRequest = await this.pullRequestsModel.findOne({
                 'number': pullRequestNumber,
                 'repository.name': repositoryName,
+                'organizationId': organizationAndTeamData.organizationId,
+            });
+
+            return pullRequest
+                ? mapSimpleModelToEntity(pullRequest, PullRequestsEntity)
+                : null;
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    async findByNumberAndRepositoryId(
+        pullRequestNumber: number,
+        repositoryName: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<PullRequestsEntity | null> {
+        try {
+            const pullRequest = await this.pullRequestsModel.findOne({
+                'number': pullRequestNumber,
+                'repository.id': repositoryName,
                 'organizationId': organizationAndTeamData.organizationId,
             });
 

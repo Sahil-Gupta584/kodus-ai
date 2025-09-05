@@ -204,7 +204,7 @@ export class KodyIssuesManagementService
     ): Promise<void> {
         try {
             const pullRequest =
-                await this.pullRequestsService.findByNumberAndRepository(
+                await this.pullRequestsService.findByNumberAndRepositoryName(
                     context.pullRequest.number,
                     context.repository.name,
                     context.organizationAndTeamData,

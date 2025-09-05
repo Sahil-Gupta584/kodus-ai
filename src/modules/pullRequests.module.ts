@@ -14,6 +14,8 @@ import { IntegrationConfigModule } from './integrationConfig.module';
 import { PlatformIntegrationModule } from './platformIntegration.module';
 import { PullRequestController } from '@/core/infrastructure/http/controllers/pullRequest.controller';
 import { CodebaseModule } from './codeBase.module';
+import { AutomationModule } from './automation.module';
+import { CodeReviewExecutionModule } from './codeReviewExecution.module';
 
 @Module({
     imports: [
@@ -25,7 +27,9 @@ import { CodebaseModule } from './codeBase.module';
         ]),
         forwardRef(() => IntegrationConfigModule),
         forwardRef(() => PlatformIntegrationModule),
-        forwardRef(() => CodebaseModule),   
+        forwardRef(() => CodebaseModule),
+        forwardRef(() => AutomationModule),
+        forwardRef(() => CodeReviewExecutionModule),
     ],
     providers: [
         ...UseCases,
