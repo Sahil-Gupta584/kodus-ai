@@ -1,8 +1,4 @@
-export {
-    MultiKernelHandler,
-    createMultiKernelHandler,
-    createDefaultMultiKernelHandler,
-} from './core/multi-kernel-handler.js';
+// Removido - dependências de kernel simplificadas
 
 export { AgentEngine, createAgent } from './agents/agent-engine.js';
 

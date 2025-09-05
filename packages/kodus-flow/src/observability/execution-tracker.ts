@@ -1,35 +1,6 @@
-import pino from 'pino';
-import { getObservability } from './index.js';
+import { ExecutionCycle, ExecutionStep } from './types.js';
+import { createLogger } from './logger.js';
 import { IdGenerator } from '../utils/id-generator.js';
-
-export interface ExecutionStep {
-    id: string;
-    timestamp: number;
-    type: 'start' | 'think' | 'action' | 'tool' | 'finish' | 'error';
-    component: string;
-    data: Record<string, unknown>;
-    duration?: number;
-}
-
-export interface ExecutionCycle {
-    executionId: string;
-    agentName: string;
-    correlationId: string;
-    startTime: number;
-    endTime?: number;
-    totalDuration?: number;
-    steps: ExecutionStep[];
-    input?: unknown;
-    output?: unknown;
-    error?: Error;
-    status: 'running' | 'completed' | 'error';
-    metadata: {
-        tenantId?: string;
-        sessionId?: string;
-        threadId?: string;
-        userId?: string;
-    };
-}
 
 /**
  * Centralized execution cycle tracker for complete agent lifecycle monitoring
@@ -37,11 +8,10 @@ export interface ExecutionCycle {
 export class ExecutionTracker {
     private static instance: ExecutionTracker;
     private cycles: Map<string, ExecutionCycle> = new Map();
-    private logger: pino.Logger;
+    private logger = createLogger('execution-tracker');
+    private maxCycles = 1000; // Prevent memory leaks
 
-    private constructor() {
-        this.logger = pino({ name: 'execution-tracker' });
-    }
+    private constructor() {}
 
     static getInstance(): ExecutionTracker {
         if (!ExecutionTracker.instance) {
@@ -60,6 +30,15 @@ export class ExecutionTracker {
         input?: unknown,
     ): string {
         const executionId = IdGenerator.executionId();
+
+        // Prevent memory leaks by limiting active cycles
+        if (this.cycles.size >= this.maxCycles) {
+            this.logger.warn(
+                'Maximum execution cycles reached, cleaning up old cycles',
+            );
+            this.cleanupOldCycles();
+        }
+
         const cycle: ExecutionCycle = {
             executionId,
             agentName,
@@ -82,17 +61,14 @@ export class ExecutionTracker {
         this.addStep(executionId, 'start', 'execution-tracker', {
             agentName,
             correlationId,
-            input: input ? JSON.stringify(input).slice(0, 500) : undefined, // Limit input size
+            input: input ? this.truncateValue(input) : undefined,
         });
 
-        this.logger.info(
-            {
-                executionId,
-                agentName,
-                correlationId,
-            },
-            'Execution cycle started',
-        );
+        this.logger.debug('Execution cycle started', {
+            executionId,
+            agentName,
+            correlationId,
+        });
 
         return executionId;
     }
@@ -109,23 +85,20 @@ export class ExecutionTracker {
     ): void {
         const cycle = this.cycles.get(executionId);
         if (!cycle) {
-            this.logger.warn(
-                {
-                    executionId,
-                    type,
-                    component,
-                },
-                'Attempted to add step to unknown execution',
-            );
+            this.logger.warn('Attempted to add step to unknown execution', {
+                executionId,
+                type,
+                component,
+            });
             return;
         }
 
         const step: ExecutionStep = {
-            id: IdGenerator.callId(),
+            id: IdGenerator.generateSpanId(),
             timestamp: Date.now(),
             type,
             component,
-            data,
+            data: this.truncateData(data),
             ...(duration && { duration }),
         };
 
@@ -136,15 +109,12 @@ export class ExecutionTracker {
             cycle.steps.shift();
         }
 
-        this.logger.debug(
-            {
-                executionId,
-                type,
-                component,
-                stepCount: cycle.steps.length,
-            },
-            'Execution step added',
-        );
+        this.logger.debug('Execution step added', {
+            executionId,
+            type,
+            component,
+            stepCount: cycle.steps.length,
+        });
     }
 
     /**
@@ -153,12 +123,9 @@ export class ExecutionTracker {
     completeExecution(executionId: string, output?: unknown): void {
         const cycle = this.cycles.get(executionId);
         if (!cycle) {
-            this.logger.warn(
-                {
-                    executionId,
-                },
-                'Attempted to complete unknown execution',
-            );
+            this.logger.warn('Attempted to complete unknown execution', {
+                executionId,
+            });
             return;
         }
 
@@ -171,23 +138,17 @@ export class ExecutionTracker {
 
         // Add finish step
         this.addStep(executionId, 'finish', 'execution-tracker', {
-            output: output ? JSON.stringify(output).slice(0, 1000) : undefined,
+            output: output ? this.truncateValue(output) : undefined,
             totalDuration: cycle.totalDuration,
             stepCount: cycle.steps.length,
         });
 
-        // Save to observability system
-        void this.saveToObservability(cycle);
-
-        this.logger.info(
-            {
-                executionId,
-                agentName: cycle.agentName,
-                totalDuration: cycle.totalDuration,
-                stepCount: cycle.steps.length,
-            },
-            'Execution cycle completed',
-        );
+        this.logger.info('Execution cycle completed', {
+            executionId,
+            agentName: cycle.agentName,
+            totalDuration: cycle.totalDuration,
+            stepCount: cycle.steps.length,
+        });
 
         // Clean up after 5 minutes to prevent memory leaks
         setTimeout(
@@ -204,12 +165,9 @@ export class ExecutionTracker {
     failExecution(executionId: string, error: Error): void {
         const cycle = this.cycles.get(executionId);
         if (!cycle) {
-            this.logger.warn(
-                {
-                    executionId,
-                },
-                'Attempted to fail unknown execution',
-            );
+            this.logger.warn('Attempted to fail unknown execution', {
+                executionId,
+            });
             return;
         }
 
@@ -225,19 +183,11 @@ export class ExecutionTracker {
             totalDuration: cycle.totalDuration,
         });
 
-        // Save to observability system
-        void this.saveToObservability(cycle);
-
-        this.logger.error(
-            {
-                executionId,
-                agentName: cycle.agentName,
-                errorName: error.name,
-                errorMessage: error.message,
-                totalDuration: cycle.totalDuration,
-            },
-            'Execution cycle failed',
-        );
+        this.logger.error('Execution cycle failed', error, {
+            executionId,
+            agentName: cycle.agentName,
+            totalDuration: cycle.totalDuration,
+        });
 
         // Clean up after 10 minutes for failed executions
         setTimeout(
@@ -265,27 +215,6 @@ export class ExecutionTracker {
     }
 
     /**
-     * Save execution cycle to observability system
-     */
-    private async saveToObservability(cycle: ExecutionCycle): Promise<void> {
-        try {
-            const obs = getObservability();
-            await obs.saveAgentExecutionCycle(cycle);
-        } catch (error) {
-            this.logger.error(
-                {
-                    executionId: cycle.executionId,
-                    error:
-                        error instanceof Error
-                            ? error.message
-                            : 'Unknown error',
-                },
-                'Failed to save execution cycle to observability',
-            );
-        }
-    }
-
-    /**
      * Get execution summary for monitoring
      */
     getExecutionSummary(executionId: string): {
@@ -307,6 +236,64 @@ export class ExecutionTracker {
             stepCount: cycle.steps.length,
             hasError: cycle.status === 'error',
         };
+    }
+
+    /**
+     * Clean up old completed cycles to prevent memory leaks
+     */
+    private cleanupOldCycles(): void {
+        const now = Date.now();
+        const toDelete: string[] = [];
+
+        for (const [executionId, cycle] of this.cycles.entries()) {
+            // Delete cycles older than 30 minutes
+            if (now - cycle.startTime > 30 * 60 * 1000) {
+                toDelete.push(executionId);
+            }
+        }
+
+        for (const executionId of toDelete) {
+            this.cycles.delete(executionId);
+        }
+
+        this.logger.debug('Cleaned up old execution cycles', {
+            deleted: toDelete.length,
+            remaining: this.cycles.size,
+        });
+    }
+
+    /**
+     * Truncate large values to prevent memory issues
+     */
+    private truncateValue(value: unknown): string {
+        let str: string;
+        if (typeof value === 'string') {
+            str = value;
+        } else {
+            try {
+                const jsonStr = JSON.stringify(value);
+                str = jsonStr ?? '[Unable to stringify]';
+            } catch {
+                str = `[Serialization error: ${String(value)}]`;
+            }
+        }
+
+        return str.length > 500 ? str.substring(0, 500) + '...' : str;
+    }
+
+    /**
+     * Truncate data object values
+     */
+    private truncateData(
+        data: Record<string, unknown>,
+    ): Record<string, unknown> {
+        const truncated: Record<string, unknown> = {};
+
+        for (const [key, value] of Object.entries(data)) {
+            truncated[key] = this.truncateValue(value);
+        }
+
+        return truncated;
     }
 }
 

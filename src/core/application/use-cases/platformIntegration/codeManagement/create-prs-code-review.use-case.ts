@@ -8,7 +8,10 @@ import { AutomationExecutionService } from '@/core/infrastructure/adapters/servi
 import { AUTOMATION_EXECUTION_SERVICE_TOKEN } from '@/core/domain/automation/contracts/automation-execution.service';
 import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
 import { AutomationType } from '@/core/domain/automation/enums/automation-type';
-import { ITeamAutomationService, TEAM_AUTOMATION_SERVICE_TOKEN } from '@/core/domain/automation/contracts/team-automation.service';
+import {
+    ITeamAutomationService,
+    TEAM_AUTOMATION_SERVICE_TOKEN,
+} from '@/core/domain/automation/contracts/team-automation.service';
 
 @Injectable()
 export class CreatePRCodeReviewUseCase implements IUseCase {
@@ -21,15 +24,11 @@ export class CreatePRCodeReviewUseCase implements IUseCase {
         @Inject(AUTOMATION_EXECUTION_SERVICE_TOKEN)
         private readonly automationExecutionService: AutomationExecutionService,
 
-
         @Inject(REQUEST)
         private readonly request: Request & { user },
-    ) { }
+    ) {}
 
-    public async execute(params: {
-        teamId: string;
-        payload: any
-    }) {
+    public async execute(params: { teamId: string; payload: any }) {
         try {
             const { teamId, payload } = params;
             const organizationId = this.request.user.organization.uuid;
@@ -37,7 +36,7 @@ export class CreatePRCodeReviewUseCase implements IUseCase {
             const organizationAndTeamData: OrganizationAndTeamData = {
                 organizationId,
                 teamId,
-            }
+            };
 
             const data = {
                 organizationAndTeamData,
@@ -46,48 +45,62 @@ export class CreatePRCodeReviewUseCase implements IUseCase {
                     name: payload.repository,
                 },
                 prNumber: payload?.pull_number,
-                body: "@kody start-review"
-            }
+                body: '@kody start-review',
+            };
 
-            const response = await this.codeManagementService.createSingleIssueComment(data);
+            const response =
+                await this.codeManagementService.createSingleIssueComment(data);
 
             const teamAutomation = await this.teamAutomationService.find({
                 team: { uuid: teamId },
             });
 
             const codeReviewAutomation = teamAutomation.find((automation) => {
-                return automation.automation.automationType = AutomationType.AUTOMATION_CODE_REVIEW
+                return (automation.automation.automationType =
+                    AutomationType.AUTOMATION_CODE_REVIEW);
             });
 
             if (!response) {
-                await this.registerFailedAutomationExecution(codeReviewAutomation?.uuid);
+                await this.registerFailedAutomationExecution(
+                    codeReviewAutomation?.uuid,
+                );
 
-                throw new HttpException(`Error when commenting on PR ${payload.pull_number}`, HttpStatus.INTERNAL_SERVER_ERROR);
+                throw new HttpException(
+                    `Error when commenting on PR ${payload.pull_number}`,
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                );
             }
 
-            await this.registerSuccessfulAutomationExecution(codeReviewAutomation?.uuid, payload);
+            await this.registerSuccessfulAutomationExecution(
+                codeReviewAutomation?.uuid,
+                payload,
+            );
 
-            return { success: true }
-        }
-        catch (err) {
+            return { success: true };
+        } catch (err) {
             throw err;
         }
     }
 
-    private async registerFailedAutomationExecution(codeReviewAutomationId: string) {
+    private async registerFailedAutomationExecution(
+        codeReviewAutomationId: string,
+    ) {
         const startedCodeReview = {
             status: AutomationStatus.ERROR,
             dataExecution: {},
             teamAutomation: { uuid: codeReviewAutomationId },
-            origin: "",
+            origin: '',
             pullRequestNumber: null,
-            repositoryId: null
-        }
+            repositoryId: null,
+        };
 
-        await this.automationExecutionService.register(startedCodeReview)
+        await this.automationExecutionService.create(startedCodeReview);
     }
 
-    private async registerSuccessfulAutomationExecution(codeReviewAutomationId: string, payload: any) {
+    private async registerSuccessfulAutomationExecution(
+        codeReviewAutomationId: string,
+        payload: any,
+    ) {
         const startedCodeReview = {
             status: AutomationStatus.SUCCESS,
             dataExecution: {
@@ -95,12 +108,11 @@ export class CreatePRCodeReviewUseCase implements IUseCase {
                 ...payload,
             },
             teamAutomation: { uuid: codeReviewAutomationId },
-            origin: "",
+            origin: '',
             pullRequestNumber: payload?.pull_number,
             repositoryId: payload?.id,
-        }
+        };
 
-        await this.automationExecutionService.register(startedCodeReview)
+        await this.automationExecutionService.create(startedCodeReview);
     }
-
 }

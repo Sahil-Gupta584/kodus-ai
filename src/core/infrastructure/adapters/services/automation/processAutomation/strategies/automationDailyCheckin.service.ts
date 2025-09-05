@@ -160,7 +160,7 @@ export class AutomationDailyCheckinService
             origin,
         };
 
-        this.automationExecutionService.register(automationExecution);
+        this.automationExecutionService.create(automationExecution);
     }
 
     private async getCheckinConfig(organizationAndTeamData) {

@@ -8,11 +8,27 @@ export const AUTOMATION_EXECUTION_SERVICE_TOKEN = Symbol(
 
 export interface IAutomationExecutionService
     extends IAutomationExecutionRepository {
-    register(
-        automationExecution: Omit<IAutomationExecution, 'uuid'>,
-    ): Promise<AutomationExecutionEntity>;
     findOneByOrganizationIdAndIssueId(
         organizationId: string,
         issueId: string,
     ): Promise<boolean>;
+
+    createCodeReview(
+        automationExecution: Omit<
+            IAutomationExecution,
+            'uuid' | 'createdAt' | 'updatedAt' | 'codeReviewExecutions'
+        >,
+        message: string,
+    ): Promise<AutomationExecutionEntity | null>;
+
+    updateCodeReview(
+        filter: Partial<IAutomationExecution>,
+        automationExecution: Partial<
+            Omit<
+                IAutomationExecution,
+                'uuid' | 'createdAt' | 'updatedAt' | 'codeReviewExecutions'
+            >
+        >,
+        message: string,
+    ): Promise<AutomationExecutionEntity | null>;
 }

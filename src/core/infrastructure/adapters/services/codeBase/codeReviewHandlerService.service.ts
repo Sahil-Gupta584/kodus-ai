@@ -7,9 +7,9 @@ import { PipelineFactory } from '../pipeline/pipeline-factory.service';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PinoLoggerService } from '../logger/pino.service';
 import { CodeReviewPipelineContext } from './codeReviewPipeline/context/code-review-pipeline.context';
-import { PipelineStatus } from '../pipeline/interfaces/pipeline-context.interface';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { TaskStatus } from '@kodus/kodus-proto/task';
+import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
 
 @Injectable()
 export class CodeReviewHandlerService {
@@ -32,7 +32,10 @@ export class CodeReviewHandlerService {
     ) {
         try {
             const initialContext: CodeReviewPipelineContext = {
-                status: PipelineStatus.RUN,
+                statusInfo: {
+                    status: AutomationStatus.IN_PROGRESS,
+                    message: 'Pipeline started',
+                },
                 pipelineVersion: '1.0.0',
                 errors: [],
                 organizationAndTeamData,
@@ -89,6 +92,14 @@ export class CodeReviewHandlerService {
                 },
             });
 
+            const finalStatus =
+                result.statusInfo.status === AutomationStatus.IN_PROGRESS
+                    ? {
+                          status: AutomationStatus.SUCCESS,
+                          message: 'Code review completed successfully',
+                      }
+                    : result.statusInfo;
+
             return {
                 overallComments: result?.overallComments,
                 lastAnalyzedCommit: result?.lastAnalyzedCommit,
@@ -96,6 +107,7 @@ export class CodeReviewHandlerService {
                 noteId: result?.initialCommentData?.noteId,
                 threadId: result?.initialCommentData?.threadId,
                 automaticReviewStatus: result?.automaticReviewStatus,
+                statusInfo: finalStatus,
             };
         } catch (error) {
             this.logger.error({

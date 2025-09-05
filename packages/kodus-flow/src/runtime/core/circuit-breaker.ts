@@ -79,7 +79,8 @@ export class CircuitBreaker {
                     ),
                 };
 
-                this.observability.logger.warn(
+                this.observability.log(
+                    'warn',
                     'Circuit breaker rejected operation',
                     {
                         circuit: this.config.name,
@@ -165,7 +166,7 @@ export class CircuitBreaker {
             this.config.onSuccess(result, context);
         }
 
-        this.observability.logger.debug('Circuit breaker operation succeeded', {
+        this.observability.log('debug', 'Circuit breaker operation succeeded', {
             circuit: this.config.name,
             state: this.state,
             successCount: this.successCount,
@@ -193,7 +194,7 @@ export class CircuitBreaker {
             this.config.onFailure(error, context);
         }
 
-        this.observability.logger.warn('Circuit breaker operation failed', {
+        this.observability.log('warn', 'Circuit breaker operation failed', {
             circuit: this.config.name,
             state: this.state,
             failureCount: this.failureCount,
@@ -224,7 +225,7 @@ export class CircuitBreaker {
             this.config.onStateChange(this.state, previousState);
         }
 
-        this.observability.logger.info('Circuit breaker closed', {
+        this.observability.log('info', 'Circuit breaker closed', {
             circuit: this.config.name,
             previousState,
         });
@@ -243,7 +244,7 @@ export class CircuitBreaker {
             this.config.onStateChange(this.state, previousState);
         }
 
-        this.observability.logger.warn('Circuit breaker opened', {
+        this.observability.log('warn', 'Circuit breaker opened', {
             circuit: this.config.name,
             previousState,
             nextAttempt: this.nextAttempt,
@@ -263,7 +264,7 @@ export class CircuitBreaker {
             this.config.onStateChange(this.state, previousState);
         }
 
-        this.observability.logger.info('Circuit breaker half-open', {
+        this.observability.log('info', 'Circuit breaker half-open', {
             circuit: this.config.name,
             previousState,
         });

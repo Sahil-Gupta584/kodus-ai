@@ -9,13 +9,12 @@ export {
 export type { DirectLLMAdapter } from './core/llm/direct-llm-adapter.js';
 
 export { createMockLLMProvider } from './adapters/llm/mock-provider.js';
+export { getObservability, createLogger } from './observability/index.js';
 export {
-    getObservability,
-    createLogger,
-    createOtelTracerAdapter,
+    getExecutionTraceability,
+    getExecutionSummary,
 } from './observability/index.js';
 
-export type { OtelTracerAdapter } from './observability/otel-adapter.js';
 export { IdGenerator } from './utils/id-generator.js';
 export { createThreadId } from './utils/thread-helpers.js';
 

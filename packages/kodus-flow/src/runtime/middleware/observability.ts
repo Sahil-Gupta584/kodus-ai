@@ -10,6 +10,7 @@ import {
     applyErrorToSpan,
     markSpanOk,
 } from '../../observability/index.js';
+import { SPAN_NAMES } from '../../observability/semantic-conventions.js';
 
 /**
  * Middleware que cria um span por processamento de evento e registra erros
@@ -18,7 +19,6 @@ export const withObservability: MiddlewareFactoryType<
     ObservabilityOptions | undefined,
     TEvent
 > = (options: ObservabilityOptions | undefined) => {
-    const namePrefix = options?.namePrefix ?? 'event.process';
     const include = options?.includeEventTypes?.length
         ? new Set(options.includeEventTypes)
         : undefined;
@@ -49,15 +49,12 @@ export const withObservability: MiddlewareFactoryType<
             attributes['thread.id'] = event.threadId;
             attributes['event.ts'] = event.ts;
 
-            const span = obs.telemetry.startSpan(
-                `${namePrefix}.${event.type}`,
-                {
-                    attributes,
-                },
-            );
+            const span = obs.startSpan(SPAN_NAMES.WORKFLOW_STEP, {
+                attributes,
+            });
 
             try {
-                return await obs.telemetry.withSpan(span, async () => {
+                return await obs.withSpan(span, async () => {
                     try {
                         const result = await handler(event);
                         markSpanOk(span);
@@ -73,7 +70,6 @@ export const withObservability: MiddlewareFactoryType<
                         applyErrorToSpan(
                             span,
                             err instanceof Error ? err : new Error(String(err)),
-                            errorAttributes,
                         );
                         throw err;
                     }

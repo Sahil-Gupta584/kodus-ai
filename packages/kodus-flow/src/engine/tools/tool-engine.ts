@@ -1,10 +1,11 @@
 import {
     createLogger,
     getObservability,
-    startToolSpan,
     markSpanOk,
     applyErrorToSpan,
 } from '../../observability/index.js';
+import { TOOL } from '../../observability/types.js';
+import { SPAN_NAMES } from '../../observability/semantic-conventions.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import {
     validateWithZod,
@@ -12,7 +13,6 @@ import {
 } from '../../core/utils/zod-to-json-schema.js';
 import { createToolError } from '../../core/error-unified.js';
 import {
-    AnyEvent,
     ConditionalToolsAction,
     createToolContext,
     ParallelToolsAction,
@@ -26,23 +26,17 @@ import {
     ToolMetadataForLLM,
     ToolMetadataForPlanner,
 } from '../../core/types/allTypes.js';
-import { MultiKernelHandler } from '../core/multi-kernel-handler.js';
 
 export class ToolEngine {
     private logger: ReturnType<typeof createLogger>;
     private tools = new Map<ToolId, ToolDefinition<unknown, unknown>>();
     private config: ToolEngineConfig;
-    private kernelHandler?: MultiKernelHandler;
 
-    constructor(
-        config: ToolEngineConfig = {},
-        kernelHandler?: MultiKernelHandler,
-    ) {
+    constructor(config: ToolEngineConfig = {}) {
         this.config = {
             validateSchemas: true,
             ...config,
         };
-        this.kernelHandler = kernelHandler;
         this.logger = createLogger('tool-engine');
     }
 
@@ -61,10 +55,6 @@ export class ToolEngine {
         });
     }
 
-    /**
-     * Execute a tool call with timeout protection
-     * Note: Retry logic is handled by Circuit Breaker at higher level
-     */
     async executeCall<TInput = unknown, TOutput = unknown>(
         toolName: ToolId,
         input: TInput,
@@ -81,13 +71,17 @@ export class ToolEngine {
             options?.correlationId || obs.getContext()?.correlationId;
 
         try {
-            const span = startToolSpan(obs.telemetry, {
-                toolName: String(toolName),
-                callId,
-                correlationId,
+            const span = obs.startSpan(SPAN_NAMES.TOOL_EXECUTE, {
+                attributes: {
+                    [TOOL.NAME]: String(toolName),
+                    [TOOL.EXECUTION_ID]: callId,
+                    [TOOL.TYPE]: 'custom',
+                    ...(correlationId && { correlationId }),
+                    ...(options?.tenantId && { tenantId: options.tenantId }),
+                },
             });
 
-            const result = await obs.telemetry.withSpan(span, async () => {
+            const result = await obs.withSpan(span, async () => {
                 try {
                     const timeoutPromise = new Promise<never>((_, reject) => {
                         setTimeout(() => {
@@ -233,8 +227,10 @@ export class ToolEngine {
             tenantId,
             parameters,
             {
-                correlationId: options?.correlationId,
-                parentId: options?.parentId,
+                ...(options?.correlationId && {
+                    correlationId: options.correlationId,
+                }),
+                ...(options?.parentId && { parentId: options.parentId }),
                 metadata: options?.metadata,
             },
         );
@@ -440,177 +436,37 @@ export class ToolEngine {
     }
 
     /**
-     * Set KernelHandler (for dependency injection)
-     */
-    setKernelHandler(kernelHandler: MultiKernelHandler): void {
-        this.kernelHandler = kernelHandler;
-        this.logger.info('🔧 KERNELHANDLER SET FOR TOOLENGINE', {
-            hasKernelHandler: !!kernelHandler,
-            kernelHandlerType: kernelHandler?.constructor?.name,
-            trace: {
-                source: 'tool-engine',
-                step: 'kernelhandler-set',
-                timestamp: Date.now(),
-            },
-        });
-
-        // Register event handlers for tool execution
-        this.registerEventHandlers();
-    }
-
-    /**
-     * Register event handlers for tool execution via events
-     */
-    private registerEventHandlers(): void {
-        if (!this.kernelHandler) {
-            return;
-        }
-
-        // Register handler for tool execution requests
-        this.kernelHandler.registerHandler(
-            'tool.execute.request',
-            async (event: AnyEvent) => {
-                const correlationId = event.metadata?.correlationId;
-
-                const { toolName, input } = event.data as {
-                    toolName: string;
-                    input: unknown;
-                };
-
-                try {
-                    this.logger.info('🔧 [TOOL] Starting tool execution', {
-                        toolName,
-                        correlationId,
-                        inputSize: JSON.stringify(input).length,
-                        timestamp: Date.now(),
-                    });
-
-                    const startTime = Date.now();
-
-                    const result = await this.executeCall(toolName, input);
-                    const executionTime = Date.now() - startTime;
-
-                    this.logger.info('🔧 [TOOL] Tool execution completed', {
-                        toolName,
-                        correlationId,
-                        executionTimeMs: executionTime,
-                        resultSize: JSON.stringify(result).length,
-                        timestamp: Date.now(),
-                    });
-
-                    // ✅ UNIFICADO: Sempre verificar se há erro no resultado
-                    const hasError = this.checkToolResultError(result);
-
-                    const responseData = {
-                        ...(typeof result === 'object' && result !== null
-                            ? result
-                            : { result }),
-                        success: !hasError,
-                        toolName,
-                        metadata: {
-                            correlationId,
-                            success: !hasError,
-                            toolName,
-                        },
-                    };
-
-                    if (this.kernelHandler?.emitAsync) {
-                        await this.kernelHandler.emitAsync(
-                            'tool.execute.response',
-                            responseData,
-                            {
-                                correlationId,
-                                deliveryGuarantee: 'at-least-once',
-                            },
-                        );
-                    } else {
-                        await this.kernelHandler!.emit(
-                            'tool.execute.response',
-                            responseData,
-                        );
-                    }
-                } catch (error) {
-                    this.logger.error(
-                        '🔧 [TOOL] Tool execution failed via events',
-                        error as Error,
-                        {
-                            toolName,
-                            correlationId,
-                        },
-                    );
-
-                    // Emit error response
-                    this.logger.error(
-                        '📤 EMITTING TOOL EXECUTION ERROR RESPONSE',
-                        error as Error,
-                        {
-                            toolName,
-                            correlationId,
-                            trace: {
-                                source: 'tool-engine',
-                                step: 'emit-error-response',
-                                timestamp: Date.now(),
-                            },
-                        },
-                    );
-
-                    await this.kernelHandler!.emit('tool.execute.response', {
-                        error: (error as Error).message,
-                        success: false,
-                        toolName,
-                        metadata: {
-                            correlationId,
-                            success: false,
-                            toolName,
-                        },
-                    });
-                }
-            },
-        );
-    }
-
-    /**
      * Check if tool result contains an error
      */
-    private checkToolResultError(result: unknown): boolean {
-        if (!result || typeof result !== 'object') {
-            return false;
-        }
+    //TODO ver para poder usar ele
+    // private checkToolResultError(result: unknown): boolean {
+    //     if (!result || typeof result !== 'object') {
+    //         return false;
+    //     }
 
-        const resultObj = result as Record<string, unknown>;
+    //     const resultObj = result as Record<string, unknown>;
 
-        // Check for direct error indicators
-        if (resultObj.error || resultObj.isError === true) {
-            return true;
-        }
+    //     if (resultObj.error || resultObj.isError === true) {
+    //         return true;
+    //     }
 
-        // Check for MCP-style result structure
-        if (resultObj.result && typeof resultObj.result === 'object') {
-            const innerResult = resultObj.result as Record<string, unknown>;
-            if (innerResult.isError === true || innerResult.error) {
-                return true;
-            }
+    //     if (resultObj.result && typeof resultObj.result === 'object') {
+    //         const innerResult = resultObj.result as Record<string, unknown>;
+    //         if (innerResult.isError === true || innerResult.error) {
+    //             return true;
+    //         }
 
-            // Check for successful: false in inner result
-            if (innerResult.successful === false) {
-                return true;
-            }
-        }
+    //         if (innerResult.successful === false) {
+    //             return true;
+    //         }
+    //     }
 
-        // Check for success: false at top level
-        if (resultObj.success === false) {
-            return true;
-        }
+    //     if (resultObj.success === false) {
+    //         return true;
+    //     }
 
-        return false;
-    }
-
-    /**
-     * Get KernelHandler status
-     */
-    hasKernelHandler(): boolean {
-        return !!this.kernelHandler;
-    }
+    //     return false;
+    // }
 
     async executeTool<TInput = unknown, TOutput = unknown>(
         toolName: string,
@@ -622,14 +478,15 @@ export class ToolEngine {
         const obs = getObservability();
 
         try {
-            const span = obs.telemetry.startSpan('tool.execute', {
+            const span = obs.startSpan(SPAN_NAMES.TOOL_EXECUTE, {
                 attributes: {
-                    toolName: String(toolName),
-                    callId,
+                    [TOOL.NAME]: String(toolName),
+                    [TOOL.EXECUTION_ID]: callId,
+                    [TOOL.TYPE]: 'custom',
                 },
             });
 
-            const result = await obs.telemetry.withSpan(span, async () => {
+            const result = await obs.withSpan(span, async () => {
                 try {
                     const timeoutPromise = new Promise<never>((_, reject) => {
                         setTimeout(() => {
@@ -641,7 +498,6 @@ export class ToolEngine {
                         }, timeout);
                     });
 
-                    // Create execution promise using executeToolInternal
                     const executionPromise = this.executeToolInternal<
                         TInput,
                         TOutput
@@ -703,23 +559,19 @@ export class ToolEngine {
         const visiting = new Set<string>();
         const executionPhases: ToolCall[][] = [];
 
-        // Build maps
         for (const tool of tools) {
             toolMap.set(tool.toolName, tool);
         }
 
-        // Build correct dependency map: toolName -> [tools it depends on]
         const actualDependencyMap = new Map<string, string[]>();
         for (const dep of dependencies) {
             actualDependencyMap.set(dep.toolName, dep.dependencies || []);
-            // Also store dependency metadata
             if (!dependencyMap.has(dep.toolName)) {
                 dependencyMap.set(dep.toolName, []);
             }
             dependencyMap.get(dep.toolName)!.push(dep);
         }
 
-        // Topological sort with phases
         const sortedTools: string[] = [];
 
         function visit(toolName: string): void {
@@ -735,7 +587,6 @@ export class ToolEngine {
 
             visiting.add(toolName);
 
-            // Visit dependencies first
             const deps = actualDependencyMap.get(toolName) || [];
             for (const depToolName of deps) {
                 if (toolMap.has(depToolName)) {
@@ -748,14 +599,12 @@ export class ToolEngine {
             sortedTools.push(toolName);
         }
 
-        // Sort all tools
         for (const tool of tools) {
             if (!visited.has(tool.toolName)) {
                 visit(tool.toolName);
             }
         }
 
-        // Group into execution phases (tools that can run in parallel)
         const phases: Map<number, ToolCall[]> = new Map();
         const toolPhases = new Map<string, number>();
 
@@ -763,7 +612,6 @@ export class ToolEngine {
             const tool = toolMap.get(toolName);
             if (!tool) continue;
 
-            // Calculate phase based on dependencies
             let phase = 0;
             const deps = dependencyMap.get(toolName) || [];
 
@@ -784,7 +632,6 @@ export class ToolEngine {
             phases.get(phase)!.push(tool);
         }
 
-        // Convert to array
         const sortedPhases = Array.from(phases.keys()).sort((a, b) => a - b);
         for (const phaseNum of sortedPhases) {
             executionPhases.push(phases.get(phaseNum)!);
@@ -796,9 +643,6 @@ export class ToolEngine {
         };
     }
 
-    /**
-     * Execute tools respecting dependencies
-     */
     async executeWithDependencies<TOutput = unknown>(
         tools: ToolCall[],
         dependencies: ToolDependency[],
@@ -813,7 +657,6 @@ export class ToolEngine {
             dependencies,
         );
 
-        // Log warnings
         for (const warning of warnings) {
             this.logger.warn('Dependency resolution warning', { warning });
         }
@@ -825,7 +668,6 @@ export class ToolEngine {
         }> = [];
         const resultMap = new Map<string, TOutput>();
 
-        // Execute each phase
         for (
             let phaseIndex = 0;
             phaseIndex < executionOrder.length;
@@ -833,7 +675,6 @@ export class ToolEngine {
         ) {
             const phase = executionOrder[phaseIndex];
 
-            // Execute tools in this phase (can be parallel)
             const phaseResults = await this.executeParallelTools<TOutput>({
                 type: 'parallel_tools',
                 tools: phase || [],
@@ -842,14 +683,12 @@ export class ToolEngine {
                 failFast: options.failFast || false,
             });
 
-            // Store results for next phases
             for (const result of phaseResults) {
                 if (result.result !== undefined) {
                     resultMap.set(result.toolName, result.result);
                 }
                 allResults.push(result);
 
-                // Check if required dependency failed
                 if (result.error && options.failFast) {
                     const dependentTools = dependencies.filter(
                         (d) =>
@@ -869,13 +708,9 @@ export class ToolEngine {
         return allResults;
     }
 
-    /**
-     * Execute multiple tools in parallel
-     */
     async executeParallelTools<TOutput = unknown>(
         action: ParallelToolsAction,
     ): Promise<Array<{ toolName: string; result?: TOutput; error?: string }>> {
-        const startTime = Date.now();
         const concurrency = action.concurrency || 5;
         const timeout = action.timeout || 60000;
         const results: Array<{
@@ -884,18 +719,7 @@ export class ToolEngine {
             error?: string;
         }> = [];
 
-        // Emit parallel execution start event
-        if (this.kernelHandler) {
-            await this.kernelHandler.emit('tool.parallel.execution.start', {
-                tools: action.tools.map((t) => t.toolName),
-                concurrency,
-                timeout,
-                tenantId: 'default',
-            });
-        }
-
         try {
-            // Create batches based on concurrency limit
             const batches = this.createBatches(action.tools, concurrency);
 
             for (const batch of batches) {
@@ -925,7 +749,6 @@ export class ToolEngine {
                     }
                 });
 
-                // Execute batch with timeout
                 const timeoutPromise = new Promise<never>((_, reject) => {
                     setTimeout(
                         () =>
@@ -945,64 +768,26 @@ export class ToolEngine {
 
                 results.push(...batchResults);
 
-                // Stop if failFast is enabled and we have errors
                 if (action.failFast && results.some((r) => r.error)) {
                     break;
                 }
             }
 
-            // Emit success event
-            if (this.kernelHandler) {
-                await this.kernelHandler.emit(
-                    'tool.parallel.execution.success',
-                    {
-                        tools: action.tools.map((t) => t.toolName),
-                        results,
-                        executionTime: Date.now() - startTime,
-                        tenantId: 'default',
-                    },
-                );
-            }
-
             return results;
         } catch (error) {
-            // Emit error event
-            if (this.kernelHandler) {
-                await this.kernelHandler.emit('tool.parallel.execution.error', {
-                    tools: action.tools.map((t) => t.toolName),
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                    executionTime: Date.now() - startTime,
-                    tenantId: 'default',
-                });
-            }
-
             throw error;
         }
     }
 
-    /**
-     * Execute tools in sequence
-     */
     async executeSequentialTools<TOutput = unknown>(
         action: SequentialToolsAction,
     ): Promise<Array<{ toolName: string; result?: TOutput; error?: string }>> {
-        const startTime = Date.now();
         const results: Array<{
             toolName: string;
             result?: TOutput;
             error?: string;
         }> = [];
         let previousResult: TOutput | undefined;
-
-        // Emit sequential execution start event
-        if (this.kernelHandler) {
-            await this.kernelHandler.emit('tool.sequential.execution.start', {
-                tools: action.tools.map((t) => t.toolName),
-                timeout: action.timeout,
-                tenantId: 'default',
-            });
-        }
 
         try {
             for (const toolCall of action.tools) {
@@ -1044,72 +829,28 @@ export class ToolEngine {
                 }
             }
 
-            // Emit success event
-            if (this.kernelHandler) {
-                await this.kernelHandler.emit(
-                    'tool.sequential.execution.success',
-                    {
-                        tools: action.tools.map((t) => t.toolName),
-                        results,
-                        executionTime: Date.now() - startTime,
-                        tenantId: 'default',
-                    },
-                );
-            }
-
             return results;
         } catch (error) {
-            // Emit error event
-            if (this.kernelHandler) {
-                await this.kernelHandler.emit(
-                    'tool.sequential.execution.error',
-                    {
-                        tools: action.tools.map((t) => t.toolName),
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error),
-                        executionTime: Date.now() - startTime,
-                        tenantId: 'default',
-                    },
-                );
-            }
-
             throw error;
         }
     }
 
-    /**
-     * Execute tools based on conditions
-     */
     async executeConditionalTools<TOutput = unknown>(
         action: ConditionalToolsAction,
     ): Promise<Array<{ toolName: string; result?: TOutput; error?: string }>> {
-        const startTime = Date.now();
         const results: Array<{
             toolName: string;
             result?: TOutput;
             error?: string;
         }> = [];
 
-        // Emit conditional execution start event
-        if (this.kernelHandler) {
-            await this.kernelHandler.emit('tool.conditional.execution.start', {
-                tools: action.tools.map((t) => t.toolName),
-                conditions: action.conditions,
-                tenantId: 'default',
-            });
-        }
-
         try {
-            // Execute tools in dependency order
             const remainingTools = [...action.tools];
             const globalConditions = action.conditions || {};
 
             while (remainingTools.length > 0) {
                 const executableTools: ToolCall[] = [];
 
-                // Find tools that can be executed now
                 for (let i = remainingTools.length - 1; i >= 0; i--) {
                     const toolCall = remainingTools[i];
                     if (
@@ -1125,9 +866,7 @@ export class ToolEngine {
                     }
                 }
 
-                // If no tools can be executed, break to avoid infinite loop
                 if (executableTools.length === 0) {
-                    // Use default tool if specified
                     if (action.defaultTool && remainingTools.length > 0) {
                         const defaultToolCall = remainingTools.find(
                             (t) => t.toolName === action.defaultTool,
@@ -1141,13 +880,11 @@ export class ToolEngine {
                             }
                         }
                     } else {
-                        break; // No more tools can be executed
+                        break;
                     }
                 }
 
-                // Execute the tools (either in parallel or sequentially)
                 if (action.evaluateAll) {
-                    // Execute all matching tools in parallel
                     const parallelPromises = executableTools.map(
                         async (toolCall) => {
                             try {
@@ -1175,7 +912,6 @@ export class ToolEngine {
                     const batchResults = await Promise.all(parallelPromises);
                     results.push(...batchResults);
                 } else {
-                    // Execute tools sequentially
                     for (const toolCall of executableTools) {
                         try {
                             const result = await this.executeCall<
@@ -1200,44 +936,12 @@ export class ToolEngine {
                 }
             }
 
-            // Emit success event
-            if (this.kernelHandler) {
-                await this.kernelHandler.emit(
-                    'tool.conditional.execution.success',
-                    {
-                        tools: action.tools.map((t) => t.toolName),
-                        results,
-                        executionTime: Date.now() - startTime,
-                        tenantId: 'default',
-                    },
-                );
-            }
-
             return results;
         } catch (error) {
-            // Emit error event
-            if (this.kernelHandler) {
-                await this.kernelHandler.emit(
-                    'tool.conditional.execution.error',
-                    {
-                        tools: action.tools.map((t) => t.toolName),
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error),
-                        executionTime: Date.now() - startTime,
-                        tenantId: 'default',
-                    },
-                );
-            }
-
             throw error;
         }
     }
 
-    /**
-     * Create batches for parallel execution
-     */
     private createBatches<T>(items: T[], batchSize: number): T[][] {
         const batches: T[][] = [];
         for (let i = 0; i < items.length; i += batchSize) {
@@ -1246,9 +950,6 @@ export class ToolEngine {
         return batches;
     }
 
-    /**
-     * Evaluate conditions for a tool call
-     */
     private evaluateConditions(
         _toolCall: ToolCall,
         _globalConditions: Record<string, unknown>,
@@ -1258,21 +959,14 @@ export class ToolEngine {
             error?: string;
         }> = [],
     ): boolean {
-        // For now, always return true since ToolCall doesn't have conditions
-        // This can be enhanced later with custom condition evaluation logic
         return true;
     }
 
-    /**
-     * ✅ Unified tool input validation - ensures consistent validation across all execution paths
-     */
     private validateToolInput<T>(tool: ToolDefinition<T>, input: T): void {
-        // Skip validation if schemas are disabled
         if (this.config.validateSchemas === false) {
             return;
         }
 
-        // ✅ ADD: Log detalhado para debug de validação
         this.logger.debug('🔍 Validating tool input', {
             toolName: tool.name,
             inputType: typeof input,
@@ -1283,12 +977,10 @@ export class ToolEngine {
                     : String(input),
         });
 
-        // Validate input using Zod schema if available
         if (tool.inputSchema) {
             try {
                 const validation = validateWithZod(tool.inputSchema, input);
                 if (!validation.success) {
-                    // ✅ ADD: Log detalhado do erro de validação
                     this.logger.error(
                         `Tool input validation failed: ${validation.error}`,
                         new Error(
@@ -1306,7 +998,6 @@ export class ToolEngine {
                         },
                     );
 
-                    // ✅ IMPROVED: Better error messages with parameter hints
                     const missingParams = this.extractMissingParameters(
                         validation.error,
                     );
@@ -1327,13 +1018,11 @@ export class ToolEngine {
                     });
                 }
 
-                // ✅ ADD: Log de sucesso na validação
                 this.logger.debug('✅ Tool input validation passed', {
                     toolName: tool.name,
                     inputType: typeof input,
                 });
             } catch (validationError) {
-                // ✅ ADD: Log de erro inesperado na validação
                 this.logger.error(
                     `Unexpected validation error: ${validationError instanceof Error ? validationError.message : String(validationError)}`,
                     new Error(
@@ -1380,12 +1069,8 @@ export class ToolEngine {
         }
     }
 
-    /**
-     * Extract missing parameters from validation error
-     */
     private extractMissingParameters(validationError: string): string[] {
         try {
-            // Parse Zod error to extract missing parameters
             const errorObj = JSON.parse(validationError);
             if (Array.isArray(errorObj)) {
                 return errorObj
@@ -1419,16 +1104,12 @@ export class ToolEngine {
                     .filter((param): param is string => param !== null);
             }
         } catch {
-            // If parsing fails, try to extract from error message
             const match = validationError.match(/path":\s*\["([^"]+)"\]/);
             return match && match[1] ? [match[1]] : [];
         }
         return [];
     }
 
-    /**
-     * Clean shutdown
-     */
     async cleanup(): Promise<void> {
         this.tools.clear();
         this.logger.info('Tool engine cleaned up');

@@ -1,7 +1,6 @@
 import {
     createLogger,
     getObservability,
-    startLLMSpan,
     markSpanOk,
     applyErrorToSpan,
 } from '../../observability/index.js';
@@ -16,10 +15,6 @@ import {
     PlanningResult,
     ToolMetadataForLLM,
 } from '../types/allTypes.js';
-// import {
-//     validatePlanningResponse,
-//     validateLLMResponse,
-// } from './response-validator.js';
 
 export class DirectLLMAdapter implements LLMAdapter {
     private llm: LangChainLLM;
@@ -64,7 +59,6 @@ export class DirectLLMAdapter implements LLMAdapter {
             constraints?: string[];
         },
     ): Promise<PlanningResult> {
-        const obs = getObservability();
         const options: LangChainOptions = {
             ...DEFAULT_LLM_SETTINGS,
             maxTokens: 20000,
@@ -96,61 +90,58 @@ export class DirectLLMAdapter implements LLMAdapter {
         ];
 
         try {
-            const span = startLLMSpan(obs.telemetry, {
-                model: this.llm.name || 'unknown',
-                technique,
-                temperature: options.temperature,
-                topP: options.topP,
-                maxTokens: options.maxTokens,
+            const span = getObservability().startSpan('llm.call', {
+                attributes: {
+                    model: this.llm.name || 'unknown',
+                    technique,
+                    ...(options.temperature && {
+                        temperature: options.temperature,
+                    }),
+                    ...(options.topP && { topP: options.topP }),
+                    ...(options.maxTokens && { maxTokens: options.maxTokens }),
+                },
             });
 
-            const response = await obs.telemetry.withSpan(span, async () => {
-                try {
-                    const res = await this.llm.call(messages, options);
-                    // Record usage if present
-                    if (typeof res !== 'string' && res?.usage) {
-                        const usage = res.usage;
-                        if (usage?.totalTokens !== undefined) {
-                            span.setAttribute(
-                                'gen_ai.usage.total_tokens',
-                                usage.totalTokens,
-                            );
+            const response = await getObservability().withSpan(
+                span,
+                async () => {
+                    try {
+                        const res = await this.llm.call(messages, options);
+                        // Record usage if present
+                        if (typeof res !== 'string' && res?.usage) {
+                            const usage = res.usage;
+                            if (usage?.totalTokens !== undefined) {
+                                span.setAttribute(
+                                    'gen_ai.usage.total_tokens',
+                                    usage.totalTokens,
+                                );
+                            }
+                            if (usage?.promptTokens !== undefined) {
+                                span.setAttribute(
+                                    'gen_ai.usage.input_tokens',
+                                    usage.promptTokens,
+                                );
+                            }
+                            if (usage?.completionTokens !== undefined) {
+                                span.setAttribute(
+                                    'gen_ai.usage.output_tokens',
+                                    usage.completionTokens,
+                                );
+                            }
                         }
-                        if (usage?.promptTokens !== undefined) {
-                            span.setAttribute(
-                                'gen_ai.usage.input_tokens',
-                                usage.promptTokens,
-                            );
-                        }
-                        if (usage?.completionTokens !== undefined) {
-                            span.setAttribute(
-                                'gen_ai.usage.output_tokens',
-                                usage.completionTokens,
-                            );
-                        }
+                        markSpanOk(span);
+                        return res;
+                    } catch (err) {
+                        applyErrorToSpan(
+                            span,
+                            err instanceof Error ? err : new Error(String(err)),
+                        );
+                        throw err;
                     }
-                    markSpanOk(span);
-                    return res;
-                } catch (err) {
-                    applyErrorToSpan(
-                        span,
-                        err instanceof Error ? err : new Error(String(err)),
-                        {
-                            model: this.llm.name || 'unknown',
-                        },
-                    );
-                    throw err;
-                }
-            });
+                },
+            );
 
             return response as any;
-
-            //TODO: remove this
-            // return this.parseFlexiblePlanningResponse(
-            //     response,
-            //     goal,
-            //     technique,
-            // );
         } catch (error) {
             this.logger.error(
                 'Planning failed',
@@ -256,7 +247,6 @@ export class DirectLLMAdapter implements LLMAdapter {
         temperature?: number;
         maxTokens?: number;
     }): Promise<{ content: string }> {
-        const obs = getObservability();
         const messages: LangChainMessage[] = request.messages.map((msg) => ({
             role: msg.role,
             content: msg.content,
@@ -270,36 +260,43 @@ export class DirectLLMAdapter implements LLMAdapter {
         };
 
         try {
-            const span = startLLMSpan(obs.telemetry, {
-                model: this.llm.name || 'unknown',
-                temperature: options.temperature,
-                maxTokens: options.maxTokens,
+            const span = getObservability().startSpan('llm.call', {
+                attributes: {
+                    model: this.llm.name || 'unknown',
+                    ...(options.temperature && {
+                        temperature: options.temperature,
+                    }),
+                    ...(options.maxTokens && { maxTokens: options.maxTokens }),
+                },
             });
-            const response = await obs.telemetry.withSpan(span, async () => {
-                const res = await this.llm.call(messages, options);
-                if (typeof res !== 'string' && res?.usage) {
-                    const usage = res.usage;
-                    if (usage?.totalTokens !== undefined) {
-                        span.setAttribute(
-                            'gen_ai.usage.total_tokens',
-                            usage.totalTokens,
-                        );
+            const response = await getObservability().withSpan(
+                span,
+                async () => {
+                    const res = await this.llm.call(messages, options);
+                    if (typeof res !== 'string' && res?.usage) {
+                        const usage = res.usage;
+                        if (usage?.totalTokens !== undefined) {
+                            span.setAttribute(
+                                'gen_ai.usage.total_tokens',
+                                usage.totalTokens,
+                            );
+                        }
+                        if (usage?.promptTokens !== undefined) {
+                            span.setAttribute(
+                                'gen_ai.usage.input_tokens',
+                                usage.promptTokens,
+                            );
+                        }
+                        if (usage?.completionTokens !== undefined) {
+                            span.setAttribute(
+                                'gen_ai.usage.output_tokens',
+                                usage.completionTokens,
+                            );
+                        }
                     }
-                    if (usage?.promptTokens !== undefined) {
-                        span.setAttribute(
-                            'gen_ai.usage.input_tokens',
-                            usage.promptTokens,
-                        );
-                    }
-                    if (usage?.completionTokens !== undefined) {
-                        span.setAttribute(
-                            'gen_ai.usage.output_tokens',
-                            usage.completionTokens,
-                        );
-                    }
-                }
-                return res;
-            });
+                    return res;
+                },
+            );
             const content =
                 typeof response === 'string' ? response : response.content;
 

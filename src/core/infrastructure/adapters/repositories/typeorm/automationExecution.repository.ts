@@ -7,6 +7,7 @@ import { AutomationExecutionModel } from './schema/automationExecution.model';
 import {
     FindManyOptions,
     FindOneOptions,
+    FindOptionsWhere,
     Repository,
     UpdateQueryBuilder,
 } from 'typeorm';
@@ -14,6 +15,7 @@ import {
     mapSimpleModelToEntity,
     mapSimpleModelsToEntities,
 } from '@/shared/infrastructure/repositories/mappers';
+import { createNestedConditions } from '@/shared/infrastructure/repositories/filters';
 
 @Injectable()
 export class AutomationExecutionRepository
@@ -69,44 +71,40 @@ export class AutomationExecutionRepository
 
     async update(
         filter: Partial<IAutomationExecution>,
-        data: Partial<IAutomationExecution>,
+        data: Omit<
+            Partial<IAutomationExecution>,
+            'uuid' | 'createdAt' | 'updatedAt'
+        >,
     ): Promise<AutomationExecutionEntity> {
         try {
-            const queryBuilder: UpdateQueryBuilder<AutomationExecutionModel> =
-                this.automationExecutionRepository
-                    .createQueryBuilder('automationExecution')
-                    .update(AutomationExecutionModel)
-                    .set(data)
-                    .where('uuid = :uuid', { uuid: data.uuid });
+            const conditions = this.getFilterConditions(filter);
 
-            const automationSelected = await queryBuilder.execute();
+            const updateResult =
+                await this.automationExecutionRepository.update(
+                    conditions,
+                    data,
+                );
 
-            if (automationSelected && data?.uuid) {
-                const findOneOptions: FindOneOptions<AutomationExecutionModel> =
-                    {
-                        where: {
-                            uuid: data.uuid,
-                        },
-                    };
-
-                const insertedData =
-                    await this.automationExecutionRepository.findOne(
-                        findOneOptions,
-                    );
-
-                if (!insertedData) {
-                    return null;
-                }
-
-                if (insertedData) {
-                    return mapSimpleModelToEntity(
-                        insertedData,
-                        AutomationExecutionEntity,
-                    );
-                }
+            if (updateResult.affected === 0) {
+                console.warn({
+                    message: `No automation execution found for update with filter ${JSON.stringify(
+                        filter,
+                    )}`,
+                    context: AutomationExecutionRepository.name,
+                });
+                return null;
             }
 
-            return null;
+            // 3. Fetch the updated entity to return it. This ensures you get the fresh data.
+            const updatedEntity =
+                await this.automationExecutionRepository.findOne({
+                    where: conditions,
+                });
+
+            return mapSimpleModelToEntity(
+                updatedEntity,
+                AutomationExecutionEntity,
+            );
         } catch (error) {
             console.log(error);
         }
@@ -148,6 +146,7 @@ export class AutomationExecutionRepository
 
             const findOneOptions: FindManyOptions<AutomationExecutionModel> = {
                 where: whereConditions,
+                relations: ['teamAutomation', 'codeReviewExecutions'],
             };
 
             const automationModel =
@@ -171,14 +170,12 @@ export class AutomationExecutionRepository
                     'automation_execution',
                 );
 
-            let result: AutomationExecutionModel | null =
-                null;
+            let result: AutomationExecutionModel | null = null;
 
             if (filters) {
                 Object.keys(filters).forEach((key) => {
                     const value =
-                        typeof filters[key] === 'object' &&
-                        filters[key]?.uuid
+                        typeof filters[key] === 'object' && filters[key]?.uuid
                             ? filters[key].uuid
                             : filters[key];
 
@@ -222,5 +219,27 @@ export class AutomationExecutionRepository
         } catch (error) {
             console.log(error);
         }
+    }
+
+    private getFilterConditions(
+        filter: Partial<IAutomationExecution>,
+    ): FindOptionsWhere<AutomationExecutionModel> {
+        const { teamAutomation, codeReviewExecutions, ...restFilter } =
+            filter || {};
+
+        const teamAutomationCondition = createNestedConditions(
+            'teamAutomation',
+            teamAutomation,
+        );
+        const codeReviewExecutionsCondition = createNestedConditions(
+            'codeReviewExecutions',
+            codeReviewExecutions,
+        );
+
+        return {
+            ...restFilter,
+            ...codeReviewExecutionsCondition,
+            ...teamAutomationCondition,
+        };
     }
 }

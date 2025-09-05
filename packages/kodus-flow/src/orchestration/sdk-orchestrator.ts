@@ -4,7 +4,6 @@ import { ToolEngine } from '../engine/tools/tool-engine.js';
 import { AgentEngine } from '../engine/agents/agent-engine.js';
 import { AgentExecutor } from '../engine/agents/agent-executor.js';
 import { IdGenerator } from '../utils/id-generator.js';
-import { createDefaultMultiKernelHandler } from '../engine/core/multi-kernel-handler.js';
 import { EnhancedContextBuilder } from '../core/contextNew/index.js';
 import { safeJsonSchemaToZod } from '../core/utils/json-schema-to-zod.js';
 import {
@@ -29,6 +28,8 @@ import {
     UserContext,
 } from '../core/types/allTypes.js';
 import { getObservability } from '../observability/index.js';
+import { AGENT } from '../observability/types.js';
+import { SPAN_NAMES } from '../observability/semantic-conventions.js';
 
 export class SDKOrchestrator {
     private agents = new Map<string, AgentData>();
@@ -36,11 +37,19 @@ export class SDKOrchestrator {
     private mcpAdapter?: MCPAdapter;
     private logger = createLogger('sdk-orchestrator');
     private config: Required<OrchestrationConfigInternal>;
-    private kernelHandler?: ReturnType<typeof createDefaultMultiKernelHandler>;
 
     constructor(config: OrchestrationConfig) {
         if (config.observability) {
             getObservability(config.observability);
+            // Initialize async components like MongoDB exporter
+            getObservability()
+                .initialize()
+                .catch((error) => {
+                    this.logger.warn(
+                        'Failed to initialize observability components',
+                        { error: error.message },
+                    );
+                });
         }
 
         if (!config.llmAdapter) {
@@ -183,15 +192,6 @@ const orchestrator = new SDKOrchestrator({
             },
         });
 
-        if (this.kernelHandler) {
-            if (!this.kernelHandler.isInitialized()) {
-                await this.kernelHandler.initialize();
-            }
-
-            await this.injectKernelHandler(agentInstance);
-            this.toolEngine.setKernelHandler(this.kernelHandler);
-        }
-
         this.logger.info('Agent registered successfully', {
             agentName: config.name,
             totalAgents: this.agents.size,
@@ -214,7 +214,13 @@ const orchestrator = new SDKOrchestrator({
         const obs = getObservability();
         const obsContext = obs.createContext(correlationId);
         obsContext.tenantId = this.config.tenantId;
-        obsContext.metadata = { agentName };
+        obsContext.sessionId = context?.sessionId;
+        obsContext.executionId = IdGenerator.executionId();
+        obsContext.metadata = {
+            agentName,
+            threadId: context?.thread?.id,
+            operation: 'callAgent',
+        };
         obs.setContext(obsContext);
 
         this.logger.info('🚀 SDK ORCHESTRATOR - Agent execution started', {
@@ -309,7 +315,7 @@ const orchestrator = new SDKOrchestrator({
             });
 
             const result = await obs.trace(
-                'orchestration.call_agent',
+                SPAN_NAMES.AGENT_EXECUTE,
                 async () => {
                     if (agentData.instance instanceof AgentEngine) {
                         this.logger.debug(
@@ -358,7 +364,11 @@ const orchestrator = new SDKOrchestrator({
                 {
                     correlationId,
                     tenantId: this.config.tenantId,
-                    metadata: { agentName },
+                    attributes: {
+                        [AGENT.NAME]: agentName,
+                        [AGENT.EXECUTION_ID]: IdGenerator.executionId(),
+                        [AGENT.TENANT_ID]: this.config.tenantId,
+                    },
                 },
             );
 
@@ -411,9 +421,10 @@ const orchestrator = new SDKOrchestrator({
                 context: {
                     agentName,
                     correlationId,
-                    threadId: thread.id,
+                    threadId: thread?.id,
                     duration,
-                    executionMode: agentData.config.executionMode,
+                    executionMode: agentData?.config?.executionMode,
+                    sessionId: result?.sessionId,
                 },
                 metadata: {
                     ...result?.metadata,
@@ -775,33 +786,6 @@ const orchestrator = new SDKOrchestrator({
         });
 
         return enhancedConfig;
-    }
-
-    private async injectKernelHandler(
-        agentInstance:
-            | AgentEngine<unknown, unknown, unknown>
-            | AgentExecutor<unknown, unknown, unknown>,
-    ): Promise<void> {
-        try {
-            if (!this.kernelHandler) {
-                this.logger.warn('KernelHandler not available');
-                return;
-            }
-
-            if (!this.kernelHandler.isInitialized()) {
-                await this.kernelHandler.initialize();
-            }
-
-            if (
-                'setKernelHandler' in agentInstance &&
-                typeof agentInstance.setKernelHandler === 'function'
-            ) {
-                agentInstance.setKernelHandler(this.kernelHandler);
-                this.logger.debug('KernelHandler injected successfully');
-            }
-        } catch (error) {
-            this.logger.error('Failed to inject KernelHandler', error as Error);
-        }
     }
 
     async connectMCP(): Promise<void> {

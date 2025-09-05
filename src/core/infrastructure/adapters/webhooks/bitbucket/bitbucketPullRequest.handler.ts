@@ -366,7 +366,7 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
                     );
 
                 const storedPR =
-                    await this.pullRequestsService.findByNumberAndRepository(
+                    await this.pullRequestsService.findByNumberAndRepositoryName(
                         pullrequest.id,
                         repository.name,
                         organizationAndTeamData,

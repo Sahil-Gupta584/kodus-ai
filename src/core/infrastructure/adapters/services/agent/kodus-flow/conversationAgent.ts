@@ -5,10 +5,10 @@ import {
     createOrchestration,
     Thread,
     MCPServerConfig,
-    createOtelTracerAdapter,
     DirectLLMAdapter,
     PlannerType,
     StorageEnum,
+    getExecutionTraceability,
 } from '@kodus/flow';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
@@ -16,8 +16,8 @@ import { ConfigService } from '@nestjs/config';
 import { DatabaseConnection } from '@/config/types';
 import { ConnectionString } from 'connection-string';
 import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
-import { startKodusOtel } from '@/config/log/otel-kodus-flow';
 import { SDKOrchestrator } from '@kodus/flow/dist/orchestration';
+import { PinoLoggerService } from '../../logger/pino.service';
 
 @Injectable()
 export class ConversationAgentProvider {
@@ -31,6 +31,7 @@ export class ConversationAgentProvider {
     constructor(
         private readonly configService: ConfigService,
         private readonly llmProviderService: LLMProviderService,
+        private readonly logger: PinoLoggerService,
         private readonly mcpManagerService?: MCPManagerService,
     ) {
         this.config =
@@ -86,27 +87,6 @@ export class ConversationAgentProvider {
                 }));
 
                 let model = base;
-                // if (options.tools?.length) {
-                //     const toolDefs = options.tools.map((t: any) => ({
-                //         type: 'function',
-                //         function: {
-                //             name: sanitizeName(t.name),
-                //             description: t.description ?? '',
-                //             parameters: {
-                //                 ...t.parameters,
-                //                 additionalProperties: false,
-                //             },
-                //         },
-                //     }));
-
-                //     const bindOpts: any = {};
-                //     if (options.toolChoice) {
-                //         bindOpts.tool_choice = options.toolChoice;
-                //     }
-
-                //     model = (base as any).bindTools(toolDefs, bindOpts);
-                // }
-
                 const resp = await model.invoke(lcMessages, {
                     stop: options.stop,
                     temperature: options.temperature,
@@ -171,9 +151,6 @@ export class ConversationAgentProvider {
             hosts: [{ name: this.config.host, port: this.config.port }],
         }).toString();
 
-        await startKodusOtel();
-        const externalTracer = await createOtelTracerAdapter();
-
         this.orchestration = await createOrchestration({
             tenantId: 'kodus-agent-conversation',
             llmAdapter: this.llmAdapter,
@@ -198,7 +175,6 @@ export class ConversationAgentProvider {
                     enabled: true,
                     serviceName: 'kodus-flow',
                     sampling: { rate: 1, strategy: 'probabilistic' },
-                    externalTracer,
                     privacy: { includeSensitiveData: false },
                     spanTimeouts: {
                         enabled: true,
@@ -219,7 +195,6 @@ export class ConversationAgentProvider {
         await this.createMCPAdapter(organizationAndTeamData);
         await this.createOrchestration();
 
-        // 1️⃣ conecta MCP (opcional)
         try {
             await this.orchestration.connectMCP();
             await this.orchestration.registerMCPTools();
@@ -254,31 +229,82 @@ export class ConversationAgentProvider {
     ) {
         const { organizationAndTeamData, prepareContext, thread } =
             context || {};
+        try {
+            this.logger.log({
+                message: 'Starting conversation agent execution',
+                context: ConversationAgentProvider.name,
+                serviceName: ConversationAgentProvider.name,
+                metadata: { organizationAndTeamData, thread },
+            });
 
-        if (!organizationAndTeamData) {
-            throw new Error('Organization and team data is required ok.');
-        }
+            if (!organizationAndTeamData) {
+                throw new Error('Organization and team data is required ok.');
+            }
 
-        if (!thread) {
-            throw new Error('thread and team data is required.');
-        }
+            if (!thread) {
+                throw new Error('thread and team data is required.');
+            }
 
-        await this.initialize(organizationAndTeamData);
+            await this.initialize(organizationAndTeamData);
 
-        const result = await this.orchestration.callAgent(
-            'kodus-conversational-agent',
-            prompt,
-            {
-                thread: thread,
-                userContext: {
-                    organizationAndTeamData: organizationAndTeamData,
-                    additional_information: prepareContext,
+            const result = await this.orchestration.callAgent(
+                'kodus-conversational-agent',
+                prompt,
+                {
+                    thread: thread,
+                    userContext: {
+                        organizationAndTeamData: organizationAndTeamData,
+                        additional_information: prepareContext,
+                    },
                 },
-            },
-        );
+            );
 
-        return typeof result.result === 'string'
-            ? result.result
-            : JSON.stringify(result.result);
+            let uri = new ConnectionString('', {
+                user: this.config.username,
+                password: this.config.password,
+                protocol: this.config.port ? 'mongodb' : 'mongodb+srv',
+                hosts: [{ name: this.config.host, port: this.config.port }],
+            }).toString();
+
+            const corr = (result?.context?.correlationId as string) ?? '';
+
+            const traceability = await getExecutionTraceability(
+                uri,
+                corr,
+                'kodus_db',
+            );
+
+            console.log(
+                'Conversation Agent Traceability:',
+                JSON.stringify(traceability, null, 2),
+            );
+
+            this.logger.log({
+                message: 'Finish conversation agent execution',
+                context: ConversationAgentProvider.name,
+                serviceName: ConversationAgentProvider.name,
+                metadata: {
+                    organizationAndTeamData,
+                    thread,
+                    result: {
+                        correlationId: result.context.correlationId ?? null,
+                        threadId: result.context.threadId ?? null,
+                        sessionId: result.context.sessionId ?? null,
+                    },
+                },
+            });
+
+            return typeof result.result === 'string'
+                ? result.result
+                : JSON.stringify(result.result);
+        } catch (error) {
+            this.logger.error({
+                message: 'Error during conversation agent execution',
+                context: ConversationAgentProvider.name,
+                serviceName: ConversationAgentProvider.name,
+                metadata: { error, organizationAndTeamData, thread },
+            });
+            throw error;
+        }
     }
 }

@@ -231,7 +231,7 @@ export class ConditionalMiddlewareFactory implements MiddlewareFactory {
                     const delay = backoffMs * Math.pow(2, attempt - 1);
                     await new Promise((resolve) => setTimeout(resolve, delay));
 
-                    this.observability.logger.warn('Retry attempt', {
+                    this.observability.log('warn', 'Retry attempt', {
                         attempt,
                         maxAttempts,
                         delay,
@@ -268,14 +268,11 @@ export class ConditionalMiddlewareFactory implements MiddlewareFactory {
             try {
                 await Promise.race([next(), timeoutPromise]);
             } catch (error) {
-                this.observability.logger.error(
-                    'Timeout error',
-                    error as Error,
-                    {
-                        eventType: context.event.type,
-                        timeoutMs,
-                    },
-                );
+                this.observability.log('error', 'Timeout error', {
+                    error: (error as Error).message,
+                    eventType: context.event.type,
+                    timeoutMs,
+                });
                 throw error;
             }
         };
@@ -344,26 +341,25 @@ export class ConditionalMiddlewareFactory implements MiddlewareFactory {
             const logLevel = config?.level || 'info';
 
             try {
-                this.observability.logger[logLevel](
+                this.observability.log(
+                    logLevel,
                     'Middleware execution started',
                 );
 
                 await next();
 
-                this.observability.logger[logLevel](
+                this.observability.log(
+                    logLevel,
                     'Middleware execution completed',
                 );
             } catch (error) {
                 const executionTime = Date.now() - startTime;
-                this.observability.logger.error(
-                    'Middleware execution failed',
-                    error as Error,
-                    {
-                        middleware: 'observability',
-                        eventType: context.event.type,
-                        executionTime,
-                    },
-                );
+                this.observability.log('error', 'Middleware execution failed', {
+                    error: (error as Error).message,
+                    middleware: 'observability',
+                    eventType: context.event.type,
+                    executionTime,
+                });
                 throw error;
             }
         };
@@ -445,7 +441,8 @@ export class ConditionalMiddlewareExecutor {
                     stats.applied++;
                     this.stats.set(middlewareName, stats);
 
-                    this.observability.logger.debug(
+                    this.observability.log(
+                        'debug',
                         'Applying conditional middleware',
                         {
                             middleware: middlewareName,
@@ -466,7 +463,8 @@ export class ConditionalMiddlewareExecutor {
                     stats.skipped++;
                     this.stats.set(middlewareName, stats);
 
-                    this.observability.logger.debug(
+                    this.observability.log(
+                        'debug',
                         'Skipping conditional middleware',
                         {
                             middleware: middlewareName,
@@ -488,10 +486,11 @@ export class ConditionalMiddlewareExecutor {
                 stats.errors++;
                 this.stats.set(middlewareName, stats);
 
-                this.observability.logger.error(
+                this.observability.log(
+                    'error',
                     'Conditional middleware error',
-                    error as Error,
                     {
+                        error: (error as Error).message,
                         middleware: middlewareName,
                         eventType: context.event.type,
                     },

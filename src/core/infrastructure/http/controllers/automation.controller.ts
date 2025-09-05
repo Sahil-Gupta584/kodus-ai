@@ -4,13 +4,15 @@ import { AutomationType } from '@/core/domain/automation/enums/automation-type';
 import { OrganizationAndTeamDataDto } from '../dtos/organizationAndTeamData.dto';
 import { GetAllAutomationsUseCase } from '@/core/application/use-cases/automation/get-all-automations.use-case';
 import { RunAutomationUseCase } from '@/core/application/use-cases/automation/run-automation.use-case';
+import { getAllAutomationExecutionsUseCase } from '@/core/application/use-cases/automation/get-all-executions.use-case';
 
 @Controller('automation')
 export class AutomationController {
     constructor(
         private readonly getAllAutomationsUseCase: GetAllAutomationsUseCase,
         private readonly runAutomationUseCase: RunAutomationUseCase,
-    ) { }
+        private readonly getAllAutomationExecutionsUseCase: getAllAutomationExecutionsUseCase,
+    ) {}
 
     @Get('/')
     public async getAllAutomations(@Query() query: TeamQueryDto) {
@@ -37,5 +39,10 @@ export class AutomationController {
             ...body,
             origin: originModded,
         });
+    }
+
+    @Get('/executions')
+    public async getAllAutomationExecutions(@Query() query: TeamQueryDto) {
+        return this.getAllAutomationExecutionsUseCase.execute(query);
     }
 }

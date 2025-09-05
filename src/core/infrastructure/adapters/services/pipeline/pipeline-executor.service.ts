@@ -1,10 +1,8 @@
 import { v4 as uuid } from 'uuid';
-import {
-    PipelineContext,
-    PipelineStatus,
-} from './interfaces/pipeline-context.interface';
+import { PipelineContext } from './interfaces/pipeline-context.interface';
 import { PipelineStage } from './interfaces/pipeline.interface';
 import { PinoLoggerService } from '../logger/pino.service';
+import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
 
 export class PipelineExecutor<TContext extends PipelineContext> {
     constructor(private readonly logger: PinoLoggerService) {}
@@ -34,11 +32,12 @@ export class PipelineExecutor<TContext extends PipelineContext> {
                 ...context?.pipelineMetadata,
                 organizationAndTeamData:
                     (context as any)?.organizationAndTeamData ?? null,
+                status: context.statusInfo,
             },
         });
 
         for (const stage of stages) {
-            if (context.status === PipelineStatus.SKIP) {
+            if (context.statusInfo.status === AutomationStatus.SKIPPED) {
                 this.logger.log({
                     message: `Pipeline '${pipelineName}' skipped due to SKIP status ${pipelineId}`,
                     context: PipelineExecutor.name,
@@ -48,6 +47,7 @@ export class PipelineExecutor<TContext extends PipelineContext> {
                         stage: stage.stageName,
                         organizationAndTeamData:
                             (context as any)?.organizationAndTeamData ?? null,
+                        status: context.statusInfo,
                     },
                 });
                 break;
@@ -67,6 +67,7 @@ export class PipelineExecutor<TContext extends PipelineContext> {
                         stage: stage.stageName,
                         organizationAndTeamData:
                             (context as any)?.organizationAndTeamData ?? null,
+                        status: context.statusInfo,
                     },
                 });
             } catch (error) {
@@ -80,6 +81,7 @@ export class PipelineExecutor<TContext extends PipelineContext> {
                         stage: stage.stageName,
                         organizationAndTeamData:
                             (context as any)?.organizationAndTeamData ?? null,
+                        status: context.statusInfo,
                     },
                 });
 
@@ -92,6 +94,7 @@ export class PipelineExecutor<TContext extends PipelineContext> {
                         stage: stage.stageName,
                         organizationAndTeamData:
                             (context as any)?.organizationAndTeamData ?? null,
+                        status: context.statusInfo,
                     },
                 });
             }

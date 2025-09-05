@@ -1,5 +1,5 @@
 import { LLMAdapter, AgentInputEnum } from '../../core/types/allTypes.js';
-import { createLogger } from '../../observability/index.js';
+import { createLogger, getObservability } from '../../observability/index.js';
 import { BaseExecutionStrategy } from './strategy-interface.js';
 import { SharedStrategyMethods } from './shared-methods.js';
 import type {
@@ -64,137 +64,165 @@ export class ReActStrategy extends BaseExecutionStrategy {
             throw new Error('ThreadId required for ContextService operations');
         }
 
-        try {
-            this.validateContext(context);
+        // ✅ CORREÇÃO: Usar traceAgent para toda a execução da estratégia
+        return await getObservability().traceAgent(
+            'react-strategy',
+            async () => {
+                try {
+                    this.validateContext(context);
 
-            this.logger.debug('🚀 ReAct strategy started', { threadId });
-
-            // 🔥 NOVO: Track repeated actions to prevent loops
-            const actionHistory: string[] = [];
-
-            while (iteration < this.config.maxIterations) {
-                // 🔥 FORÇA FINAL ANSWER na última iteração se não tiver resposta final
-                const isLastIteration =
-                    iteration === this.config.maxIterations - 1;
-                const hasFinalAnswer = steps.some(
-                    (step) => step.action?.type === 'final_answer',
-                );
-
-                if (isLastIteration && !hasFinalAnswer) {
-                    this.logger.info(
-                        '🎯 Last iteration reached, forcing final answer',
-                    );
-                    const finalStep = await this.forceFinalAnswer(
-                        context,
-                        iteration,
-                        steps,
-                        'Maximum iterations reached without final answer',
-                    );
-                    steps.push(finalStep);
-                    break;
-                }
-
-                if (
-                    this.shouldStop(iteration, toolCallsCount, startTime, steps)
-                ) {
-                    break;
-                }
-
-                // 🔥 NOVO: Check for potential loops
-                const potentialLoop = this.detectLoop(steps, actionHistory);
-                if (potentialLoop && iteration > 2) {
-                    this.logger.warn(
-                        '⚠️ Potential loop detected, forcing final answer',
-                        {
-                            repeatedAction: potentialLoop,
-                            iteration,
-                        },
-                    );
-                    const finalStep = await this.forceFinalAnswer(
-                        context,
-                        iteration,
-                        steps,
-                        `Detected repeated action: ${potentialLoop}. Preventing infinite loop.`,
-                    );
-                    steps.push(finalStep);
-                    break;
-                }
-
-                const step = await this.executeIteration(
-                    context,
-                    iteration,
-                    steps,
-                );
-                steps.push(step);
-
-                // 🔥 NOVO: Track action for loop detection
-                if (step.action?.type === 'tool_call' && step.action.toolName) {
-                    actionHistory.push(
-                        `${step.action.type}:${step.action.toolName}`,
-                    );
-                } else if (step.action?.type) {
-                    actionHistory.push(step.action.type);
-                }
-
-                this.logger.debug('✅ Iteration completed', {
-                    threadId,
-                    iteration,
-                    actionType: step.action?.type,
-                });
-
-                if (step.action?.type === 'final_answer') {
-                    this.logger.debug(
-                        '🎯 Final answer reached, stopping execution',
-                        {
-                            iteration: iteration + 1,
-                            totalSteps: steps.length,
-                        },
-                    );
-                    break;
-                }
-
-                if (step.action?.type === 'tool_call') {
-                    toolCallsCount++;
-                    this.logger.debug('🔧 Tool call executed', {
-                        iteration: iteration + 1,
-                        toolCalls: toolCallsCount,
-                        actionType: step.action.type,
+                    this.logger.debug('🚀 ReAct strategy started', {
+                        threadId,
                     });
+
+                    // 🔥 NOVO: Track repeated actions to prevent loops
+                    const actionHistory: string[] = [];
+
+                    while (iteration < this.config.maxIterations) {
+                        // 🔥 FORÇA FINAL ANSWER na última iteração se não tiver resposta final
+                        const isLastIteration =
+                            iteration === this.config.maxIterations - 1;
+                        const hasFinalAnswer = steps.some(
+                            (step) => step.action?.type === 'final_answer',
+                        );
+
+                        if (isLastIteration && !hasFinalAnswer) {
+                            this.logger.info(
+                                '🎯 Last iteration reached, forcing final answer',
+                            );
+                            const finalStep = await this.forceFinalAnswer(
+                                context,
+                                iteration,
+                                steps,
+                                'Maximum iterations reached without final answer',
+                            );
+                            steps.push(finalStep);
+                            break;
+                        }
+
+                        if (
+                            this.shouldStop(
+                                iteration,
+                                toolCallsCount,
+                                startTime,
+                                steps,
+                            )
+                        ) {
+                            break;
+                        }
+
+                        // 🔥 NOVO: Check for potential loops
+                        const potentialLoop = this.detectLoop(
+                            steps,
+                            actionHistory,
+                        );
+                        if (potentialLoop && iteration > 2) {
+                            this.logger.warn(
+                                '⚠️ Potential loop detected, forcing final answer',
+                                {
+                                    repeatedAction: potentialLoop,
+                                    iteration,
+                                },
+                            );
+                            const finalStep = await this.forceFinalAnswer(
+                                context,
+                                iteration,
+                                steps,
+                                `Detected repeated action: ${potentialLoop}. Preventing infinite loop.`,
+                            );
+                            steps.push(finalStep);
+                            break;
+                        }
+
+                        const step = await this.executeIteration(
+                            context,
+                            iteration,
+                            steps,
+                        );
+                        steps.push(step);
+
+                        // 🔥 NOVO: Track action for loop detection
+                        if (
+                            step.action?.type === 'tool_call' &&
+                            step.action.toolName
+                        ) {
+                            actionHistory.push(
+                                `${step.action.type}:${step.action.toolName}`,
+                            );
+                        } else if (step.action?.type) {
+                            actionHistory.push(step.action.type);
+                        }
+
+                        this.logger.debug('✅ Iteration completed', {
+                            threadId,
+                            iteration,
+                            actionType: step.action?.type,
+                        });
+
+                        if (step.action?.type === 'final_answer') {
+                            this.logger.debug(
+                                '🎯 Final answer reached, stopping execution',
+                                {
+                                    iteration: iteration + 1,
+                                    totalSteps: steps.length,
+                                },
+                            );
+                            break;
+                        }
+
+                        if (step.action?.type === 'tool_call') {
+                            toolCallsCount++;
+                            this.logger.debug('🔧 Tool call executed', {
+                                iteration: iteration + 1,
+                                toolCalls: toolCallsCount,
+                                actionType: step.action.type,
+                            });
+                        }
+
+                        iteration++;
+                    }
+
+                    const result = this.buildSuccessResult(
+                        steps,
+                        startTime,
+                        iteration,
+                        toolCallsCount,
+                    );
+
+                    this.logger.info(
+                        '✅ ReAct strategy completed successfully',
+                        {
+                            threadId,
+                            success: result.success,
+                            steps: result.steps.length,
+                            executionTime: result.executionTime,
+                        },
+                    );
+
+                    return result;
+                } catch (error) {
+                    const result = this.buildErrorResult(
+                        error,
+                        steps,
+                        startTime,
+                        iteration,
+                        toolCallsCount,
+                    );
+
+                    this.logger.error(
+                        `❌ ReAct strategy completed with error: ${result.error}`,
+                    );
+
+                    return result;
                 }
-
-                iteration++;
-            }
-
-            const result = this.buildSuccessResult(
-                steps,
-                startTime,
-                iteration,
-                toolCallsCount,
-            );
-
-            this.logger.info('✅ ReAct strategy completed successfully', {
-                threadId,
-                success: result.success,
-                steps: result.steps.length,
-                executionTime: result.executionTime,
-            });
-
-            return result;
-        } catch (error) {
-            const result = this.buildErrorResult(
-                error,
-                steps,
-                startTime,
-                iteration,
-                toolCallsCount,
-            );
-
-            this.logger.error(
-                `❌ ReAct strategy completed with error: ${result.error}`,
-            );
-
-            return result;
-        }
+            },
+            {
+                correlationId: context.agentContext.correlationId,
+                tenantId: context.agentContext.tenantId,
+                sessionId: context.agentContext.sessionId,
+                input: context.input,
+            },
+        );
     }
 
     /**
@@ -548,18 +576,34 @@ export class ReActStrategy extends BaseExecutionStrategy {
 
             let response;
             try {
-                response = await this.llmAdapter.call({
-                    messages: [
-                        {
-                            role: AgentInputEnum.SYSTEM,
-                            content: prompts.systemPrompt,
+                // ✅ CORREÇÃO: Usar trace para chamadas do LLM
+                response = await getObservability().trace(
+                    'llm.call',
+                    async () => {
+                        return await this.llmAdapter.call({
+                            messages: [
+                                {
+                                    role: AgentInputEnum.SYSTEM,
+                                    content: prompts.systemPrompt,
+                                },
+                                {
+                                    role: AgentInputEnum.USER,
+                                    content: prompts.userPrompt,
+                                },
+                            ],
+                        });
+                    },
+                    {
+                        attributes: {
+                            model: 'unknown',
+                            operation: 'thought-generation',
+                            iteration: iteration,
+                            promptTokens:
+                                prompts.systemPrompt.length +
+                                prompts.userPrompt.length,
                         },
-                        {
-                            role: AgentInputEnum.USER,
-                            content: prompts.userPrompt,
-                        },
-                    ],
-                });
+                    },
+                );
 
                 this.logger.debug('✅ LLM call successful', {
                     iteration,
@@ -713,9 +757,20 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     });
 
                     try {
-                        const result = await SharedStrategyMethods.executeTool(
-                            action,
-                            context,
+                        // ✅ CORREÇÃO: Usar traceTool para chamadas de ferramentas
+                        const result = await getObservability().traceTool(
+                            action.toolName || 'unknown-tool',
+                            async () => {
+                                return await SharedStrategyMethods.executeTool(
+                                    action,
+                                    context,
+                                );
+                            },
+                            {
+                                callId: `tool-${Date.now()}`,
+                                toolType: 'strategy-tool',
+                                parameters: action.input,
+                            },
                         );
 
                         this.logger.debug('✅ Tool executed successfully', {
@@ -1375,18 +1430,35 @@ export class ReActStrategy extends BaseExecutionStrategy {
 
             let response;
             try {
-                response = await this.llmAdapter.call({
-                    messages: [
-                        {
-                            role: AgentInputEnum.SYSTEM,
-                            content: prompts.systemPrompt,
+                // ✅ CORREÇÃO: Usar trace para segunda chamada do LLM (force final answer)
+                response = await getObservability().trace(
+                    'llm.call',
+                    async () => {
+                        return await this.llmAdapter.call({
+                            messages: [
+                                {
+                                    role: AgentInputEnum.SYSTEM,
+                                    content: prompts.systemPrompt,
+                                },
+                                {
+                                    role: AgentInputEnum.USER,
+                                    content: finalPrompt.userPrompt,
+                                },
+                            ],
+                        });
+                    },
+                    {
+                        attributes: {
+                            model: 'unknown',
+                            operation: 'force-final-answer',
+                            iteration: iteration,
+                            promptTokens:
+                                prompts.systemPrompt.length +
+                                finalPrompt.userPrompt.length,
+                            reason: reason,
                         },
-                        {
-                            role: AgentInputEnum.USER,
-                            content: finalPrompt.userPrompt,
-                        },
-                    ],
-                });
+                    },
+                );
             } catch (llmError) {
                 const errorMessage =
                     llmError instanceof Error

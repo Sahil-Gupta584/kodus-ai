@@ -479,7 +479,7 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
         let isPlatformTypeGithub: boolean =
             platformType === PlatformType.GITHUB;
 
-        const pr = await this.pullRequestService.findByNumberAndRepository(
+        const pr = await this.pullRequestService.findByNumberAndRepositoryName(
             prNumber,
             repository.name,
             organizationAndTeamData,
