@@ -644,7 +644,6 @@ export class CrossFileAnalysisService {
             analysisType,
             prNumber,
             organizationAndTeamData,
-            context?.codeReviewConfig?.codeReviewVersion,
         );
     }
     //#endregion
@@ -658,7 +657,6 @@ export class CrossFileAnalysisService {
         analysisType: AnalysisType,
         prNumber: number,
         organizationAndTeamData: OrganizationAndTeamData,
-        codeReviewVersion: CodeReviewVersion,
     ): CodeSuggestion[] | null {
         try {
             if (!response) {
@@ -714,7 +712,7 @@ export class CrossFileAnalysisService {
                     this.validateSuggestion(suggestion, analysisType),
                 )
                 .map((suggestion) =>
-                    this.enrichSuggestion(suggestion, codeReviewVersion),
+                    this.enrichSuggestion(suggestion),
                 );
 
             this.logger.log({
@@ -774,16 +772,7 @@ export class CrossFileAnalysisService {
      */
     private enrichSuggestion(
         suggestion: any,
-        codeReviewVersion: CodeReviewVersion,
     ): CodeSuggestion {
-        if (codeReviewVersion === CodeReviewVersion.v2) {
-            if (suggestion.label === LabelType.PERFORMANCE_AND_OPTIMIZATION) {
-                suggestion.label = 'performance';
-            } else {
-                suggestion.label = 'bug';
-            }
-        }
-
         return {
             id: uuidv4(),
             relevantFile: suggestion.relevantFile,
@@ -794,7 +783,7 @@ export class CrossFileAnalysisService {
             oneSentenceSummary: suggestion.oneSentenceSummary,
             relevantLinesStart: suggestion.relevantLinesStart,
             relevantLinesEnd: suggestion.relevantLinesEnd,
-            label: suggestion?.label || '',
+            label: LabelType.CROSS_FILE,
             severity: suggestion.severity,
             rankScore: suggestion?.rankScore || 0,
             type: SuggestionType.CROSS_FILE,

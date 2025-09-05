@@ -13,6 +13,7 @@ export enum LabelType {
     BREAKING_CHANGES = 'breaking_changes',
     BUG = 'bug',
     PERFORMANCE = 'performance',
+    CROSS_FILE = 'cross_file',
 }
 
 enum ShieldColor {
@@ -25,7 +26,8 @@ enum ShieldColor {
     PURPLE = '6A1B9A',
     PINK = 'D81B60',
     INDIGO = '4527A0',
-    YELLOW = 'FFD600'
+    YELLOW = 'FFD600',
+    LIGHT_PURPLE = '9C27B0'
 }
 
 const getLabelShield = (label: string) => {
@@ -65,6 +67,8 @@ const getLabelShield = (label: string) => {
             return `${shield}${ShieldColor.DARK_RED})`;
         case LabelType.PERFORMANCE:
             return `${shield}${ShieldColor.ORANGE})`;
+        case LabelType.CROSS_FILE:
+            return `${shield}${ShieldColor.LIGHT_PURPLE})`;
         default:
             return '';
     }
