@@ -13,6 +13,7 @@ import { OrganizationAndTeamDataDto } from './organizationAndTeamData.dto';
 import {
     BehaviourForExistingDescription,
     BehaviourForNewCommits,
+    CodeReviewVersion,
     GroupingModeSuggestions,
     LimitationType,
     ReviewCadenceType,
@@ -49,6 +50,14 @@ class ReviewOptionsDto {
 
     @IsBoolean()
     breaking_changes: boolean;
+
+    @IsOptional()
+    @IsBoolean()
+    bug: boolean;
+
+    @IsOptional()
+    @IsBoolean()
+    performance: boolean;
 }
 
 class SummaryConfigDto {
@@ -213,6 +222,10 @@ class CodeReviewConfigWithoutLLMProviderDto {
     @IsOptional()
     @IsBoolean()
     runOnDraft?: boolean;
+
+    @IsOptional()
+    @IsEnum(CodeReviewVersion)
+    codeReviewVersion?: CodeReviewVersion;
 }
 
 export class CreateOrUpdateCodeReviewParameterDto {

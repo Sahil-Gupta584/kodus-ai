@@ -16,6 +16,7 @@ import {
     BehaviourForExistingDescription,
     BehaviourForNewCommits,
     CodeReviewConfigWithoutLLMProvider,
+    CodeReviewVersion,
     GroupingModeSuggestions,
     LimitationType,
     SuggestionControlConfig,
@@ -84,6 +85,10 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                     this.request.user.organization.uuid;
             }
 
+            if (configValue?.codeReviewVersion === CodeReviewVersion.v2) {
+                configValue.reviewOptions.kodyRules = true;
+            }
+
             const codeReviewConfigs: ICodeReviewParameter =
                 await this.getCodeReviewConfigs(organizationAndTeamData);
             const codeRepositories = await this.getFormattedRepositories(
@@ -146,6 +151,10 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         directoryId: string,
         configValue: CodeReviewConfigWithoutLLMProvider,
     ) {
+        if (configValue?.codeReviewVersion === CodeReviewVersion.v2) {
+            configValue.reviewOptions.kody_rules = true;
+        }
+
         const targetRepository = codeReviewConfigs.repositories.find(
             (repository: any) => repository.id === repositoryId,
         );
@@ -463,6 +472,10 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         repositoryId: string,
         configValue: CodeReviewConfigWithoutLLMProvider,
     ) {
+        if (configValue?.codeReviewVersion === CodeReviewVersion.v2) {
+            configValue.reviewOptions.kody_rules = true;
+        }
+
         const currentRepositoryConfig = codeReviewConfigs.repositories.find(
             (repository: any) => repository.id === repositoryId,
         );
