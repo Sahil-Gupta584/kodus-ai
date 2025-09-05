@@ -58,6 +58,10 @@ class ReviewOptionsDto {
     @IsOptional()
     @IsBoolean()
     performance: boolean;
+
+    @IsOptional()
+    @IsBoolean()
+    cross_file: boolean;
 }
 
 class SummaryConfigDto {
@@ -225,7 +229,7 @@ class CodeReviewConfigWithoutLLMProviderDto {
 
     @IsOptional()
     @IsEnum(CodeReviewVersion)
-    codeReviewVersion?: CodeReviewVersion;
+    codeReviewVersion?: CodeReviewVersion = CodeReviewVersion.LEGACY;
 }
 
 export class CreateOrUpdateCodeReviewParameterDto {

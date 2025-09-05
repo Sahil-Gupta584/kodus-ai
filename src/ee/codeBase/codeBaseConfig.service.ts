@@ -161,15 +161,15 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             }
 
             const codeReviewVersion =
-            (isParameterValidInConfigFile(
-                'codeReviewVersion',
-                validationErrors,
-            )
-                ? kodusConfigFile?.codeReviewVersion
-                : undefined) ??
-            repoConfig.codeReviewVersion ??
-            globalConfig.codeReviewVersion ??
-            this.DEFAULT_CONFIG.codeReviewVersion;
+                (isParameterValidInConfigFile(
+                    'codeReviewVersion',
+                    validationErrors,
+                )
+                    ? kodusConfigFile?.codeReviewVersion
+                    : undefined) ??
+                repoConfig.codeReviewVersion ??
+                globalConfig.codeReviewVersion ??
+                this.DEFAULT_CONFIG.codeReviewVersion;
 
             const config: CodeReviewConfig = {
                 ignorePaths: this.getIgnorePathsWithGlobal(
@@ -407,9 +407,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         const defaultOptions = this.DEFAULT_CONFIG.reviewOptions;
         const { kodusConfig, validationErrors } = kodusOptions;
 
-        if (
-            codeReviewVersion === CodeReviewVersion.LEGACY
-        ) {
+        if (codeReviewVersion === CodeReviewVersion.LEGACY) {
             return {
                 security:
                     (isParameterValidInConfigFile('security', validationErrors)
@@ -517,6 +515,17 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     repo?.breaking_changes ??
                     global?.breaking_changes ??
                     defaultOptions.breaking_changes,
+
+                cross_file:
+                    (isParameterValidInConfigFile(
+                        'cross_file',
+                        validationErrors,
+                    )
+                        ? kodusConfig?.cross_file
+                        : undefined) ??
+                    repo?.cross_file ??
+                    global?.cross_file ??
+                    defaultOptions.cross_file,
             };
         } else {
             return {
@@ -544,6 +553,27 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     repo?.performance ??
                     global?.performance ??
                     defaultOptions.performance,
+                breaking_changes:
+                    (isParameterValidInConfigFile(
+                        'breaking_changes',
+                        validationErrors,
+                    )
+                        ? kodusConfig?.breaking_changes
+                        : undefined) ??
+                    repo?.breaking_changes ??
+                    global?.breaking_changes ??
+                    defaultOptions.breaking_changes,
+                cross_file:
+                    (isParameterValidInConfigFile(
+                        'cross_file',
+                        validationErrors,
+                    )
+                        ? kodusConfig?.cross_file
+                        : undefined) ??
+                    repo?.cross_file ??
+                    global?.cross_file ??
+                    defaultOptions.cross_file,
+                kody_rules: true,
             };
         }
     }

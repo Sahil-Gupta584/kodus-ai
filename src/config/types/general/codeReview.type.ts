@@ -234,6 +234,7 @@ export interface ReviewOptions {
     breaking_changes?: boolean;
     bug?: boolean;
     performance?: boolean;
+    cross_file?: boolean;
 }
 
 export enum BehaviourForExistingDescription {
