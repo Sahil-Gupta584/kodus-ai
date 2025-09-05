@@ -60,8 +60,8 @@
         "description": "Improvements in code performance and efficiency."
     },
     {
-        "type": "cross-file",
-        "name": "Cross-File",
+        "type": "cross_file",
+        "name": "Cross File",
         "description": "Identifies fails between changed files in the PR."
     }
 

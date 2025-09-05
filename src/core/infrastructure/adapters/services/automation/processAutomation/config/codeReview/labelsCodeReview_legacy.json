@@ -50,8 +50,8 @@
         "description": "Changes that break the existing code."
     },
     {
-        "type": "cross-file",
-        "name": "Cross-File",
+        "type": "cross_file",
+        "name": "Cross File",
         "description": "Identifies fails between changed files in the PR."
     }
 
