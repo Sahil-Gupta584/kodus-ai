@@ -578,12 +578,21 @@ export class KodyRulesService implements IKodyRulesService {
                 return [];
             }
 
-            // Retorna todos os buckets com informações completas
-            return bucketsData.map((bucket: any) => ({
-                slug: bucket.slug,
-                title: bucket.title,
-                description: bucket.description,
-            }));
+            // Calcula o contador de regras para cada bucket
+            const bucketsWithCount = bucketsData.map((bucket: any) => {
+                const rulesCount = libraryKodyRules.filter((rule: any) => 
+                    rule.buckets && rule.buckets.includes(bucket.slug)
+                ).length;
+
+                return {
+                    slug: bucket.slug,
+                    title: bucket.title,
+                    description: bucket.description,
+                    rulesCount,
+                };
+            });
+
+            return bucketsWithCount;
         } catch (error) {
             console.error('Error in getLibraryKodyRulesBuckets:', error);
             return [];
