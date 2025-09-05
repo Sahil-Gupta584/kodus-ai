@@ -20,7 +20,7 @@ const createNestedConditions = <T>(
         const value = filterObject[key];
         const currentPath = `${prefix}.${key}`;
 
-        if (value && typeof value === 'object' && !Array.isArray(value)) {
+        if (value && typeof value === 'object' && !Array.isArray(value) && value.constructor === Object) {
             // Recursively handle nested objects
             const nestedConditions = createNestedConditions(currentPath, value);
             Object.assign(conditions, nestedConditions);

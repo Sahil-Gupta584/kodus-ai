@@ -69,7 +69,7 @@ describe('AutomationExecutionRepository', () => {
             // Act
             await repository.find(filter);
 
-            // Assert
+            // Assert - Should load all nested relations since filter includes deep nested properties
             expect(mockTypeOrmRepository.find).toHaveBeenCalledWith({
                 where: {
                     status: AutomationStatus.SUCCESS,
@@ -77,9 +77,9 @@ describe('AutomationExecutionRepository', () => {
                 },
                 relations: [
                     'teamAutomation',
+                    'codeReviewExecutions',
                     'teamAutomation.team',
                     'teamAutomation.team.organization',
-                    'codeReviewExecutions',
                 ],
             });
         });
@@ -104,7 +104,7 @@ describe('AutomationExecutionRepository', () => {
             // Act
             await repository.find(filter);
 
-            // Assert
+            // Assert - Should only load basic relations since filter has no nested teamAutomation properties
             expect(mockTypeOrmRepository.find).toHaveBeenCalledWith({
                 where: {
                     status: AutomationStatus.SUCCESS,
@@ -112,8 +112,6 @@ describe('AutomationExecutionRepository', () => {
                 },
                 relations: [
                     'teamAutomation',
-                    'teamAutomation.team',
-                    'teamAutomation.team.organization',
                     'codeReviewExecutions',
                 ],
             });
@@ -141,7 +139,7 @@ describe('AutomationExecutionRepository', () => {
             // Act
             await repository.find(filter);
 
-            // Assert
+            // Assert - Should load all nested relations since filter includes deep nested properties
             expect(mockTypeOrmRepository.find).toHaveBeenCalledWith({
                 where: {
                     'teamAutomation.uuid': 'team-automation-id',
@@ -151,9 +149,9 @@ describe('AutomationExecutionRepository', () => {
                 },
                 relations: [
                     'teamAutomation',
+                    'codeReviewExecutions',
                     'teamAutomation.team',
                     'teamAutomation.team.organization',
-                    'codeReviewExecutions',
                 ],
             });
         });
@@ -167,13 +165,11 @@ describe('AutomationExecutionRepository', () => {
             // Act
             await repository.find(filter);
 
-            // Assert
+            // Assert - Should only load basic relations since no filter properties require deep relations
             expect(mockTypeOrmRepository.find).toHaveBeenCalledWith({
                 where: {},
                 relations: [
                     'teamAutomation',
-                    'teamAutomation.team',
-                    'teamAutomation.team.organization',
                     'codeReviewExecutions',
                 ],
             });
@@ -186,13 +182,11 @@ describe('AutomationExecutionRepository', () => {
             // Act
             await repository.find(undefined);
 
-            // Assert
+            // Assert - Should only load basic relations since no filter properties require deep relations
             expect(mockTypeOrmRepository.find).toHaveBeenCalledWith({
                 where: {},
                 relations: [
                     'teamAutomation',
-                    'teamAutomation.team',
-                    'teamAutomation.team.organization',
                     'codeReviewExecutions',
                 ],
             });
@@ -224,7 +218,7 @@ describe('AutomationExecutionRepository', () => {
             // Act
             await repository.find(filter);
 
-            // Assert - Verify that nested objects are flattened correctly
+            // Assert - Verify that nested objects are flattened correctly and all relations are loaded
             expect(mockTypeOrmRepository.find).toHaveBeenCalledWith({
                 where: {
                     status: AutomationStatus.SUCCESS,
@@ -238,8 +232,67 @@ describe('AutomationExecutionRepository', () => {
                 },
                 relations: [
                     'teamAutomation',
+                    'codeReviewExecutions',
                     'teamAutomation.team',
                     'teamAutomation.team.organization',
+                ],
+            });
+        });
+
+        it('should load team relations but not organization when filter only has team properties', async () => {
+            // Arrange
+            const filter: Partial<IAutomationExecution> = {
+                teamAutomation: {
+                    uuid: 'team-automation-id',
+                    team: {
+                        uuid: 'team-id',
+                        name: 'Test Team',
+                    },
+                },
+            };
+
+            mockTypeOrmRepository.find.mockResolvedValue([]);
+
+            // Act
+            await repository.find(filter);
+
+            // Assert - Should load team relations but not organization
+            expect(mockTypeOrmRepository.find).toHaveBeenCalledWith({
+                where: {
+                    'teamAutomation.uuid': 'team-automation-id',
+                    'teamAutomation.team.uuid': 'team-id',
+                    'teamAutomation.team.name': 'Test Team',
+                },
+                relations: [
+                    'teamAutomation',
+                    'codeReviewExecutions',
+                    'teamAutomation.team',
+                ],
+            });
+        });
+
+        it('should only load teamAutomation relation when filter has teamAutomation but no nested properties', async () => {
+            // Arrange
+            const filter: Partial<IAutomationExecution> = {
+                teamAutomation: {
+                    uuid: 'team-automation-id',
+                    status: true,
+                },
+            };
+
+            mockTypeOrmRepository.find.mockResolvedValue([]);
+
+            // Act
+            await repository.find(filter);
+
+            // Assert - Should only load teamAutomation relation
+            expect(mockTypeOrmRepository.find).toHaveBeenCalledWith({
+                where: {
+                    'teamAutomation.uuid': 'team-automation-id',
+                    'teamAutomation.status': true,
+                },
+                relations: [
+                    'teamAutomation',
                     'codeReviewExecutions',
                 ],
             });

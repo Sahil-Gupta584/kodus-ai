@@ -124,4 +124,82 @@ describe('createNestedConditions', () => {
             'user.organization.description': null,
         });
     });
+
+    it('should handle Date objects as primitive values and not recurse into them', () => {
+        const now = new Date();
+        const filterObject = {
+            createdAt: now,
+            organization: {
+                uuid: 'org-123',
+            },
+        };
+
+        const result = createNestedConditions('user', filterObject);
+
+        expect(result).toEqual({
+            'user.createdAt': now,
+            'user.organization.uuid': 'org-123',
+        });
+    });
+
+    it('should handle RegExp objects as primitive values and not recurse into them', () => {
+        const regex = /test-pattern/gi;
+        const filterObject = {
+            pattern: regex,
+            name: 'test',
+        };
+
+        const result = createNestedConditions('filter', filterObject);
+
+        expect(result).toEqual({
+            'filter.pattern': regex,
+            'filter.name': 'test',
+        });
+    });
+
+    it('should handle class instances as primitive values and not recurse into them', () => {
+        class CustomClass {
+            constructor(public value: string) {}
+        }
+
+        const instance = new CustomClass('test-value');
+        const filterObject = {
+            customObject: instance,
+            status: 'active',
+        };
+
+        const result = createNestedConditions('entity', filterObject);
+
+        expect(result).toEqual({
+            'entity.customObject': instance,
+            'entity.status': 'active',
+        });
+    });
+
+    it('should handle complex objects with mixed Date, RegExp, and plain objects', () => {
+        const now = new Date();
+        const regex = /pattern/;
+        
+        const filterObject = {
+            createdAt: now,
+            validationPattern: regex,
+            team: {
+                uuid: 'team-123',
+                organization: {
+                    uuid: 'org-123',
+                    createdAt: now,
+                },
+            },
+        };
+
+        const result = createNestedConditions('automation', filterObject);
+
+        expect(result).toEqual({
+            'automation.createdAt': now,
+            'automation.validationPattern': regex,
+            'automation.team.uuid': 'team-123',
+            'automation.team.organization.uuid': 'org-123',
+            'automation.team.organization.createdAt': now,
+        });
+    });
 });

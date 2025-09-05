@@ -144,9 +144,23 @@ export class AutomationExecutionRepository
         try {
             const whereConditions = this.getFilterConditions(filter);
 
+            // Determine which relations to load based on the filter
+            const relations = ['teamAutomation', 'codeReviewExecutions'];
+            
+            // Only load deep nested relations if the filter requires them
+            if (filter?.teamAutomation) {
+                const teamAutomationFilter = filter.teamAutomation as any;
+                if (teamAutomationFilter.team) {
+                    relations.push('teamAutomation.team');
+                    if (teamAutomationFilter.team.organization) {
+                        relations.push('teamAutomation.team.organization');
+                    }
+                }
+            }
+
             const findOneOptions: FindManyOptions<AutomationExecutionModel> = {
                 where: whereConditions,
-                relations: ['teamAutomation', 'teamAutomation.team', 'teamAutomation.team.organization', 'codeReviewExecutions'],
+                relations,
             };
 
             const automationModel =
