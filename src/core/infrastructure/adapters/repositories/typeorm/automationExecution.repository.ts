@@ -142,11 +142,11 @@ export class AutomationExecutionRepository
         filter?: Partial<IAutomationExecution>,
     ): Promise<AutomationExecutionEntity[]> {
         try {
-            const whereConditions: any = { ...filter };
+            const whereConditions = this.getFilterConditions(filter);
 
             const findOneOptions: FindManyOptions<AutomationExecutionModel> = {
                 where: whereConditions,
-                relations: ['teamAutomation', 'codeReviewExecutions'],
+                relations: ['teamAutomation', 'teamAutomation.team', 'teamAutomation.team.organization', 'codeReviewExecutions'],
             };
 
             const automationModel =

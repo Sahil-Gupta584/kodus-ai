@@ -1,5 +1,6 @@
 /**
  * Creates nested conditions based on a prefix and a filter object.
+ * Recursively handles deeply nested objects.
  *
  * @param {string} prefix - The prefix to use for creating the nested conditions.
  * @param {Partial<T>} filterObject - The filter object used to create the conditions.
@@ -13,10 +14,23 @@ const createNestedConditions = <T>(
         return {};
     }
 
-    return Object.keys(filterObject).reduce((conditions, key) => {
-        conditions[`${prefix}.${key}`] = filterObject[key];
-        return conditions;
-    }, {});
+    const conditions: Record<string, any> = {};
+
+    Object.keys(filterObject).forEach((key) => {
+        const value = filterObject[key];
+        const currentPath = `${prefix}.${key}`;
+
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+            // Recursively handle nested objects
+            const nestedConditions = createNestedConditions(currentPath, value);
+            Object.assign(conditions, nestedConditions);
+        } else {
+            // For primitive values, create direct condition
+            conditions[currentPath] = value;
+        }
+    });
+
+    return conditions;
 };
 
 export { createNestedConditions };
