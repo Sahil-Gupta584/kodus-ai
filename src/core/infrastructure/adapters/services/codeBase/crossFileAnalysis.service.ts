@@ -478,6 +478,7 @@ export class CrossFileAnalysisService {
             ])
             .addCallbacks([this.tokenTracker.createCallbackHandler()])
             .setRunName(runName)
+            .setMaxReasoningTokens(5000)
             .addMetadata({
                 organizationAndTeamData,
                 prNumber,
