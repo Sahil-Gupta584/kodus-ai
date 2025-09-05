@@ -32,34 +32,22 @@ ${JSON.stringify(
 
 ## Analysis Focus
 
-### refactoring
+Look for cross-file issues that require multiple file context:
 - Same logic implemented across multiple files in the diff
-- Similar functions/methods that could be consolidated
-- Repeated patterns indicating need for shared utilities
-
-### error_handling
 - Different error handling patterns for similar scenarios across files
-- Inconsistent error propagation between components
-- Mixed approaches to validation/exception handling
-
-### maintainability
 - Hardcoded values duplicated across files that should use shared constants
-- Similar configurations with different values
-- Magic numbers/strings repeated in multiple files
-
-### potential_issues
-- Function signature changes not reflected in usage within the diff
-- Behavioral changes without updating calling code
-- Inconsistent API usage patterns across files
 - Same business operation with different validation rules
 - Missing validations in one implementation while present in another
-- Inconsistent error handling for similar operations
-
-### performance_and_optimization
 - Unnecessary database calls when data already validated elsewhere
-- Redundant null checks when validation exists in another layer
 - Duplicate validations across different components
 - Operations already handled by other layers
+- Similar functions/methods that could be consolidated
+- Repeated patterns indicating need for shared utilities
+- Inconsistent error propagation between components
+- Mixed approaches to validation/exception handling
+- Similar configurations with different values
+- Magic numbers/strings repeated in multiple files
+- Redundant null checks when validation exists in another layer
 
 ## Analysis Instructions
 
@@ -130,7 +118,7 @@ Generate suggestions in JSON format:
   "oneSentenceSummary": "brief description of the cross-file issue",
   "relevantLinesStart": number,
   "relevantLinesEnd": number,
-  "label": "refactoring|error_handling|maintainability|potential_issues|performance_and_optimization",
+  "label": "cross_file",
   "rankScore": 0,
 }
 \`\`\`
