@@ -1,14 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import * as labelsData from '@/core/infrastructure/adapters/services/automation/processAutomation/config/codeReview/labels.json';
+import { CodeReviewVersion } from '@/config/types/general/codeReview.type';
+import * as labelsDataV2 from '@/core/infrastructure/adapters/services/automation/processAutomation/config/codeReview/labelsCodeReview_v2.json';
+import * as labelsDataLegacy from '@/core/infrastructure/adapters/services/automation/processAutomation/config/codeReview/labelsCodeReview_legacy.json';
 
 @Injectable()
 export class ListCodeReviewAutomationLabelsUseCase {
     constructor(private readonly logger: PinoLoggerService) {}
 
-    execute() {
+    execute(codeReviewVersion?: CodeReviewVersion) {
         try {
-            return labelsData;
+            return codeReviewVersion === CodeReviewVersion.v2 ? labelsDataV2 : labelsDataLegacy;
         } catch (error) {
             this.logger.error({
                 message: 'Error listing code review automation labels',

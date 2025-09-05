@@ -18,6 +18,7 @@ import { DeleteRepositoryCodeReviewParameterDto } from '../dtos/delete-repositor
 import { DeleteRepositoryCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/delete-repository-code-review-parameter.use-case';
 import { PreviewPrSummaryDto } from '../dtos/preview-pr-summary.dto';
 import { PreviewPrSummaryUseCase } from '@/core/application/use-cases/parameters/preview-pr-summary.use-case';
+import { CodeReviewVersion } from '@/config/types/general/codeReview.type';
 @Controller('parameters')
 export class ParametersController {
     constructor(
@@ -63,8 +64,10 @@ export class ParametersController {
     //endregion
     //#region Code review routes
     @Get('/list-code-review-automation-labels')
-    public async listCodeReviewAutomationLabels() {
-        return this.listCodeReviewAutomationLabelsUseCase.execute();
+    public async listCodeReviewAutomationLabels(
+        @Query('codeReviewVersion') codeReviewVersion?: CodeReviewVersion,
+    ) {
+        return this.listCodeReviewAutomationLabelsUseCase.execute(codeReviewVersion);
     }
 
     @Post('/create-or-update-code-review')
