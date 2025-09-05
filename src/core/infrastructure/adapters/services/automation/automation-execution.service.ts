@@ -13,6 +13,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { FindOptionsWhere } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { PinoLoggerService } from '../logger/pino.service';
+import { CacheService } from '@/shared/utils/cache/cache.service';
 
 @Injectable()
 export class AutomationExecutionService implements IAutomationExecutionService {
@@ -24,6 +25,7 @@ export class AutomationExecutionService implements IAutomationExecutionService {
         private readonly codeReviewExecutionService: ICodeReviewExecutionService,
 
         private readonly logger: PinoLoggerService,
+        private readonly cacheService: CacheService,
     ) {}
 
     findLatestExecutionByFilters(
@@ -47,10 +49,28 @@ export class AutomationExecutionService implements IAutomationExecutionService {
         );
     }
 
-    create(
+    async create(
         automationExecution: Omit<IAutomationExecution, 'uuid'>,
     ): Promise<AutomationExecutionEntity> {
-        return this.automationExecutionRepository.create(automationExecution);
+        const result = await this.automationExecutionRepository.create(automationExecution);
+        
+        try {
+            await this.cacheService.deleteByKeyPattern('/pull-requests/executions*');
+            this.logger.log({
+                message: 'Cache invalidated after automation execution creation',
+                context: AutomationExecutionService.name,
+                metadata: { executionUuid: result?.uuid }
+            });
+        } catch (error) {
+            this.logger.warn({
+                message: 'Failed to invalidate cache after automation execution creation',
+                context: AutomationExecutionService.name,
+                error,
+                metadata: { executionUuid: result?.uuid }
+            });
+        }
+        
+        return result;
     }
 
     update(
