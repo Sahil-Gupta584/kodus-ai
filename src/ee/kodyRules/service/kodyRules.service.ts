@@ -534,10 +534,8 @@ export class KodyRulesService implements IKodyRulesService {
 
             // Se deve incluir feedback, busca dados de feedback
             if (includeFeedback) {
-                console.log('🔍 getLibraryKodyRulesInternal - includeFeedback:', includeFeedback, 'userId:', userId);
                 try {
                     const feedbackData = await this.ruleLikeService.getAllRulesWithFeedback(userId);
-                    console.log('🔍 getLibraryKodyRulesInternal - feedbackData:', feedbackData);
                     
                     const feedbackMap = new Map(
                         feedbackData.map(f => [f.ruleId, f])
@@ -554,11 +552,14 @@ export class KodyRulesService implements IKodyRulesService {
                         };
                     });
                 } catch (error) {
-                    console.error('❌ getLibraryKodyRulesInternal - Error fetching feedback:', error);
                     this.logger.error({
                         message: 'Error fetching feedback data',
                         error: error,
-                        context: 'getLibraryKodyRulesInternal',
+                        context: KodyRulesService.name,
+                        metadata: {
+                            userId,
+                            includeFeedback,
+                        },
                     });
                     // Se erro ao buscar feedback, retorna sem feedback
                     return filteredRules;
@@ -567,7 +568,16 @@ export class KodyRulesService implements IKodyRulesService {
 
             return filteredRules;
         } catch (error) {
-            console.error('Error in getLibraryKodyRules:', error);
+            this.logger.error({
+                message: 'Error in getLibraryKodyRules',
+                error: error,
+                context: KodyRulesService.name,
+                metadata: {
+                    filters,
+                    userId,
+                    includeFeedback,
+                },
+            });
             return [];
         }
     }
@@ -578,14 +588,30 @@ export class KodyRulesService implements IKodyRulesService {
                 return [];
             }
 
-            // Retorna todos os buckets com informações completas
-            return bucketsData.map((bucket: any) => ({
+            // Create a map of rule counts per bucket for better performance O(M+N)
+            const bucketRuleCounts = libraryKodyRules.reduce((acc, rule: LibraryKodyRule) => {
+                if (rule.buckets?.length) {
+                    rule.buckets.forEach((bucketSlug: string) => {
+                        acc.set(bucketSlug, (acc.get(bucketSlug) || 0) + 1);
+                    });
+                }
+                return acc;
+            }, new Map<string, number>());
+
+            const bucketsWithCount = bucketsData.map((bucket: BucketInfo) => ({
                 slug: bucket.slug,
                 title: bucket.title,
                 description: bucket.description,
+                rulesCount: bucketRuleCounts.get(bucket.slug) || 0,
             }));
+
+            return bucketsWithCount;
         } catch (error) {
-            console.error('Error in getLibraryKodyRulesBuckets:', error);
+            this.logger.error({
+                message: 'Error in getLibraryKodyRulesBuckets',
+                error: error,
+                context: KodyRulesService.name,
+            });
             return [];
         }
     }
