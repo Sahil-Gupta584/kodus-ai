@@ -4,6 +4,13 @@ import { KodyRuleFilters } from '@/config/types/kodyRules.type';
 import { ProgrammingLanguage } from '@/shared/domain/enums/programming-language.enum';
 import { PaginationDto } from './pagination.dto';
 
+const transformToArray = ({ value }: { value: unknown }): string[] => {
+    if (typeof value === 'string') {
+        return value.split(',').map(item => item.trim()).filter(Boolean);
+    }
+    return Array.isArray(value) ? value : [];
+};
+
 export class FindLibraryKodyRulesDto extends PaginationDto implements KodyRuleFilters {
     @IsOptional()
     @IsString()
@@ -14,12 +21,7 @@ export class FindLibraryKodyRulesDto extends PaginationDto implements KodyRuleFi
     severity?: string;
 
     @IsOptional()
-    @Transform(({ value }) => {
-        if (typeof value === 'string') {
-            return value.split(',').map(tag => tag.trim());
-        }
-        return Array.isArray(value) ? value : [];
-    })
+    @Transform(transformToArray)
     @IsArray()
     @IsString({ each: true })
     tags?: string[];
@@ -28,12 +30,7 @@ export class FindLibraryKodyRulesDto extends PaginationDto implements KodyRuleFi
     language?: ProgrammingLanguage;
 
     @IsOptional()
-    @Transform(({ value }) => {
-        if (typeof value === 'string') {
-            return value.split(',').map(bucket => bucket.trim());
-        }
-        return Array.isArray(value) ? value : [];
-    })
+    @Transform(transformToArray)
     @IsArray()
     @IsString({ each: true })
     buckets?: string[];

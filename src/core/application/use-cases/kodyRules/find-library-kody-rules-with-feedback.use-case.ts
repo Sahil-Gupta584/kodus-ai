@@ -29,14 +29,9 @@ export class FindLibraryKodyRulesWithFeedbackUseCase {
             
             // Passa userId se o usuário estiver logado
             const userId = this.request.user?.uuid;
-            console.log('🔍 FindLibraryKodyRulesWithFeedbackUseCase - userId:', userId);
-            console.log('🔍 FindLibraryKodyRulesWithFeedbackUseCase - filters:', kodyRuleFilters);
-            console.log('🔍 FindLibraryKodyRulesWithFeedbackUseCase - pagination:', { page, limit, skip });
             
             const allLibraryKodyRules =
                 await this.kodyRulesService.getLibraryKodyRulesWithFeedback(kodyRuleFilters, userId);
-
-            console.log('🔍 FindLibraryKodyRulesWithFeedbackUseCase - total result count:', allLibraryKodyRules.length);
 
             // Aplicar paginação
             const totalItems = allLibraryKodyRules.length;
@@ -63,13 +58,6 @@ export class FindLibraryKodyRulesWithFeedbackUseCase {
                     limit,
                     returnedItems: paginatedRules.length,
                 },
-            });
-
-            console.log('🔍 FindLibraryKodyRulesWithFeedbackUseCase - pagination result:', {
-                totalItems,
-                returnedItems: paginatedRules.length,
-                page,
-                totalPages
             });
 
             return {
