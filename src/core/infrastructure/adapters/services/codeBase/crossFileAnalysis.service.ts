@@ -125,6 +125,17 @@ export class CrossFileAnalysisService {
             };
         }
 
+        if (!context?.codeReviewConfig?.reviewOptions?.cross_file) {
+            this.logger.log({
+                message: 'Cross-file analysis is disabled in codeReviewConfig',
+                context: CrossFileAnalysisService.name,
+                metadata: { organizationAndTeamData, prNumber },
+            });
+            return {
+                codeSuggestions: [],
+            };
+        }
+
         const language =
             context.codeReviewConfig.languageResultPrompt || 'en-US';
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
@@ -575,9 +586,7 @@ export class CrossFileAnalysisService {
                 .filter((suggestion) =>
                     this.validateSuggestion(suggestion, analysisType),
                 )
-                .map((suggestion) =>
-                    this.enrichSuggestion(suggestion),
-                );
+                .map((suggestion) => this.enrichSuggestion(suggestion));
 
             this.logger.log({
                 message: `Successfully processed ${analysisType} response`,
@@ -634,9 +643,7 @@ export class CrossFileAnalysisService {
     /**
      * Enriquece sugestão com campos padrão se necessário
      */
-    private enrichSuggestion(
-        suggestion: any,
-    ): CodeSuggestion {
+    private enrichSuggestion(suggestion: any): CodeSuggestion {
         return {
             id: uuidv4(),
             relevantFile: suggestion.relevantFile,
