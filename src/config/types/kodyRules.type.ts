@@ -28,6 +28,7 @@ export type BucketInfo = {
     slug: string;
     title: string;
     description: string;
+    rulesCount: number;
 }
 
 export type KodyRuleFilters = {

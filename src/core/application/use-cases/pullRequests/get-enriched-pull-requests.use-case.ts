@@ -154,6 +154,20 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                             automationExecution: { uuid: execution.uuid },
                         });
 
+                    // Filtrar apenas PRs que têm histórico de code review
+                    if (!codeReviewExecutions || codeReviewExecutions.length === 0) {
+                        this.logger.debug({
+                            message: 'Skipping PR without code review history',
+                            context: GetEnrichedPullRequestsUseCase.name,
+                            metadata: {
+                                prNumber: execution.pullRequestNumber,
+                                repositoryId: execution.repositoryId,
+                                executionUuid: execution.uuid,
+                            },
+                        });
+                        continue;
+                    }
+
                     const codeReviewTimeline = codeReviewExecutions.map(
                         (cre) => ({
                             uuid: cre.uuid,
@@ -249,7 +263,7 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
             };
 
             this.logger.log({
-                message: 'Successfully retrieved enriched pull requests',
+                message: 'Successfully retrieved enriched pull requests with code review history',
                 context: GetEnrichedPullRequestsUseCase.name,
                 metadata: {
                     organizationId,
