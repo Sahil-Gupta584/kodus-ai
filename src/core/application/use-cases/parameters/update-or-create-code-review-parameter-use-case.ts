@@ -86,7 +86,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             }
 
             if (configValue?.codeReviewVersion === CodeReviewVersion.v2) {
-                configValue.reviewOptions.kodyRules = true;
+                configValue.reviewOptions.kody_rules = true;
             }
 
             const codeReviewConfigs: ICodeReviewParameter =
