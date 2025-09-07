@@ -219,6 +219,7 @@ export const reviewOptionsSchema = z.object({
     breaking_changes: z.boolean(),
     bug: z.boolean(),
     performance: z.boolean(),
+    cross_file: z.boolean(),
 });
 
 export interface ReviewOptions {
