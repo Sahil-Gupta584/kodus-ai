@@ -18,6 +18,10 @@ export class RemoveRuleLikeUseCase {
         ruleId: string,
         userId?: string,
     ): Promise<boolean> {
+        if (!userId) {
+            throw new Error('userId is required to remove rule like');
+        }
+
         try {
             const result = await this.ruleLikeService.removeFeedback(
                 ruleId,
