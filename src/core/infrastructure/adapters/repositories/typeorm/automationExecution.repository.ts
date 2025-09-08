@@ -142,14 +142,12 @@ export class AutomationExecutionRepository
         filter?: Partial<IAutomationExecution>,
     ): Promise<AutomationExecutionEntity[]> {
         try {
-            const whereConditions = this.getFilterConditions(filter);
-
             // Determine which relations to load based on the filter
             const relations = ['teamAutomation', 'codeReviewExecutions'];
-            
+
             // Only load deep nested relations if the filter requires them
             if (filter?.teamAutomation) {
-                const teamAutomationFilter = filter.teamAutomation as any;
+                const teamAutomationFilter = filter.teamAutomation;
                 if (teamAutomationFilter.team) {
                     relations.push('teamAutomation.team');
                     if (teamAutomationFilter.team.organization) {
@@ -159,7 +157,7 @@ export class AutomationExecutionRepository
             }
 
             const findOneOptions: FindManyOptions<AutomationExecutionModel> = {
-                where: whereConditions,
+                where: filter as FindOptionsWhere<AutomationExecutionModel>,
                 relations,
             };
 
