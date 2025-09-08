@@ -109,6 +109,14 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
         const overallComments = context?.overallComments || [];
         const changedFiles = context?.changedFiles || [];
 
+        // Resolve comments that refer to suggestions partially or fully implemented
+        await this.resolveCommentsWithImplementedSuggestions({
+            organizationAndTeamData: context.organizationAndTeamData,
+            repository: context.repository,
+            prNumber: context.pullRequest.number,
+            platformType: context.platformType as PlatformType,
+        });
+
         if (validSuggestions.length === 0) {
             this.logger.log({
                 message: `No file-level suggestions to process for PR#${context.pullRequest.number}`,
@@ -257,14 +265,6 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
             platformType,
             context.fileMetadata,
         );
-
-        // Resolve comments that refer to suggestions partially or fully implemented
-        await this.resolveCommentsWithImplementedSuggestions({
-            organizationAndTeamData,
-            repository,
-            prNumber: pullRequest.number,
-            platformType: platformType as PlatformType,
-        });
 
         return {
             lineComments: commentResults,
@@ -467,111 +467,126 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
         prNumber: number;
         platformType: PlatformType;
     }) {
-        const codeManagementRequestData = {
-            organizationAndTeamData,
-            repository: {
-                id: repository.id,
-                name: repository.name,
-            },
-            prNumber: prNumber,
-        };
-
-        let isPlatformTypeGithub: boolean =
-            platformType === PlatformType.GITHUB;
-
-        const pr = await this.pullRequestService.findByNumberAndRepositoryName(
-            prNumber,
-            repository.name,
-            organizationAndTeamData,
-        );
-
-        if (!pr) {
-            this.logger.warn({
-                message: `PR #${prNumber} not found, skipping comment resolution.`,
-                context: this.stageName,
-                metadata: {
-                    organizationAndTeamData,
-                    prNumber,
-                    repositoryName: repository.name,
+        try {
+            const codeManagementRequestData = {
+                organizationAndTeamData,
+                repository: {
+                    id: repository.id,
+                    name: repository.name,
                 },
-            });
-            return;
-        }
+                prNumber: prNumber,
+            };
 
-        let implementedSuggestionsCommentIds =
-            this.getImplementedSuggestionsCommentIds(pr);
+            let isPlatformTypeGithub: boolean =
+                platformType === PlatformType.GITHUB;
 
-        let reviewComments = [];
-
-        /**
-         * Marking comments as resolved in github needs to be done using another API.
-         * Marking comments as resolved in github also is done using threadId rather than the comment Id.
-         */
-        if (isPlatformTypeGithub) {
-            reviewComments =
-                await this.codeManagementService.getPullRequestReviewThreads(
-                    codeManagementRequestData,
-                    PlatformType.GITHUB,
-                );
-        } else {
-            reviewComments =
-                await this.codeManagementService.getPullRequestReviewComments(
-                    codeManagementRequestData,
-                );
-        }
-
-        if (reviewComments?.length === 0) {
-            this.logger.warn({
-                message: `No review comments found for PR#${prNumber}`,
-                context: this.stageName,
-                metadata: {
-                    organizationAndTeamData,
+            const pr =
+                await this.pullRequestService.findByNumberAndRepositoryName(
                     prNumber,
-                    repositoryName: repository.name,
-                },
-            });
-            return;
-        }
+                    repository.name,
+                    organizationAndTeamData,
+                );
 
-        const foundComments = isPlatformTypeGithub
-            ? reviewComments.filter((comment) =>
-                  implementedSuggestionsCommentIds.includes(
-                      Number(comment.fullDatabaseId),
-                  ),
-              )
-            : reviewComments.filter((comment) =>
-                  implementedSuggestionsCommentIds.includes(comment.id),
-              );
+            if (!pr) {
+                this.logger.warn({
+                    message: `PR #${prNumber} not found, skipping comment resolution.`,
+                    context: this.stageName,
+                    metadata: {
+                        organizationAndTeamData,
+                        prNumber,
+                        repositoryName: repository.name,
+                    },
+                });
+                return;
+            }
 
-        if (foundComments?.length > 0) {
-            const promises = foundComments.map(
-                async (foundComment: PullRequestReviewComment) => {
-                    let commentId =
-                        platformType === PlatformType.BITBUCKET
-                            ? foundComment.id
-                            : foundComment.threadId;
+            let implementedSuggestionsCommentIds =
+                this.getImplementedSuggestionsCommentIds(pr);
 
-                    return this.codeManagementService.markReviewCommentAsResolved(
-                        {
-                            organizationAndTeamData,
-                            repository,
-                            prNumber: pr.number,
-                            commentId: commentId,
-                        },
+            let reviewComments = [];
+
+            /**
+             * Marking comments as resolved in github needs to be done using another API.
+             * Marking comments as resolved in github also is done using threadId rather than the comment Id.
+             */
+            if (isPlatformTypeGithub) {
+                reviewComments =
+                    await this.codeManagementService.getPullRequestReviewThreads(
+                        codeManagementRequestData,
+                        PlatformType.GITHUB,
                     );
-                },
-            );
+            } else {
+                reviewComments =
+                    await this.codeManagementService.getPullRequestReviewComments(
+                        codeManagementRequestData,
+                    );
+            }
 
-            // timeout mechanism for the Promise.allSettled operation to prevent potential hanging.
-            await Promise.race([
-                Promise.allSettled(promises),
-                new Promise((_, reject) =>
-                    setTimeout(
-                        () => reject(new Error('Operation timed out')),
-                        30000,
+            if (reviewComments?.length === 0) {
+                this.logger.warn({
+                    message: `No review comments found for PR#${prNumber}`,
+                    context: this.stageName,
+                    metadata: {
+                        organizationAndTeamData,
+                        prNumber,
+                        repositoryName: repository.name,
+                    },
+                });
+                return;
+            }
+
+            const foundComments = isPlatformTypeGithub
+                ? reviewComments.filter((comment) =>
+                      implementedSuggestionsCommentIds.includes(
+                          Number(comment.fullDatabaseId),
+                      ),
+                  )
+                : reviewComments.filter((comment) =>
+                      implementedSuggestionsCommentIds.includes(comment.id),
+                  );
+
+            if (foundComments?.length > 0) {
+                const promises = foundComments.map(
+                    async (foundComment: PullRequestReviewComment) => {
+                        let commentId =
+                            platformType === PlatformType.BITBUCKET
+                                ? foundComment.id
+                                : foundComment.threadId;
+
+                        return this.codeManagementService.markReviewCommentAsResolved(
+                            {
+                                organizationAndTeamData,
+                                repository,
+                                prNumber: pr.number,
+                                commentId: commentId,
+                            },
+                        );
+                    },
+                );
+
+                // timeout mechanism for the Promise.allSettled operation to prevent potential hanging.
+                await Promise.race([
+                    Promise.allSettled(promises),
+                    new Promise((_, reject) =>
+                        setTimeout(
+                            () => reject(new Error('Operation timed out')),
+                            30000,
+                        ),
                     ),
-                ),
-            ]);
+                ]);
+            }
+        } catch (error) {
+            this.logger.error({
+                message: `Error while resolving comments for PR#${prNumber}`,
+                context: this.stageName,
+                error,
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                    repositoryName: repository.name,
+                },
+            });
+            return;
         }
     }
 
