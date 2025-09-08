@@ -576,34 +576,19 @@ export class ReActStrategy extends BaseExecutionStrategy {
 
             let response;
             try {
-                // ✅ CORREÇÃO: Usar trace para chamadas do LLM
-                response = await getObservability().trace(
-                    'llm.call',
-                    async () => {
-                        return await this.llmAdapter.call({
-                            messages: [
-                                {
-                                    role: AgentInputEnum.SYSTEM,
-                                    content: prompts.systemPrompt,
-                                },
-                                {
-                                    role: AgentInputEnum.USER,
-                                    content: prompts.userPrompt,
-                                },
-                            ],
-                        });
-                    },
-                    {
-                        attributes: {
-                            model: 'unknown',
-                            operation: 'thought-generation',
-                            iteration: iteration,
-                            promptTokens:
-                                prompts.systemPrompt.length +
-                                prompts.userPrompt.length,
+                response = await this.llmAdapter.call({
+                    messages: [
+                        {
+                            role: AgentInputEnum.SYSTEM,
+                            content: prompts.systemPrompt,
                         },
-                    },
-                );
+                        {
+                            role: AgentInputEnum.USER,
+                            content: prompts.userPrompt,
+                        },
+                    ],
+                    signal: context.agentContext?.signal,
+                });
 
                 this.logger.debug('✅ LLM call successful', {
                     iteration,
@@ -757,20 +742,10 @@ export class ReActStrategy extends BaseExecutionStrategy {
                     });
 
                     try {
-                        // ✅ CORREÇÃO: Usar traceTool para chamadas de ferramentas
-                        const result = await getObservability().traceTool(
-                            action.toolName || 'unknown-tool',
-                            async () => {
-                                return await SharedStrategyMethods.executeTool(
-                                    action,
-                                    context,
-                                );
-                            },
-                            {
-                                callId: `tool-${Date.now()}`,
-                                toolType: 'strategy-tool',
-                                parameters: action.input,
-                            },
+                        // Delegar ao ToolEngine (já instrumenta via traceTool)
+                        const result = await SharedStrategyMethods.executeTool(
+                            action,
+                            context,
                         );
 
                         this.logger.debug('✅ Tool executed successfully', {
@@ -1430,35 +1405,19 @@ export class ReActStrategy extends BaseExecutionStrategy {
 
             let response;
             try {
-                // ✅ CORREÇÃO: Usar trace para segunda chamada do LLM (force final answer)
-                response = await getObservability().trace(
-                    'llm.call',
-                    async () => {
-                        return await this.llmAdapter.call({
-                            messages: [
-                                {
-                                    role: AgentInputEnum.SYSTEM,
-                                    content: prompts.systemPrompt,
-                                },
-                                {
-                                    role: AgentInputEnum.USER,
-                                    content: finalPrompt.userPrompt,
-                                },
-                            ],
-                        });
-                    },
-                    {
-                        attributes: {
-                            model: 'unknown',
-                            operation: 'force-final-answer',
-                            iteration: iteration,
-                            promptTokens:
-                                prompts.systemPrompt.length +
-                                finalPrompt.userPrompt.length,
-                            reason: reason,
+                response = await this.llmAdapter.call({
+                    messages: [
+                        {
+                            role: AgentInputEnum.SYSTEM,
+                            content: prompts.systemPrompt,
                         },
-                    },
-                );
+                        {
+                            role: AgentInputEnum.USER,
+                            content: finalPrompt.userPrompt,
+                        },
+                    ],
+                    signal: context.agentContext?.signal,
+                });
             } catch (llmError) {
                 const errorMessage =
                     llmError instanceof Error

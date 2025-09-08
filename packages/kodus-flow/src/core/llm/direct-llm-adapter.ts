@@ -4,6 +4,11 @@ import {
     markSpanOk,
     applyErrorToSpan,
 } from '../../observability/index.js';
+import {
+    SPAN_NAMES,
+    createLLMCallSpan,
+    GEN_AI_SYSTEM,
+} from '../../observability/semantic-conventions.js';
 import { EngineError } from '../errors.js';
 import {
     AgentInputEnum,
@@ -12,6 +17,8 @@ import {
     LangChainMessage,
     LangChainOptions,
     LLMAdapter,
+    LLMRequest,
+    LLMResponse,
     PlanningResult,
     ToolMetadataForLLM,
 } from '../types/allTypes.js';
@@ -57,6 +64,7 @@ export class DirectLLMAdapter implements LLMAdapter {
             tools?: ToolMetadataForLLM[];
             previousPlans?: PlanningResult[];
             constraints?: string[];
+            signal?: AbortSignal;
         },
     ): Promise<PlanningResult> {
         const options: LangChainOptions = {
@@ -90,23 +98,33 @@ export class DirectLLMAdapter implements LLMAdapter {
         ];
 
         try {
-            const span = getObservability().startSpan('llm.call', {
-                attributes: {
-                    model: this.llm.name || 'unknown',
-                    technique,
-                    ...(options.temperature && {
-                        temperature: options.temperature,
-                    }),
-                    ...(options.topP && { topP: options.topP }),
-                    ...(options.maxTokens && { maxTokens: options.maxTokens }),
+            const obs = getObservability();
+            const providerRaw =
+                this.getProvider?.()?.name || this.llm.name || 'unknown';
+            const providerName = this.normalizeProviderName(providerRaw);
+            const spanOptions = createLLMCallSpan(
+                providerName,
+                this.llm.name || 'unknown',
+                {
+                    operation: technique,
+                    temperature: options.temperature,
+                    maxTokens: options.maxTokens,
                 },
-            });
+            );
+            spanOptions.attributes = {
+                ...spanOptions.attributes,
+                correlationId: obs.getContext()?.correlationId || '',
+            };
+            const span = obs.startSpan(SPAN_NAMES.LLM_CHAT, spanOptions);
 
             const response = await getObservability().withSpan(
                 span,
                 async () => {
                     try {
-                        const res = await this.llm.call(messages, options);
+                        const res = await this.llm.call(messages, {
+                            ...options,
+                            signal: context?.signal,
+                        });
                         // Record usage if present
                         if (typeof res !== 'string' && res?.usage) {
                             const usage = res.usage;
@@ -241,12 +259,27 @@ export class DirectLLMAdapter implements LLMAdapter {
         return this.llm.name || 'unknown-llm';
     }
 
+    getProvider?(): { name: string } {
+        return { name: this.llm.name || 'unknown' };
+    }
+
+    private normalizeProviderName(name: string): string {
+        const n = (name || 'unknown').toLowerCase();
+        if (n.includes('openai') || n === 'gpt' || n.startsWith('gpt-'))
+            return GEN_AI_SYSTEM.OPENAI;
+        if (n.includes('anthropic') || n.includes('claude'))
+            return GEN_AI_SYSTEM.ANTHROPIC;
+        if (n.includes('google') || n.includes('gemini'))
+            return GEN_AI_SYSTEM.GOOGLE;
+        if (n.includes('groq')) return GEN_AI_SYSTEM.GROQ;
+        if (n.includes('together')) return GEN_AI_SYSTEM.TOGETHER;
+        if (n.includes('replicate')) return GEN_AI_SYSTEM.REPLICATE;
+        if (n.includes('hugging')) return GEN_AI_SYSTEM.HUGGINGFACE;
+        return n;
+    }
+
     // ✅ COMPATIBILITY: LLMAdapter interface compliance
-    async call(request: {
-        messages: Array<{ role: AgentInputEnum; content: string }>;
-        temperature?: number;
-        maxTokens?: number;
-    }): Promise<{ content: string }> {
+    async call(request: LLMRequest): Promise<LLMResponse> {
         const messages: LangChainMessage[] = request.messages.map((msg) => ({
             role: msg.role,
             content: msg.content,
@@ -257,18 +290,28 @@ export class DirectLLMAdapter implements LLMAdapter {
             temperature:
                 request.temperature ?? DEFAULT_LLM_SETTINGS.temperature,
             maxTokens: request.maxTokens ?? DEFAULT_LLM_SETTINGS.maxTokens,
+            signal: request.signal,
         };
 
         try {
-            const span = getObservability().startSpan('llm.call', {
-                attributes: {
-                    model: this.llm.name || 'unknown',
-                    ...(options.temperature && {
-                        temperature: options.temperature,
-                    }),
-                    ...(options.maxTokens && { maxTokens: options.maxTokens }),
+            const obs = getObservability();
+            const providerRaw =
+                this.getProvider?.()?.name || this.llm.name || 'unknown';
+            const providerName = this.normalizeProviderName(providerRaw);
+            const spanOptions = createLLMCallSpan(
+                providerName,
+                this.llm.name || 'unknown',
+                {
+                    operation: 'chat',
+                    temperature: options.temperature,
+                    maxTokens: options.maxTokens,
                 },
-            });
+            );
+            spanOptions.attributes = {
+                ...spanOptions.attributes,
+                correlationId: obs.getContext()?.correlationId || '',
+            };
+            const span = obs.startSpan(SPAN_NAMES.LLM_CHAT, spanOptions);
             const response = await getObservability().withSpan(
                 span,
                 async () => {
@@ -300,7 +343,7 @@ export class DirectLLMAdapter implements LLMAdapter {
             const content =
                 typeof response === 'string' ? response : response.content;
 
-            return { content };
+            return { content } as LLMResponse;
         } catch (error) {
             this.logger.error('Direct call failed', error as Error);
             throw error;

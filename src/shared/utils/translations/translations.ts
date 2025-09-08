@@ -67,6 +67,8 @@ interface ConfigReviewMarkdown {
     interactingTitle: string;
     requestReview: string;
     requestReviewDesc: string;
+    validateBusinessLogic: string;
+    validateBusinessLogicDesc: string;
     provideFeedback: string;
     provideFeedbackDesc: string;
     configurationTitle: string;

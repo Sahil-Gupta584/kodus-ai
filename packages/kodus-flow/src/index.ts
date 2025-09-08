@@ -52,4 +52,8 @@ export type {
     AgentExecutionOptions,
 } from './core/types/allTypes.js';
 
-export { PlannerType, StorageEnum } from './core/types/allTypes.js';
+export {
+    PlannerType,
+    StorageEnum,
+    AgentInputEnum,
+} from './core/types/allTypes.js';

@@ -9,6 +9,7 @@ import type {
     ExecutionStep,
 } from './types.js';
 import { StrategyPromptFactory } from './prompts/index.js';
+import { SPAN_NAMES } from '../../observability/semantic-conventions.js';
 import { ContextService } from '../../core/contextNew/index.js';
 import { EnhancedJSONParser } from '../../utils/json-parser.js';
 
@@ -248,14 +249,16 @@ export class ReWooStrategy extends BaseExecutionStrategy {
         context.mode = 'planner';
         const prompts = this.promptFactory.createReWooPrompt(context);
 
-        const res = await this.llmAdapter.createPlan(
-            context.input,
-            'plan-execute',
-            {
-                systemPrompt: prompts.systemPrompt,
-                userPrompt: prompts.userPrompt,
-                tools: this.getAvailableToolsFormatted(context),
-            },
+        const res = await getObservability().trace(
+            SPAN_NAMES.AGENT_PLAN,
+            async () =>
+                this.llmAdapter.createPlan!(context.input, 'plan-execute', {
+                    systemPrompt: prompts.systemPrompt,
+                    userPrompt: prompts.userPrompt,
+                    tools: this.getAvailableToolsFormatted(context),
+                    signal: context.agentContext?.signal,
+                }),
+            { attributes: { phase: 'sketch' } },
         );
         const parsed = safeJsonParse<{ sketches: Array<any> }>(
             (res as any)?.content,
@@ -382,14 +385,16 @@ export class ReWooStrategy extends BaseExecutionStrategy {
 
         const prompts = this.promptFactory.createReWooPrompt(context);
 
-        const res = await this.llmAdapter.createPlan(
-            context.input,
-            'plan-execute',
-            {
-                systemPrompt: prompts.systemPrompt,
-                userPrompt: prompts.userPrompt,
-                tools: [], // Organizer não usa tools
-            },
+        const res = await getObservability().trace(
+            SPAN_NAMES.AGENT_OBSERVE,
+            async () =>
+                this.llmAdapter.createPlan!(context.input, 'plan-execute', {
+                    systemPrompt: prompts.systemPrompt,
+                    userPrompt: prompts.userPrompt,
+                    tools: [], // Organizer não usa tools
+                    signal: context.agentContext?.signal,
+                }),
+            { attributes: { phase: 'organize' } },
         );
         const parsed =
             safeJsonParse<{

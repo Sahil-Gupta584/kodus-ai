@@ -7,6 +7,7 @@ import { CodeManagementService } from '@/core/infrastructure/adapters/services/p
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { ConversationAgentUseCase } from '../../agent/conversation-agent.use-case';
+import { BusinessRulesValidationAgentUseCase } from '../../agent/business-rules-validation-agent.use-case';
 import { createThreadId } from '@kodus/flow';
 import posthogClient from '@/shared/utils/posthog';
 
@@ -68,6 +69,7 @@ export class ChatWithKodyFromGitUseCase {
         private readonly logger: PinoLoggerService,
         private readonly codeManagementService: CodeManagementService,
         private readonly conversationAgentUseCase: ConversationAgentUseCase,
+        private readonly businessRulesValidationAgentUseCase: BusinessRulesValidationAgentUseCase,
     ) {}
 
     async execute(params: WebhookParams): Promise<void> {
@@ -223,13 +225,38 @@ export class ChatWithKodyFromGitUseCase {
                     },
                 );
 
-                response = await this.conversationAgentUseCase.execute({
-                    prompt: prepareContext.userQuestion,
-                    organizationAndTeamData,
-                    prepareContext: prepareContext,
-                    thread: thread,
-                });
-                console.log('Response:', response);
+                if (
+                    prepareContext.userQuestion
+                        .toLowerCase()
+                        .includes('@kody -v business-logic')
+                ) {
+                    const pullRequestData =
+                        await this.codeManagementService.getPullRequest({
+                            organizationAndTeamData,
+                            repository: {
+                                name: repository.name,
+                                id: repository.id,
+                            },
+                            prNumber: pullRequestNumber,
+                        });
+
+                    const validationResult =
+                        await this.businessRulesValidationAgentUseCase.validatePullRequest(
+                            organizationAndTeamData,
+                            pullRequestData,
+                            repository,
+                            thread,
+                        );
+
+                    response = this.formatValidationResponse(validationResult);
+                } else {
+                    response = await this.conversationAgentUseCase.execute({
+                        prompt: prepareContext.userQuestion,
+                        organizationAndTeamData,
+                        prepareContext: prepareContext,
+                        thread: thread,
+                    });
+                }
             } else {
                 response = await this.agentService.conversationWithKody(
                     organizationAndTeamData,
@@ -253,7 +280,7 @@ export class ChatWithKodyFromGitUseCase {
                 return;
             }
 
-            const upd =
+            const updatedComment =
                 await this.codeManagementService.updateResponseToComment({
                     organizationAndTeamData,
                     parentId,
@@ -263,7 +290,7 @@ export class ChatWithKodyFromGitUseCase {
                     repository,
                 });
 
-            if (!upd) {
+            if (!updatedComment) {
                 this.logger.warn({
                     message: 'Failed to update acknowledgment response',
                     context: ChatWithKodyFromGitUseCase.name,
@@ -804,5 +831,54 @@ export class ChatWithKodyFromGitUseCase {
         }
 
         return [ackResponseId, parentId];
+    }
+
+    private formatValidationResponse(validationResult: any): string {
+        if (!validationResult) {
+            return '❌ Erro ao processar validação de regras de negócio.';
+        }
+
+        const { isValid, violations, summary, complianceScore } =
+            validationResult;
+
+        let response = `## 🔍 Validação de Regras de Negócio\n\n`;
+        response += `**Status:** ${isValid ? '✅ Válido' : '❌ Violações encontradas'}\n`;
+        response += `**Score de Compliance:** ${complianceScore || 0}/100\n\n`;
+        response += `**Resumo:** ${summary || 'Validação concluída'}\n\n`;
+
+        if (violations && violations.length > 0) {
+            response += `### 🚨 Violações Encontradas (${violations.length})\n\n`;
+
+            violations.forEach((violation: any, index: number) => {
+                const severityIcon =
+                    violation.severity === 'error'
+                        ? '🔴'
+                        : violation.severity === 'warning'
+                          ? '🟡'
+                          : '🔵';
+
+                response += `${severityIcon} **${violation.severity?.toUpperCase()}** - ${violation.rule}\n`;
+                response += `   ${violation.message}\n`;
+
+                if (violation.file) {
+                    response += `   📁 Arquivo: ${violation.file}`;
+                    if (violation.line) {
+                        response += ` (linha ${violation.line})`;
+                    }
+                    response += `\n`;
+                }
+
+                if (violation.suggestion) {
+                    response += `   💡 Sugestão: ${violation.suggestion}\n`;
+                }
+
+                response += `\n`;
+            });
+        } else {
+            response += `### ✅ Nenhuma violação encontrada!\n`;
+            response += `O código está em conformidade com as regras de negócio definidas.`;
+        }
+
+        return response;
     }
 }

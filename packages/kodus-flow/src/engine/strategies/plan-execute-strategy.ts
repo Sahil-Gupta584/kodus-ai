@@ -1,5 +1,6 @@
 import { LLMAdapter } from '../../core/types/allTypes.js';
 import { createLogger, getObservability } from '../../observability/index.js';
+import { SPAN_NAMES } from '../../observability/semantic-conventions.js';
 import { BaseExecutionStrategy } from './strategy-interface.js';
 import { SharedStrategyMethods } from './shared-methods.js';
 import type {
@@ -173,13 +174,20 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
         // // Usar nova arquitetura de prompts
         const prompts = this.promptFactory.createPlanExecutePrompt(context);
 
-        const response = await this.llmAdapter.createPlan(
-            context.input,
-            'plan-execute',
+        const response = await getObservability().trace(
+            SPAN_NAMES.AGENT_PLAN,
+            async () =>
+                this.llmAdapter.createPlan!(context.input, 'plan-execute', {
+                    systemPrompt: prompts.systemPrompt,
+                    userPrompt: prompts.userPrompt,
+                    tools: this.getAvailableToolsFormatted(context),
+                    signal: context.agentContext?.signal,
+                }),
             {
-                systemPrompt: prompts.systemPrompt,
-                userPrompt: prompts.userPrompt,
-                tools: this.getAvailableToolsFormatted(context),
+                attributes: {
+                    planner: 'plan-execute',
+                    agent: context.agentContext.agentName,
+                },
             },
         );
 
@@ -218,7 +226,17 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
                 break;
             }
 
-            const stepResult = await this.executePlanStep(step, context, i);
+            const stepResult = await getObservability().trace(
+                SPAN_NAMES.AGENT_ACT,
+                async () => this.executePlanStep(step, context, i),
+                {
+                    attributes: {
+                        stepIndex: i,
+                        stepType: String(step.type || 'unknown'),
+                        agent: context.agentContext.agentName,
+                    } as any,
+                },
+            );
             executedSteps.push(stepResult);
 
             if (

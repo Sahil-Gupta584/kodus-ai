@@ -264,6 +264,8 @@ export type AgentExecutionOptions = {
     maxIterations?: number;
 
     userContext?: Record<string, any>;
+    // Optional cancellation signal propagated across agent → LLM → tools
+    signal?: AbortSignal;
 };
 
 export interface AgentExecutionResult extends BaseExecutionResult {
@@ -1985,6 +1987,7 @@ export function createToolContext(
         correlationId?: string;
         parentId?: string;
         metadata?: Metadata;
+        signal?: AbortSignal;
     } = {},
 ): ToolContext {
     return {
@@ -1995,7 +1998,7 @@ export function createToolContext(
         toolName,
         callId,
         parameters,
-        signal: new AbortController().signal,
+        signal: options.signal || new AbortController().signal,
 
         cleanup: async () => {},
     };
@@ -2872,6 +2875,9 @@ export interface LLMRequest {
         description: string;
         parameters: Record<string, unknown>;
     }>;
+    // Optional cancellation and timeout controls
+    signal?: AbortSignal;
+    timeoutMs?: number;
 }
 
 export interface LLMResponse {
@@ -2924,8 +2930,15 @@ export interface LLMAdapter {
     createPlan?(
         goal: string,
         strategy: string,
-        context: unknown,
-    ): Promise<unknown>;
+        context: {
+            systemPrompt?: string;
+            userPrompt?: string;
+            tools?: ToolMetadataForLLM[];
+            previousPlans?: PlanningResult[];
+            constraints?: string[];
+            signal?: AbortSignal;
+        },
+    ): Promise<PlanningResult>;
 
     getProvider?(): { name: string };
     getAvailableTechniques?(): string[];
@@ -3252,6 +3265,8 @@ export interface ResponseSynthesisContext {
         iterationCount?: number;
         [key: string]: unknown;
     };
+    // Optional cancellation control for synthesis LLM calls
+    signal?: AbortSignal;
 }
 
 export interface SynthesizedResponse {
@@ -5475,6 +5490,7 @@ export interface LangChainOptions {
     stream?: boolean;
     tools?: unknown[];
     toolChoice?: string;
+    signal?: AbortSignal;
 }
 
 export interface LangChainResponse {

@@ -303,11 +303,7 @@ export class ExecutionKernel {
 
                     this.runtime = createRuntime(
                         this.workflowContext,
-                        getObservability({
-                            enabled: true,
-                            environment: 'development',
-                            logging: { enabled: true, level: 'info' },
-                        }),
+                        getObservability(),
                         runtimeConfig,
                     );
 
