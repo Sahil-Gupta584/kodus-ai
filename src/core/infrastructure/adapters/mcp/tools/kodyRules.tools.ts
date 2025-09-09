@@ -14,7 +14,10 @@ import {
     KodyRulesScope,
     KodyRulesStatus,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
-import { KodyRuleSeverity } from '@/core/infrastructure/http/dtos/create-kody-rule.dto';
+import {
+    KodyRuleSeverity,
+    CreateKodyRuleDto,
+} from '@/core/infrastructure/http/dtos/create-kody-rule.dto';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 
 type KodyRuleInput = Required<
@@ -347,7 +350,10 @@ export class KodyRulesTools {
                         await this.kodyRulesService.createOrUpdate(
                             params.organizationAndTeamData,
                             params.kodyRule,
-                            { userId: 'kody-system-tool', userEmail: 'kody@kodus.io' },
+                            {
+                                userId: 'kody-system-tool',
+                                userEmail: 'kody@kodus.io',
+                            },
                         );
 
                     return {
@@ -360,11 +366,236 @@ export class KodyRulesTools {
         };
     }
 
+    updateKodyRule(): McpToolDefinition {
+        const inputSchema = z.object({
+            organizationId: z
+                .string()
+                .describe(
+                    'Organization UUID - unique identifier for the organization in the system',
+                ),
+            ruleId: z
+                .string()
+                .describe(
+                    'Rule UUID - unique identifier of the rule to be updated',
+                ),
+            kodyRule: z
+                .object({
+                    title: z
+                        .string()
+                        .optional()
+                        .describe(
+                            'Updated title for the rule (e.g., "Use arrow functions for components", "Avoid console.log in production")',
+                        ),
+                    rule: z
+                        .string()
+                        .optional()
+                        .describe(
+                            'Updated detailed description of the coding rule/standard to enforce',
+                        ),
+                    severity: z
+                        .nativeEnum(KodyRuleSeverity)
+                        .optional()
+                        .describe(
+                            'Updated rule severity level: determines how violations are handled (ERROR, WARNING, INFO)',
+                        ),
+                    scope: z
+                        .nativeEnum(KodyRulesScope)
+                        .optional()
+                        .describe(
+                            'Updated rule scope: pull_request (analyzes entire PR context), file (analyzes individual files one by one)',
+                        ),
+                    repositoryId: z
+                        .string()
+                        .optional()
+                        .describe(
+                            'Updated repository unique identifier - can be used with both scopes to limit rule to specific repository',
+                        ),
+                    path: z
+                        .string()
+                        .optional()
+                        .describe(
+                            'Updated file path pattern - used with FILE scope to target specific files (e.g., "src/components/*.tsx")',
+                        ),
+                    examples: z
+                        .array(
+                            z
+                                .object({
+                                    snippet: z
+                                        .string()
+                                        .describe(
+                                            'Code example snippet demonstrating the rule',
+                                        ),
+                                    isCorrect: z
+                                        .boolean()
+                                        .describe(
+                                            'Whether this snippet follows the rule (true) or violates it (false)',
+                                        ),
+                                })
+                                .describe(
+                                    'Code example showing correct or incorrect usage of the rule',
+                                ),
+                        )
+                        .optional()
+                        .describe(
+                            'Updated array of code examples to help understand and apply the rule',
+                        ),
+                    directoryId: z
+                        .string()
+                        .optional()
+                        .describe(
+                            'Updated directory unique identifier - used with FILE scope to target specific directory',
+                        ),
+                    status: z
+                        .nativeEnum(KodyRulesStatus)
+                        .optional()
+                        .describe(
+                            'Updated rule status: active, pending, rejected, or deleted',
+                        ),
+                })
+                .describe(
+                    'Updated rule definition with fields to modify (only provided fields will be updated)',
+                ),
+        });
+
+        type InputType = z.infer<typeof inputSchema>;
+
+        return {
+            name: 'KODUS_UPDATE_KODY_RULE',
+            description:
+                'Update an existing Kody Rule. Only the fields provided in kodyRule will be updated. Use this to modify rule details, change severity, scope, or status of existing rules.',
+            inputSchema,
+            outputSchema: z.object({
+                success: z.boolean(),
+                count: z.number(),
+                data: z
+                    .object({
+                        uuid: z.string(),
+                        title: z.string(),
+                        rule: z.string(),
+                        status: z.nativeEnum(KodyRulesStatus),
+                    })
+                    .passthrough(),
+            }),
+            execute: wrapToolHandler(
+                async (args: InputType): Promise<CreateKodyRuleResponse> => {
+                    const organizationAndTeamData = {
+                        organizationId: args.organizationId,
+                    };
+
+                    const userInfo = {
+                        userId: 'kody-update-mcp-tool',
+                        userEmail: 'kody@kodus.io',
+                    };
+
+                    const kodyRule: CreateKodyRuleDto = {
+                        uuid: args.ruleId,
+                        origin: KodyRulesOrigin.USER, // Default origin for MCP tool updates
+                        ...(args.kodyRule.title && {
+                            title: args.kodyRule.title,
+                        }),
+                        ...(args.kodyRule.rule && { rule: args.kodyRule.rule }),
+                        ...(args.kodyRule.severity && {
+                            severity: args.kodyRule.severity,
+                        }),
+                        ...(args.kodyRule.scope && {
+                            scope: args.kodyRule.scope,
+                        }),
+                        ...(args.kodyRule.repositoryId && {
+                            repositoryId: args.kodyRule.repositoryId,
+                        }),
+                        ...(args.kodyRule.path && { path: args.kodyRule.path }),
+                        ...(args.kodyRule.examples && {
+                            examples: args.kodyRule.examples.map((example) => ({
+                                snippet: example.snippet || '',
+                                isCorrect: example.isCorrect || false,
+                            })),
+                        }),
+                        ...(args.kodyRule.directoryId && {
+                            directoryId: args.kodyRule.directoryId,
+                        }),
+                        ...(args.kodyRule.status && {
+                            status: args.kodyRule.status,
+                        }),
+                    };
+
+                    const result =
+                        await this.kodyRulesService.updateRuleWithLogging(
+                            organizationAndTeamData,
+                            kodyRule,
+                            userInfo,
+                        );
+
+                    return {
+                        success: true,
+                        count: 1,
+                        data: result,
+                    };
+                },
+            ),
+        };
+    }
+
+    deleteKodyRule(): McpToolDefinition {
+        const inputSchema = z.object({
+            organizationId: z
+                .string()
+                .describe(
+                    'Organization UUID - unique identifier for the organization in the system',
+                ),
+            ruleId: z
+                .string()
+                .describe(
+                    'Rule UUID - unique identifier of the rule to be deleted',
+                ),
+        });
+
+        type InputType = z.infer<typeof inputSchema>;
+
+        return {
+            name: 'KODUS_DELETE_KODY_RULE',
+            description:
+                'Delete a Kody Rule permanently from the system. This action cannot be undone. Use this to remove rules that are no longer needed or relevant.',
+            inputSchema,
+            outputSchema: z.object({
+                success: z.boolean(),
+                message: z.string().optional(),
+            }),
+            execute: wrapToolHandler(
+                async (args: InputType): Promise<BaseResponse> => {
+                    const organizationAndTeamData = {
+                        organizationId: args.organizationId,
+                    };
+
+                    const userInfo = {
+                        userId: 'kody-delete-mcp-tool',
+                        userEmail: 'kody@kodus.io',
+                    };
+
+                    const result =
+                        await this.kodyRulesService.deleteRuleWithLogging(
+                            organizationAndTeamData,
+                            args.ruleId,
+                            userInfo,
+                        );
+
+                    return {
+                        success: result,
+                        ...(result
+                            ? { message: 'Kody Rule deleted successfully' }
+                            : { message: 'Failed to delete Kody Rule' }),
+                    };
+                },
+            ),
+        };
+    }
+
     getAllTools(): McpToolDefinition[] {
         return [
             this.getKodyRules(),
             this.getKodyRulesRepository(),
             this.createKodyRule(),
+            this.updateKodyRule(),
+            this.deleteKodyRule(),
         ];
     }
 }

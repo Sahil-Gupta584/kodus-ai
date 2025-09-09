@@ -1,11 +1,4 @@
-import {
-    createLogger,
-    getObservability,
-    markSpanOk,
-    applyErrorToSpan,
-} from '../../observability/index.js';
-import { TOOL } from '../../observability/types.js';
-import { SPAN_NAMES } from '../../observability/semantic-conventions.js';
+import { createLogger, getObservability } from '../../observability/index.js';
 import { IdGenerator } from '../../utils/id-generator.js';
 import {
     validateWithZod,
@@ -61,6 +54,7 @@ export class ToolEngine {
         options?: {
             correlationId?: string;
             tenantId?: string;
+            signal?: AbortSignal;
         },
     ): Promise<TOutput> {
         const callId = IdGenerator.callId();
@@ -71,27 +65,50 @@ export class ToolEngine {
             options?.correlationId || obs.getContext()?.correlationId;
 
         try {
-            const span = obs.startSpan(SPAN_NAMES.TOOL_EXECUTE, {
-                attributes: {
-                    [TOOL.NAME]: String(toolName),
-                    [TOOL.EXECUTION_ID]: callId,
-                    [TOOL.TYPE]: 'custom',
-                    ...(correlationId && { correlationId }),
-                    ...(options?.tenantId && { tenantId: options.tenantId }),
-                },
-            });
-
-            const result = await obs.withSpan(span, async () => {
-                try {
+            const result = await obs.traceTool<TOutput>(
+                String(toolName),
+                async () => {
                     const timeoutPromise = new Promise<never>((_, reject) => {
                         setTimeout(() => {
                             reject(
-                                new Error(
+                                createToolError(
                                     `Tool execution timeout after ${timeout}ms`,
+                                    {
+                                        retryable: true,
+                                        recoverable: true,
+                                        context: {
+                                            subcode: 'TOOL_TIMEOUT',
+                                            timeoutMs: timeout,
+                                            toolName,
+                                        },
+                                    },
                                 ),
                             );
                         }, timeout);
                     });
+
+                    const abortPromise = options?.signal
+                        ? new Promise<never>((_, reject) => {
+                              const signal = options!.signal as AbortSignal;
+                              const onAbort = () => {
+                                  signal.removeEventListener('abort', onAbort);
+                                  reject(
+                                      createToolError(
+                                          'Tool execution aborted',
+                                          {
+                                              retryable: true,
+                                              recoverable: true,
+                                              context: {
+                                                  subcode: 'ABORTED',
+                                                  toolName,
+                                              },
+                                          },
+                                      ),
+                                  );
+                              };
+                              signal.addEventListener('abort', onAbort);
+                          })
+                        : undefined;
 
                     const executionPromise = this.executeToolInternal<
                         TInput,
@@ -99,25 +116,23 @@ export class ToolEngine {
                     >(toolName, input, callId, {
                         correlationId,
                         tenantId: options?.tenantId,
+                        signal: options?.signal,
                     });
 
-                    const res = await Promise.race([
+                    const races = [
                         executionPromise,
                         timeoutPromise,
-                    ]);
-                    markSpanOk(span);
-
+                    ] as Promise<unknown>[];
+                    if (abortPromise) races.push(abortPromise);
+                    const res = (await Promise.race(races)) as TOutput;
                     return res;
-                } catch (innerError) {
-                    applyErrorToSpan(
-                        span,
-                        innerError instanceof Error
-                            ? innerError
-                            : new Error(String(innerError)),
-                    );
-                    throw innerError;
-                }
-            });
+                },
+                {
+                    correlationId,
+                    timeoutMs: timeout,
+                    parameters: (input as any) || {},
+                },
+            );
 
             return result;
         } catch (error) {
@@ -157,6 +172,7 @@ export class ToolEngine {
         options?: {
             correlationId?: string;
             tenantId?: string;
+            signal?: AbortSignal;
         },
     ): Promise<TOutput> {
         const tool = this.tools.get(toolName) as ToolDefinition<
@@ -165,9 +181,21 @@ export class ToolEngine {
         >;
 
         if (!tool) {
+            const notFoundError = createToolError(
+                `Tool not found: ${toolName}`,
+                {
+                    retryable: false,
+                    recoverable: false,
+                    context: {
+                        subcode: 'TOOL_NOT_FOUND',
+                        toolName,
+                        availableTools: Array.from(this.tools.keys()),
+                    },
+                },
+            );
             this.logger.error(
                 '❌ TOOL ENGINE - Tool not found',
-                new Error(`Tool not found: ${toolName}`),
+                notFoundError,
                 {
                     toolName,
                     callId,
@@ -179,7 +207,7 @@ export class ToolEngine {
                     },
                 },
             );
-            throw new Error(`Tool not found: ${toolName}`);
+            throw notFoundError;
         }
 
         this.validateToolInput(tool, input);
@@ -200,8 +228,13 @@ export class ToolEngine {
             result = await tool.execute(input, context);
         } catch (err) {
             error = err as Error;
-
-            throw error;
+            // Standardize unexpected errors into EnhancedToolError
+            throw createToolError(error.message || 'Tool execution failed', {
+                context: {
+                    subcode: 'EXECUTION_ERROR',
+                    toolName,
+                },
+            });
         }
 
         return result;
@@ -217,6 +250,7 @@ export class ToolEngine {
             correlationId?: string;
             parentId?: string;
             metadata?: any;
+            signal?: AbortSignal;
         },
     ): Promise<ToolContext> {
         // Start with basic tool context
@@ -232,6 +266,7 @@ export class ToolEngine {
                 }),
                 ...(options?.parentId && { parentId: options.parentId }),
                 metadata: options?.metadata,
+                signal: options?.signal,
             },
         );
 
@@ -471,6 +506,11 @@ export class ToolEngine {
     async executeTool<TInput = unknown, TOutput = unknown>(
         toolName: string,
         input: TInput,
+        options?: {
+            signal?: AbortSignal;
+            correlationId?: string;
+            tenantId?: string;
+        },
     ): Promise<TOutput> {
         const callId = IdGenerator.callId();
         const timeout = this.config.timeout || 80000;
@@ -478,47 +518,74 @@ export class ToolEngine {
         const obs = getObservability();
 
         try {
-            const span = obs.startSpan(SPAN_NAMES.TOOL_EXECUTE, {
-                attributes: {
-                    [TOOL.NAME]: String(toolName),
-                    [TOOL.EXECUTION_ID]: callId,
-                    [TOOL.TYPE]: 'custom',
-                },
-            });
-
-            const result = await obs.withSpan(span, async () => {
-                try {
+            const result = await obs.traceTool<TOutput>(
+                String(toolName),
+                async () => {
                     const timeoutPromise = new Promise<never>((_, reject) => {
                         setTimeout(() => {
                             reject(
-                                new Error(
+                                createToolError(
                                     `Tool execution timeout after ${timeout}ms`,
+                                    {
+                                        retryable: true,
+                                        recoverable: true,
+                                        context: {
+                                            subcode: 'TOOL_TIMEOUT',
+                                            timeoutMs: timeout,
+                                            toolName,
+                                        },
+                                    },
                                 ),
                             );
                         }, timeout);
                     });
 
+                    const abortPromise = options?.signal
+                        ? new Promise<never>((_, reject) => {
+                              const signal = options!.signal as AbortSignal;
+                              const onAbort = () => {
+                                  signal.removeEventListener('abort', onAbort);
+                                  reject(
+                                      createToolError(
+                                          'Tool execution aborted',
+                                          {
+                                              retryable: true,
+                                              recoverable: true,
+                                              context: {
+                                                  subcode: 'ABORTED',
+                                                  toolName,
+                                              },
+                                          },
+                                      ),
+                                  );
+                              };
+                              signal.addEventListener('abort', onAbort);
+                          })
+                        : undefined;
+
                     const executionPromise = this.executeToolInternal<
                         TInput,
                         TOutput
-                    >(toolName as ToolId, input, callId);
+                    >(toolName as ToolId, input, callId, {
+                        correlationId: options?.correlationId,
+                        tenantId: options?.tenantId,
+                        signal: options?.signal,
+                    });
 
-                    const res = await Promise.race([
+                    const races = [
                         executionPromise,
                         timeoutPromise,
-                    ]);
-                    markSpanOk(span);
-                    return res;
-                } catch (innerError) {
-                    applyErrorToSpan(
-                        span,
-                        innerError instanceof Error
-                            ? innerError
-                            : new Error(String(innerError)),
-                    );
-                    throw innerError;
-                }
-            });
+                    ] as Promise<unknown>[];
+                    if (abortPromise) races.push(abortPromise);
+                    const res = await Promise.race(races);
+                    return res as TOutput;
+                },
+                {
+                    correlationId: options?.correlationId,
+                    timeoutMs: timeout,
+                    parameters: (input as any) || {},
+                },
+            );
 
             return result;
         } catch (error) {
@@ -1008,7 +1075,12 @@ export class ToolEngine {
                         userImpact: 'degraded',
                         retryable: false,
                         recoverable: true,
-                        context: { toolName: tool.name, input, validation },
+                        context: {
+                            toolName: tool.name,
+                            input,
+                            validation,
+                            subcode: 'VALIDATION_ERROR',
+                        },
                         userMessage: `Tool '${tool.name}' requires specific parameters. ${missingParams.length > 0 ? `Missing: ${missingParams.join(', ')}` : 'Invalid parameters provided.'}`,
                         recoveryHints: [
                             'Check the tool documentation for correct input format',
@@ -1056,6 +1128,7 @@ export class ToolEngine {
                             toolName: tool.name,
                             input,
                             validationError,
+                            subcode: 'VALIDATION_ERROR',
                         },
                         userMessage:
                             'An unexpected error occurred during input validation.',

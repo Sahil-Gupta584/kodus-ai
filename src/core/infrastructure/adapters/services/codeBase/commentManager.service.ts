@@ -798,6 +798,8 @@ ${summaryContent}
 
 - **${translation.requestReview}:** ${translation.requestReviewDesc}
 
+- **${translation.validateBusinessLogic}:** ${translation.validateBusinessLogicDesc}
+
 - **${translation.provideFeedback}:** ${translation.provideFeedbackDesc}
 
 </details>

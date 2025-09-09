@@ -3,7 +3,11 @@ import { CreateKodyRuleDto } from '@/core/infrastructure/http/dtos/create-kody-r
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { IKodyRule, KodyRulesStatus } from '../interfaces/kodyRules.interface';
 import { KodyRulesEntity } from '../entities/kodyRules.entity';
-import { KodyRuleFilters, LibraryKodyRule, BucketInfo } from '@/config/types/kodyRules.type';
+import {
+    KodyRuleFilters,
+    LibraryKodyRule,
+    BucketInfo,
+} from '@/config/types/kodyRules.type';
 import { UserInfo } from '@/config/types/general/codeReviewSettingsLog.type';
 
 export const KODY_RULES_SERVICE_TOKEN = 'KODY_RULES_SERVICE_TOKEN';
@@ -15,8 +19,14 @@ export interface IKodyRulesService extends IKodyRulesRepository {
         userInfo?: UserInfo,
     ): Promise<Partial<IKodyRule> | IKodyRule | null>;
 
-    getLibraryKodyRules(filters?: KodyRuleFilters, userId?: string): Promise<LibraryKodyRule[]>;
-    getLibraryKodyRulesWithFeedback(filters?: KodyRuleFilters, userId?: string): Promise<LibraryKodyRule[]>;
+    getLibraryKodyRules(
+        filters?: KodyRuleFilters,
+        userId?: string,
+    ): Promise<LibraryKodyRule[]>;
+    getLibraryKodyRulesWithFeedback(
+        filters?: KodyRuleFilters,
+        userId?: string,
+    ): Promise<LibraryKodyRule[]>;
 
     getLibraryKodyRulesBuckets(): Promise<BucketInfo[]>;
 
@@ -31,4 +41,16 @@ export interface IKodyRulesService extends IKodyRulesRepository {
         directoryId?: string,
         newStatus?: KodyRulesStatus,
     ): Promise<KodyRulesEntity | null>;
+
+    deleteRuleWithLogging(
+        organizationAndTeamData: OrganizationAndTeamData,
+        ruleId: string,
+        userInfo: UserInfo,
+    ): Promise<boolean>;
+
+    updateRuleWithLogging(
+        organizationAndTeamData: OrganizationAndTeamData,
+        kodyRule: CreateKodyRuleDto,
+        userInfo?: UserInfo,
+    ): Promise<Partial<IKodyRule> | IKodyRule | null>;
 }

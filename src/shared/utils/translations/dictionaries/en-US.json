@@ -30,6 +30,8 @@
         "interactingTitle": "Interacting with Kody",
         "requestReview": "Request a Review",
         "requestReviewDesc": "Ask Kody to review your PR manually by adding a comment with the `@kody start-review` command at the root of your PR.",
+        "validateBusinessLogic": "Validate Business Logic",
+        "validateBusinessLogicDesc": "Ask Kody to validate your code against business rules by adding a comment with the `@kody -v business-logic` command.",
         "provideFeedback": "Provide Feedback",
         "provideFeedbackDesc": "Help Kody learn and improve by reacting to its comments with a 👍 for helpful suggestions or a 👎 if improvements are needed.",
         "configurationTitle": "Current Kody Configuration",

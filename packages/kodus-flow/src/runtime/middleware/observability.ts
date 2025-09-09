@@ -11,6 +11,7 @@ import {
     markSpanOk,
 } from '../../observability/index.js';
 import { SPAN_NAMES } from '../../observability/semantic-conventions.js';
+import { isEnhancedError } from '../../core/error-unified.js';
 
 /**
  * Middleware que cria um span por processamento de evento e registra erros
@@ -44,8 +45,10 @@ export const withObservability: MiddlewareFactoryType<
             attributes['runtime.event.type'] = String(event.type);
             attributes['tenant.id'] =
                 (event.metadata?.tenantId as string) || 'unknown';
-            attributes['correlation.id'] =
-                (event.metadata?.correlationId as string) || 'unknown';
+            const cid = (event.metadata?.correlationId as string) || 'unknown';
+            attributes['correlation.id'] = cid;
+            // Canonical attribute for filtering
+            attributes['correlationId'] = cid;
             attributes['thread.id'] = event.threadId;
             attributes['event.ts'] = event.ts;
 
@@ -67,6 +70,23 @@ export const withObservability: MiddlewareFactoryType<
                         errorAttributes['runtime.event.type'] = String(
                             event.type,
                         );
+                        if (isEnhancedError(err as Error)) {
+                            try {
+                                const e: any = err;
+                                if (e?.context?.subcode) {
+                                    span.setAttribute(
+                                        'error.subcode',
+                                        String(e.context.subcode),
+                                    );
+                                }
+                                if (e?.code) {
+                                    span.setAttribute(
+                                        'error.code',
+                                        String(e.code),
+                                    );
+                                }
+                            } catch {}
+                        }
                         applyErrorToSpan(
                             span,
                             err instanceof Error ? err : new Error(String(err)),

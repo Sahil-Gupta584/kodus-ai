@@ -84,8 +84,13 @@ export class TelemetrySystem {
             ...options.attributes,
         };
 
+        // Auto-parent to current span when available and no parent provided
+        const parentContext =
+            options.parent || this.currentSpan?.getSpanContext();
+
         const span = this.tracer.startSpan(name, {
             ...options,
+            parent: parentContext,
             attributes: finalAttributes,
         });
 

@@ -30,6 +30,8 @@
         "interactingTitle": "Berinteraksi dengan Kody",
         "requestReview": "Meminta Semakan",
         "requestReviewDesc": "Minta Kody untuk menyemak PR anda secara manual dengan menambah komen dengan arahan `@kody start-review` di root PR anda.",
+        "validateBusinessLogic": "Sahkan logik perniagaan",
+        "validateBusinessLogicDesc": "Minta Kody untuk mengesahkan kod anda terhadap peraturan perniagaan dengan menambah komen dengan arahan `@kody -v business-logic`.",
         "provideFeedback": "Memberi Maklum Balas",
         "provideFeedbackDesc": "Bantu Kody belajar dan meningkatkan dengan memberi reaksi kepada komennya dengan 👍 untuk cadangan yang berguna atau 👎 jika perlu penambahbaikan.",
         "configurationTitle": "Konfigurasi Kody Semasa",

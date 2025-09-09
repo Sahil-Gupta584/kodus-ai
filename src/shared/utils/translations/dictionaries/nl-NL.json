@@ -30,6 +30,8 @@
         "interactingTitle": "Interactie met Kody",
         "requestReview": "Vraag een Review aan",
         "requestReviewDesc": "Vraag Kody om je PR handmatig te reviewen door een commentaar toe te voegen met het commando `@kody start-review` in de root van je PR.",
+        "validateBusinessLogic": "Bedrijfslogica valideren",
+        "validateBusinessLogicDesc": "Vraag Kody om je code te valideren tegen bedrijfsregels door een commentaar toe te voegen met het commando `@kody -v business-logic`.",
         "provideFeedback": "Geef Feedback",
         "provideFeedbackDesc": "Help Kody te leren en te verbeteren door te reageren op zijn commentaren met een 👍 voor nuttige suggesties of een 👎 als er verbeteringen nodig zijn.",
         "configurationTitle": "Huidige Kody Configuratie",

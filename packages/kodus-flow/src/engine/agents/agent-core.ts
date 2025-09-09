@@ -375,7 +375,8 @@ export abstract class AgentCore<
             thread: { id: consistentThreadId || threadId, metadata: {} },
             invocationId: IdGenerator.callId(),
             availableTools: availableTools as any,
-            signal: new AbortController().signal,
+            signal:
+                agentExecutionOptions.signal || new AbortController().signal,
             agentExecutionOptions,
         };
 

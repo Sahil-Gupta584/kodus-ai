@@ -30,6 +30,8 @@
         "interactingTitle": "Vuorovaikutus Kodyn kanssa",
         "requestReview": "Pyydä katselmointia",
         "requestReviewDesc": "Pyydä Kodya katselmoimaan PR:si manuaalisesti lisäämällä kommentti, jossa on komento `@kody start-review` PR:si juureen.",
+        "validateBusinessLogic": "Vahvista liiketoimintalogiikka",
+        "validateBusinessLogicDesc": "Pyydä Kodya vahvistamaan koodisi liiketoimintasääntöjä vastaan lisäämällä kommentti, jossa on komento `@kody -v business-logic`.",
         "provideFeedback": "Anna palautetta",
         "provideFeedbackDesc": "Auta Kodya oppimaan ja parantamaan reagoimalla sen kommentteihin 👍 hyödyllisistä ehdotuksista tai 👎 jos tarvitaan parannuksia.",
         "configurationTitle": "Nykyiset Kody-asetukset",

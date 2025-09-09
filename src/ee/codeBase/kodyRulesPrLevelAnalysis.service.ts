@@ -16,8 +16,6 @@ import {
     KodyRulesScope,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
-import { RunnableSequence } from '@langchain/core/runnables';
 import {
     KodyRulesPrLevelPayload,
     prompt_kodyrules_prlevel_analyzer,
@@ -35,7 +33,6 @@ import {
     TokenTrackingSession,
 } from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
 import {
-    LLMProviderService,
     LLMModelProvider,
     PromptRunnerService,
     PromptRole,
@@ -120,8 +117,6 @@ export class KodyRulesPrLevelAnalysisService
     constructor(
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: KodyRulesService,
-
-        private readonly llmProviderService: LLMProviderService,
 
         private readonly logger: PinoLoggerService,
 

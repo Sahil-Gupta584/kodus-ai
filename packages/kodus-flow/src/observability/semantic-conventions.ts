@@ -195,6 +195,7 @@ export const SPAN_NAMES = {
     AGENT_PLAN: 'agent.plan',
     AGENT_OBSERVE: 'agent.observe',
     AGENT_ACT: 'agent.act',
+    AGENT_SYNTHESIZE: 'agent.synthesize',
 
     // LLM operations
     LLM_CHAT: 'gen_ai.chat',

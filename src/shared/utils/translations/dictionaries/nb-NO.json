@@ -30,6 +30,8 @@
         "interactingTitle": "Interaksjon med Kody",
         "requestReview": "Be om en gjennomgang",
         "requestReviewDesc": "Be Kody om å gjennomgå PR-en din manuelt ved å legge til en kommentar med kommandoen `@kody start-review` i roten av PR-en din.",
+        "validateBusinessLogic": "Valider forretningslogikk",
+        "validateBusinessLogicDesc": "Be Kody om å validere koden din mot forretningsregler ved å legge til en kommentar med kommandoen `@kody -v business-logic`.",
         "provideFeedback": "Gi tilbakemelding",
         "provideFeedbackDesc": "Hjelp Kody med å lære og forbedre ved å reagere på kommentarene med en 👍 for nyttige forslag eller en 👎 hvis forbedringer er nødvendig.",
         "configurationTitle": "Gjeldende Kody-konfigurasjon",

@@ -30,6 +30,8 @@
         "interactingTitle": "Interakcja z Kody",
         "requestReview": "Poproś o przegląd",
         "requestReviewDesc": "Poproś Kody o ręczny przegląd twojego PR, dodając komentarz z poleceniem `@kody start-review` w głównym katalogu twojego PR.",
+        "validateBusinessLogic": "Waliduj logikę biznesową",
+        "validateBusinessLogicDesc": "Poproś Kody o walidację twojego kodu względem reguł biznesowych, dodając komentarz z poleceniem `@kody -v business-logic`.",
         "provideFeedback": "Przekaż opinię",
         "provideFeedbackDesc": "Pomóż Kody uczyć się i poprawiać, reagując na jego komentarze za pomocą 👍 dla pomocnych sugestii lub 👎 jeśli potrzebne są ulepszenia.",
         "configurationTitle": "Bieżąca konfiguracja Kody",

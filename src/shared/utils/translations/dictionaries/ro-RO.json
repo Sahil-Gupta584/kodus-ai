@@ -30,6 +30,8 @@
         "interactingTitle": "Interacțiunea cu Kody",
         "requestReview": "Solicită o revizuire",
         "requestReviewDesc": "Solicitați ca Kody să revizuiască manual PR-ul dvs. adăugând un comentariu cu comanda `@kody start-review` la rădăcina PR-ului dvs.",
+        "validateBusinessLogic": "Validează logica de afaceri",
+        "validateBusinessLogicDesc": "Solicitați ca Kody să valideze codul dvs. împotriva regulilor de afaceri adăugând un comentariu cu comanda `@kody -v business-logic`.",
         "provideFeedback": "Oferiți feedback",
         "provideFeedbackDesc": "Ajutați Kody să învețe și să se îmbunătățească reacționând la comentariile sale cu un 👍 pentru sugestii utile sau un 👎 dacă sunt necesare îmbunătățiri.",
         "configurationTitle": "Configurația curentă Kody",

@@ -8,6 +8,7 @@ import {
     LogContext,
 } from './types.js';
 import { TelemetrySystem } from './telemetry.js';
+import { isEnhancedError } from '../core/error-unified.js';
 import { createLogger, addLogProcessor } from './logger.js';
 
 import {
@@ -143,7 +144,24 @@ export class ObservabilitySystem {
      * Start a span
      */
     startSpan(name: string, options: SpanOptions = {}): Span {
-        return this.telemetry.startSpan(name, options);
+        // Auto-attach common attributes from current context for better filtering
+        const ctx = this.getContext();
+        const attrs: Record<string, string | number | boolean> = {
+            ...(options.attributes || {}),
+        };
+        if (ctx?.correlationId && attrs['correlationId'] === undefined) {
+            attrs['correlationId'] = ctx.correlationId;
+        }
+        if (ctx?.tenantId && attrs['tenantId'] === undefined) {
+            attrs['tenantId'] = ctx.tenantId;
+        }
+        if (ctx?.sessionId && attrs['sessionId'] === undefined) {
+            attrs['sessionId'] = ctx.sessionId;
+        }
+        return this.telemetry.startSpan(name, {
+            ...options,
+            attributes: attrs,
+        });
     }
 
     /**
@@ -262,6 +280,20 @@ export class ObservabilitySystem {
             });
 
             span.recordException(error as Error);
+            if (isEnhancedError(error as Error)) {
+                try {
+                    const e = error as any;
+                    if (e?.context?.subcode) {
+                        span.setAttribute(
+                            'error.subcode',
+                            String(e.context.subcode),
+                        );
+                    }
+                    if (e?.code) {
+                        span.setAttribute('error.code', String(e.code));
+                    }
+                } catch {}
+            }
             failExecutionTracking(executionId, error as Error);
 
             this.logger.error('Agent execution failed', error as Error, {
@@ -310,7 +342,44 @@ export class ObservabilitySystem {
 
         const span = this.startSpan(SPAN_NAMES.TOOL_EXECUTE, spanOptions);
 
-        return this.withSpan(span, fn);
+        const start = Date.now();
+        return this.withSpan(span, async () => {
+            try {
+                const result = await fn();
+                const duration = Date.now() - start;
+                this.metrics.counter('tool_executions_success', 1, {
+                    tool: toolName,
+                });
+                this.metrics.histogram('tool_execution_duration', duration, {
+                    tool: toolName,
+                });
+                return result;
+            } catch (error) {
+                const duration = Date.now() - start;
+                if (isEnhancedError(error as Error)) {
+                    try {
+                        const e = error as any;
+                        if (e?.context?.subcode) {
+                            span.setAttribute(
+                                'error.subcode',
+                                String(e.context.subcode),
+                            );
+                        }
+                        if (e?.code) {
+                            span.setAttribute('error.code', String(e.code));
+                        }
+                    } catch {}
+                }
+                this.metrics.counter('tool_executions_error', 1, {
+                    tool: toolName,
+                });
+                this.metrics.histogram('tool_execution_duration', duration, {
+                    tool: toolName,
+                });
+                span.recordException(error as Error);
+                throw error;
+            }
+        });
     }
 
     /**

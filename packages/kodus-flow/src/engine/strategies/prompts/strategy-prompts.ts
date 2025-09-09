@@ -377,6 +377,15 @@ Solve user tasks using systematic reasoning and precise tool execution.
         // 🔥 MELHORADO: Agent context compacto
         sections.push(this.formatters.context.formatAgentContext(agentContext));
 
+        // 🔥 MELHORADO: Agent Identity ANTES das tools (prompt engineering)
+        if (agentContext.agentIdentity) {
+            sections.push(
+                this.formatters.context.formatAgentIdentity(
+                    agentContext.agentIdentity,
+                ),
+            );
+        }
+
         // 🔥 MELHORADO: Todas as tools (por enquanto - mais seguro)
         if (agentContext?.availableTools?.length > 0) {
             sections.push(
