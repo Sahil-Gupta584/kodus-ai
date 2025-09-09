@@ -667,12 +667,13 @@ export class KodyRulesService implements IKodyRulesService {
                     }
 
                     // Filtro por linguagem
-                    if (
-                        filters.language &&
-                        rule.language &&
-                        rule.language !== filters.language
-                    ) {
-                        return false;
+                    if (filters.language) {
+                        if (
+                            !rule.language ||
+                            rule.language !== filters.language
+                        ) {
+                            return false;
+                        }
                     }
 
                     // Filtro por buckets

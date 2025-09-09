@@ -125,6 +125,17 @@ export class CrossFileAnalysisService {
             };
         }
 
+        if (!context?.codeReviewConfig?.reviewOptions?.cross_file) {
+            this.logger.log({
+                message: 'Cross-file analysis is disabled in codeReviewConfig',
+                context: CrossFileAnalysisService.name,
+                metadata: { organizationAndTeamData, prNumber },
+            });
+            return {
+                codeSuggestions: [],
+            };
+        }
+
         const language =
             context.codeReviewConfig.languageResultPrompt || 'en-US';
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
@@ -171,143 +182,6 @@ export class CrossFileAnalysisService {
             return {
                 codeSuggestions: [],
             };
-        }
-    }
-
-    //#region Generic Provider Chain Creation
-    /**
-     * Cria chain genérica com fallback para qualquer tipo de análise
-     */
-    private async createGenericAnalysisChain(
-        provider: LLMModelProvider,
-        analysisType: AnalysisType,
-        payload: any,
-        prNumber: number,
-        organizationAndTeamData: OrganizationAndTeamData,
-    ) {
-        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
-
-        try {
-            const mainChain = await this.createGenericProviderChain(
-                provider,
-                analysisType,
-                payload,
-                prNumber,
-                organizationAndTeamData,
-            );
-            const fallbackChain = await this.createGenericProviderChain(
-                fallbackProvider,
-                analysisType,
-                payload,
-                prNumber,
-                organizationAndTeamData,
-            );
-
-            return mainChain
-                .withFallbacks({
-                    fallbacks: [fallbackChain],
-                })
-                .withConfig({
-                    tags: this.buildTags(provider, 'primary', analysisType),
-                    runName: `crossFile${analysisType.charAt(0).toUpperCase() + analysisType.slice(1)}`,
-                    metadata: {
-                        organizationAndTeamData,
-                        prNumber,
-                        provider: provider,
-                        fallbackProvider: fallbackProvider,
-                        analysisType,
-                    },
-                });
-        } catch (error) {
-            this.logger.error({
-                message: 'Error creating generic analysis chain with fallback',
-                error,
-                context: CrossFileAnalysisService.name,
-                metadata: {
-                    provider,
-                    fallbackProvider,
-                    prNumber,
-                    organizationAndTeamData,
-                    analysisType,
-                },
-            });
-            throw error;
-        }
-    }
-
-    /**
-     * Cria provider chain específico para um tipo de análise
-     */
-    private async createGenericProviderChain(
-        provider: LLMModelProvider,
-        analysisType: AnalysisType,
-        payload: any,
-        prNumber: number,
-        organizationAndTeamData: OrganizationAndTeamData,
-    ) {
-        try {
-            const llm = this.llmProviderService.getLLMProvider({
-                model: provider,
-                temperature: 0,
-                callbacks: [this.tokenTracker.createCallbackHandler()],
-            });
-
-            const tags = this.buildTags(provider, 'primary', analysisType);
-
-            const chain = RunnableSequence.from([
-                async (input: any) => {
-                    let systemPrompt: string;
-
-                    switch (analysisType) {
-                        case 'analyzeCodeWithAI':
-                            systemPrompt =
-                                prompt_codereview_cross_file_analysis(payload);
-                            break;
-                        default:
-                            throw new Error(
-                                `Unknown analysis type: ${analysisType}`,
-                            );
-                    }
-
-                    return [
-                        {
-                            role: 'system',
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: systemPrompt,
-                                },
-                            ],
-                        },
-                        {
-                            role: 'user',
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: 'Please analyze the provided information and return the response in the specified format.',
-                                },
-                            ],
-                        },
-                    ];
-                },
-                llm,
-                new CustomStringOutputParser(),
-            ]).withConfig({ tags });
-
-            return chain;
-        } catch (error) {
-            this.logger.error({
-                message: 'Error creating generic provider chain',
-                error,
-                context: CrossFileAnalysisService.name,
-                metadata: {
-                    provider,
-                    prNumber,
-                    organizationAndTeamData,
-                    analysisType,
-                },
-            });
-            throw error;
         }
     }
     //#endregion
@@ -615,6 +489,7 @@ export class CrossFileAnalysisService {
             ])
             .addCallbacks([this.tokenTracker.createCallbackHandler()])
             .setRunName(runName)
+            .setMaxReasoningTokens(5000)
             .addMetadata({
                 organizationAndTeamData,
                 prNumber,
@@ -644,7 +519,6 @@ export class CrossFileAnalysisService {
             analysisType,
             prNumber,
             organizationAndTeamData,
-            context?.codeReviewConfig?.codeReviewVersion,
         );
     }
     //#endregion
@@ -658,7 +532,6 @@ export class CrossFileAnalysisService {
         analysisType: AnalysisType,
         prNumber: number,
         organizationAndTeamData: OrganizationAndTeamData,
-        codeReviewVersion: CodeReviewVersion,
     ): CodeSuggestion[] | null {
         try {
             if (!response) {
@@ -713,9 +586,7 @@ export class CrossFileAnalysisService {
                 .filter((suggestion) =>
                     this.validateSuggestion(suggestion, analysisType),
                 )
-                .map((suggestion) =>
-                    this.enrichSuggestion(suggestion, codeReviewVersion),
-                );
+                .map((suggestion) => this.enrichSuggestion(suggestion));
 
             this.logger.log({
                 message: `Successfully processed ${analysisType} response`,
@@ -772,18 +643,7 @@ export class CrossFileAnalysisService {
     /**
      * Enriquece sugestão com campos padrão se necessário
      */
-    private enrichSuggestion(
-        suggestion: any,
-        codeReviewVersion: CodeReviewVersion,
-    ): CodeSuggestion {
-        if (codeReviewVersion === CodeReviewVersion.v2) {
-            if (suggestion.label === LabelType.PERFORMANCE_AND_OPTIMIZATION) {
-                suggestion.label = 'performance';
-            } else {
-                suggestion.label = 'bug';
-            }
-        }
-
+    private enrichSuggestion(suggestion: any): CodeSuggestion {
         return {
             id: uuidv4(),
             relevantFile: suggestion.relevantFile,
@@ -794,7 +654,7 @@ export class CrossFileAnalysisService {
             oneSentenceSummary: suggestion.oneSentenceSummary,
             relevantLinesStart: suggestion.relevantLinesStart,
             relevantLinesEnd: suggestion.relevantLinesEnd,
-            label: suggestion?.label || '',
+            label: LabelType.CROSS_FILE,
             severity: suggestion.severity,
             rankScore: suggestion?.rankScore || 0,
             type: SuggestionType.CROSS_FILE,

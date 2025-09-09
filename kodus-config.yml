@@ -21,6 +21,7 @@ reviewOptions:
     performance_and_optimization: true
     bug: true
     performance: true
+    cross_file: true
 suggestionControl:
     groupingMode: 'full'
     limitationType: 'pr'

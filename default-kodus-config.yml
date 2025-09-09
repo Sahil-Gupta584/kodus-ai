@@ -23,6 +23,7 @@ reviewOptions:
     breaking_changes: true
     bug: true
     performance: true
+    cross_file: true
 suggestionControl:
     groupingMode: 'full'
     limitationType: 'pr'

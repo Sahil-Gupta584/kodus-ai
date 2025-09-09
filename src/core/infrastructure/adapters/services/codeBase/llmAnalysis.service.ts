@@ -66,7 +66,8 @@ class TokenTrackingHandler extends BaseCallbackHandler {
                 usage.input_tokens = metadata.input_tokens;
                 usage.output_tokens = metadata.output_tokens;
                 usage.total_tokens = metadata.total_tokens;
-                usage.output_reasoning_tokens = metadata.output_token_details.reasoning;
+                usage.output_reasoning_tokens =
+                    metadata.output_token_details.reasoning;
             }
 
             // Extracts model
@@ -330,8 +331,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                         label: z.string(),
                         severity: z.string().optional(),
                         rankScore: z.number().optional(),
-                        type: z.enum(['cross_file']).optional(),
-                    })
+                    }),
                 ),
                 overallSummary: z.string(),
             });
@@ -394,7 +394,8 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
 
             // Com o parser zod, a resposta já vem estruturada
             const analysisResult: AIAnalysisResult = {
-                codeSuggestions: analysis.codeSuggestions as Partial<CodeSuggestion>[],
+                codeSuggestions:
+                    analysis.codeSuggestions as Partial<CodeSuggestion>[],
                 overallSummary: analysis.overallSummary,
                 codeReviewModelUsed: {
                     generateSuggestions: provider,
@@ -678,7 +679,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                             id: z.string(),
                             suggestionContent: z.string(),
                             existingCode: z.string(),
-                            improvedCode: z.string(),
+                            improvedCode: z.string().nullable(),
                             oneSentenceSummary: z.string(),
                             relevantLinesStart: z.number().min(1),
                             relevantLinesEnd: z.number().min(1),
