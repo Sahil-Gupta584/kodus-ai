@@ -30,6 +30,8 @@
         "interactingTitle": "Tương tác với Kody",
         "requestReview": "Yêu cầu đánh giá",
         "requestReviewDesc": "Yêu cầu Kody đánh giá PR của bạn thủ công bằng cách thêm một bình luận với lệnh `@kody start-review` tại gốc của PR của bạn.",
+        "validateBusinessLogic": "Xác thực logic nghiệp vụ",
+        "validateBusinessLogicDesc": "Yêu cầu Kody xác thực mã của bạn chống lại các quy tắc nghiệp vụ bằng cách thêm một bình luận với lệnh `@kody -v business-logic`.",
         "provideFeedback": "Cung cấp phản hồi",
         "provideFeedbackDesc": "Giúp Kody học hỏi và cải thiện bằng cách phản hồi các bình luận của nó với một 👍 cho các đề xuất hữu ích hoặc một 👎 nếu cần cải thiện.",
         "configurationTitle": "Cấu hình Kody hiện tại",

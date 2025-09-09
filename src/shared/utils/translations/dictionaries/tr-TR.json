@@ -30,6 +30,8 @@
         "interactingTitle": "Kody ile Etkileşim",
         "requestReview": "İnceleme Talep Et",
         "requestReviewDesc": "PR'nizin köküne `@kody start-review` komutuyla bir yorum ekleyerek Kody'den PR'nizi manuel olarak incelemesini isteyin.",
+        "validateBusinessLogic": "İş mantığını doğrula",
+        "validateBusinessLogicDesc": "`@kody -v business-logic` komutuyla bir yorum ekleyerek Kody'den kodunuzu iş kurallarına karşı doğrulamasını isteyin.",
         "provideFeedback": "Geri Bildirim Sağlayın",
         "provideFeedbackDesc": "Yararlı öneriler için yorumlarına 👍 veya iyileştirmeler gerekiyorsa 👎 ile yanıt vererek Kody'nin öğrenmesine ve gelişmesine yardımcı olun.",
         "configurationTitle": "Mevcut Kody Yapılandırması",

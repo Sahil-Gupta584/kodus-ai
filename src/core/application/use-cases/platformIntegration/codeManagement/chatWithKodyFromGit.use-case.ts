@@ -11,6 +11,93 @@ import { BusinessRulesValidationAgentUseCase } from '../../agent/business-rules-
 import { createThreadId } from '@kodus/flow';
 import posthogClient from '@/shared/utils/posthog';
 
+// Constants
+const KODY_COMMANDS = {
+    BUSINESS_LOGIC_VALIDATION: '@kody -v business-logic',
+    KODY_MENTION: '@kody',
+    KODUS_MENTION: '@kodus',
+} as const;
+
+const KODY_IDENTIFIERS = {
+    LOGIN_KEYWORDS: ['kody', 'kodus'],
+    MARKDOWN_IDENTIFIERS: {
+        DEFAULT: 'kody-codereview',
+        BITBUCKET: 'kody|code-review',
+    },
+} as const;
+
+const ACKNOWLEDGMENT_MESSAGES = {
+    DEFAULT: 'Analyzing your request...',
+    MARKDOWN_SUFFIX: '<!-- kody-codereview -->\n&#8203;',
+} as const;
+
+const THREAD_PREFIX = 'cmc'; // Code Management Chat
+
+// Enums
+enum CommandType {
+    BUSINESS_LOGIC_VALIDATION = 'business_logic_validation',
+    CONVERSATION = 'conversation',
+    UNKNOWN = 'unknown',
+}
+
+// Command Handler Interface
+interface CommandHandler {
+    canHandle(userQuestion: string): boolean;
+    getCommandType(): CommandType;
+}
+
+// Business Logic Validation Command Handler
+class BusinessLogicValidationCommandHandler implements CommandHandler {
+    canHandle(userQuestion: string): boolean {
+        return userQuestion
+            .toLowerCase()
+            .trim()
+            .startsWith(KODY_COMMANDS.BUSINESS_LOGIC_VALIDATION);
+    }
+
+    getCommandType(): CommandType {
+        return CommandType.BUSINESS_LOGIC_VALIDATION;
+    }
+}
+
+// Conversation Command Handler
+class ConversationCommandHandler implements CommandHandler {
+    canHandle(userQuestion: string): boolean {
+        const trimmedQuestion = userQuestion.toLowerCase().trim();
+
+        const startsWithMention =
+            trimmedQuestion.startsWith(KODY_COMMANDS.KODY_MENTION) ||
+            trimmedQuestion.startsWith(KODY_COMMANDS.KODUS_MENTION);
+
+        if (!startsWithMention) {
+            return false;
+        }
+
+        if (trimmedQuestion.includes(' -v ')) {
+            return false;
+        }
+
+        return true;
+    }
+
+    getCommandType(): CommandType {
+        return CommandType.CONVERSATION;
+    }
+}
+
+// Command Manager
+class CommandManager {
+    private handlers: CommandHandler[] = [
+        new BusinessLogicValidationCommandHandler(),
+        new ConversationCommandHandler(),
+    ];
+
+    getCommandType(userQuestion: string): CommandType {
+        const handler = this.handlers.find((h) => h.canHandle(userQuestion));
+        return handler?.getCommandType() ?? CommandType.UNKNOWN;
+    }
+}
+
 interface WebhookParams {
     event: string;
     payload: any;
@@ -62,6 +149,8 @@ interface Comment {
 
 @Injectable()
 export class ChatWithKodyFromGitUseCase {
+    private readonly commandManager = new CommandManager();
+
     constructor(
         @Inject(AGENT_SERVICE_TOKEN)
         private readonly agentService: AgentService,
@@ -221,42 +310,20 @@ export class ChatWithKodyFromGitUseCase {
                         suggestionCommentId: originalKodyComment?.id,
                     },
                     {
-                        prefix: 'cmc', // Code Management Chat
+                        prefix: THREAD_PREFIX,
                     },
                 );
 
-                if (
-                    prepareContext.userQuestion
-                        .toLowerCase()
-                        .includes('@kody -v business-logic')
-                ) {
-                    const pullRequestData =
-                        await this.codeManagementService.getPullRequest({
-                            organizationAndTeamData,
-                            repository: {
-                                name: repository.name,
-                                id: repository.id,
-                            },
-                            prNumber: pullRequestNumber,
-                        });
-
-                    const validationResult =
-                        await this.businessRulesValidationAgentUseCase.validatePullRequest(
-                            organizationAndTeamData,
-                            pullRequestData,
-                            repository,
-                            thread,
-                        );
-
-                    response = this.formatValidationResponse(validationResult);
-                } else {
-                    response = await this.conversationAgentUseCase.execute({
-                        prompt: prepareContext.userQuestion,
-                        organizationAndTeamData,
-                        prepareContext: prepareContext,
-                        thread: thread,
-                    });
-                }
+                const commandType = this.commandManager.getCommandType(
+                    prepareContext.userQuestion,
+                );
+                response = await this.processCommand(commandType, {
+                    prepareContext,
+                    organizationAndTeamData,
+                    repository,
+                    pullRequestNumber,
+                    thread,
+                });
             } else {
                 response = await this.agentService.conversationWithKody(
                     organizationAndTeamData,
@@ -756,8 +823,8 @@ export class ChatWithKodyFromGitUseCase {
         platformType: PlatformType,
     ): boolean {
         const commentBody = comment.body.toLowerCase();
-        return ['@kody', '@kodus'].some((keyword) =>
-            commentBody.startsWith(keyword),
+        return [KODY_COMMANDS.KODY_MENTION, KODY_COMMANDS.KODUS_MENTION].some(
+            (keyword) => commentBody.startsWith(keyword),
         );
     }
 
@@ -772,19 +839,20 @@ export class ChatWithKodyFromGitUseCase {
         const body = comment.body.toLowerCase();
         const bodyWithoutMarkdown =
             platformType !== PlatformType.BITBUCKET
-                ? 'kody-codereview'
-                : 'kody|code-review';
+                ? KODY_IDENTIFIERS.MARKDOWN_IDENTIFIERS.DEFAULT
+                : KODY_IDENTIFIERS.MARKDOWN_IDENTIFIERS.BITBUCKET;
 
         return (
-            ['kody', 'kodus'].some((keyword) => login?.includes(keyword)) ||
-            body.includes(bodyWithoutMarkdown)
+            KODY_IDENTIFIERS.LOGIN_KEYWORDS.some((keyword) =>
+                login?.includes(keyword),
+            ) || body.includes(bodyWithoutMarkdown)
         );
     }
 
     private getAcknowledgmentBody(platformType: PlatformType): string {
-        let msg = 'Analyzing your request...';
+        let msg: string = ACKNOWLEDGMENT_MESSAGES.DEFAULT;
         if (platformType !== PlatformType.BITBUCKET) {
-            msg = `${msg}<!-- kody-codereview -->\n&#8203;`;
+            msg = `${msg}${ACKNOWLEDGMENT_MESSAGES.MARKDOWN_SUFFIX}`;
         }
         return msg.trim();
     }
@@ -838,12 +906,53 @@ export class ChatWithKodyFromGitUseCase {
             return '❌ Erro ao processar validação de regras de negócio.';
         }
 
-        const { isValid, violations, summary, complianceScore } =
-            validationResult;
+        // Se o agent precisa de mais informações
+        if (validationResult.needsMoreInfo) {
+            return `## 🤔 Preciso de Informações da Tarefa
+
+${validationResult.missingInfo || 'Não encontrei informações específicas da tarefa para validar. Preciso de detalhes sobre o que deve ser implementado.'}
+
+### 🔍 O que preciso para validar:
+- **Link direto da tarefa** (Jira, Notion, Google Docs, etc.)
+- **Descrição detalhada** do que deve ser implementado
+- **Critérios de aceitação** da tarefa
+- **Requisitos de negócio** específicos
+
+### 💡 Exemplos de como fornecer:
+- **Jira:** \`@kody -v business-logic https://kodustech.atlassian.net/jira/KC-123\`
+- **Notion:** \`@kody -v business-logic https://notion.so/minha-task\`
+- **Descrição:** \`@kody -v business-logic implementar validação de CPF com máscara e verificação de dígitos\`
+- **Google Docs:** \`@kody -v business-logic https://docs.google.com/document/d/123\`
+
+### ⚠️ Importante:
+Sem informações específicas da tarefa, não posso validar se as regras de negócio estão corretamente implementadas no código.`;
+        }
+
+        const {
+            isValid,
+            violations,
+            summary,
+            complianceScore,
+            confidence,
+            implementedCorrectly,
+            missingOrIncomplete,
+            edgeCasesAndAssumptions,
+            businessLogicIssues,
+        } = validationResult;
+
+        // Determinar se há problemas baseado em TODOS os campos de problemas
+        const hasAnyProblems =
+            (violations && violations.length > 0) ||
+            (missingOrIncomplete && missingOrIncomplete.length > 0) ||
+            (edgeCasesAndAssumptions && edgeCasesAndAssumptions.length > 0) ||
+            (businessLogicIssues && businessLogicIssues.length > 0) ||
+            complianceScore === 0 ||
+            complianceScore < 50;
 
         let response = `## 🔍 Validação de Regras de Negócio\n\n`;
-        response += `**Status:** ${isValid ? '✅ Válido' : '❌ Violações encontradas'}\n`;
-        response += `**Score de Compliance:** ${complianceScore || 0}/100\n\n`;
+        response += `**Status:** ${hasAnyProblems ? '❌ Problemas encontrados' : '✅ Válido'}\n`;
+        response += `**Score de Compliance:** ${complianceScore || 0}/100\n`;
+        response += `**Confiança da Análise:** ${confidence || 'medium'}\n\n`;
         response += `**Resumo:** ${summary || 'Validação concluída'}\n\n`;
 
         if (violations && violations.length > 0) {
@@ -874,11 +983,114 @@ export class ChatWithKodyFromGitUseCase {
 
                 response += `\n`;
             });
-        } else {
+        } else if (!hasAnyProblems) {
             response += `### ✅ Nenhuma violação encontrada!\n`;
-            response += `O código está em conformidade com as regras de negócio definidas.`;
+            response += `O código está em conformidade com as regras de negócio definidas.\n\n`;
         }
 
+        // Seção: Implementado Corretamente
+        if (implementedCorrectly && implementedCorrectly.length > 0) {
+            response += `### ✅ Implementado Corretamente\n\n`;
+            implementedCorrectly.forEach((item: string, index: number) => {
+                response += `${index + 1}. ${item}\n`;
+            });
+            response += `\n`;
+        }
+
+        // Seção: Faltando ou Incompleto
+        if (missingOrIncomplete && missingOrIncomplete.length > 0) {
+            response += `### ❌ Faltando ou Incompleto\n\n`;
+            missingOrIncomplete.forEach((item: any, index: number) => {
+                response += `**${index + 1}. ${item.requirement}**\n`;
+                response += `   📊 **Impacto:** ${item.impact}\n`;
+                response += `   💡 **Sugestão:** ${item.suggestion}\n\n`;
+            });
+        }
+
+        // Seção: Casos de Borda e Hipóteses
+        if (edgeCasesAndAssumptions && edgeCasesAndAssumptions.length > 0) {
+            response += `### ⚠️ Casos de Borda e Hipóteses\n\n`;
+            edgeCasesAndAssumptions.forEach((item: any, index: number) => {
+                response += `**${index + 1}. ${item.scenario}**\n`;
+                response += `   🚨 **Risco:** ${item.risk}\n`;
+                response += `   🛡️ **Recomendação:** ${item.recommendation}\n\n`;
+            });
+        }
+
+        // Seção: Problemas de Lógica de Negócio
+        if (businessLogicIssues && businessLogicIssues.length > 0) {
+            response += `### 🎯 Problemas de Lógica de Negócio\n\n`;
+            businessLogicIssues.forEach((issue: any, index: number) => {
+                const severityIcon =
+                    issue.severity === 'error'
+                        ? '🔴'
+                        : issue.severity === 'warning'
+                          ? '🟡'
+                          : '🔵';
+                response += `${severityIcon} **${issue.severity?.toUpperCase()}** - ${issue.issue}\n`;
+                response += `   🔧 **Correção:** ${issue.fix}\n\n`;
+            });
+        }
+
+        response += `---\n*Análise realizada por Kodus AI Business Rules Validator*`;
+
         return response;
+    }
+
+    private async processCommand(
+        commandType: CommandType,
+        context: {
+            prepareContext: any;
+            organizationAndTeamData: OrganizationAndTeamData;
+            repository: Repository;
+            pullRequestNumber: number;
+            thread: any;
+        },
+    ): Promise<string> {
+        switch (commandType) {
+            case CommandType.BUSINESS_LOGIC_VALIDATION:
+                return await this.handleBusinessLogicValidation(context);
+            case CommandType.CONVERSATION:
+                return await this.handleConversation(context);
+            default:
+                return await this.handleConversation(context);
+        }
+    }
+
+    private async handleBusinessLogicValidation(context: {
+        prepareContext: any;
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: Repository;
+        pullRequestNumber: number;
+        thread: any;
+    }): Promise<string> {
+        // Passar a mensagem completa do usuário para o agent
+        // O agent decidirá se precisa de mais informações
+        const enrichedContext = {
+            ...context,
+            userMessage: context.prepareContext.userQuestion,
+        };
+
+        const validationResult =
+            await this.businessRulesValidationAgentUseCase.execute(
+                enrichedContext,
+            );
+
+        return this.formatValidationResponse(validationResult);
+    }
+
+    private async handleConversation(context: {
+        prepareContext: any;
+        organizationAndTeamData: OrganizationAndTeamData;
+        thread: any;
+    }): Promise<string> {
+        const { prepareContext, organizationAndTeamData, thread } = context;
+
+        return await this.conversationAgentUseCase.execute({
+            prompt: prepareContext.userQuestion,
+            organizationAndTeamData,
+            prepareContext: prepareContext,
+            thread: thread,
+        });
     }
 }

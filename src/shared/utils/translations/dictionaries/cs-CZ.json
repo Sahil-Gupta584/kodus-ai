@@ -30,6 +30,8 @@
         "interactingTitle": "Interakce s Kody",
         "requestReview": "Požádat o kontrolu",
         "requestReviewDesc": "Požádejte Kody, aby ručně zkontroloval váš PR přidáním komentáře s příkazem `@kody start-review` do kořene vašeho PR.",
+        "validateBusinessLogic": "Ověřit obchodní logiku",
+        "validateBusinessLogicDesc": "Požádejte Kody, aby ověřil váš kód proti obchodním pravidlům přidáním komentáře s příkazem `@kody -v business-logic`.",
         "provideFeedback": "Poskytnout zpětnou vazbu",
         "provideFeedbackDesc": "Pomozte Kody učit se a zlepšovat tím, že budete reagovat na jeho komentáře s 👍 pro užitečné návrhy nebo 👎 pokud jsou potřeba vylepšení.",
         "configurationTitle": "Aktuální konfigurace Kody",
