@@ -305,6 +305,27 @@ export class KodyRulesSyncService {
                         ? Buffer.from(rawContent, 'base64').toString('utf-8')
                         : rawContent;
 
+                //Verify if the file should be ignored due to the @kody-ignore marker
+                if (this.shouldIgnoreFile(decoded)) {
+                    this.logger.log({
+                        message: 'File ignored due to @kody-ignore marker - removing existing rules',
+                        context: KodyRulesSyncService.name,
+                        metadata: { 
+                            file: f.filename,
+                            repositoryId: repository.id,
+                            pullRequestNumber 
+                        },
+                    });
+                    
+                    // Remove existing rules for this file
+                    await this.deleteRuleBySourcePath({
+                        organizationAndTeamData,
+                        repositoryId: repository.id,
+                        sourcePath: f.filename,
+                    });
+                    continue;
+                }
+
                 const rules = await this.convertFileToKodyRules({
                     filePath: f.filename,
                     repositoryId: repository.id,
@@ -455,6 +476,27 @@ export class KodyRulesSyncService {
                     contentResp?.data?.encoding === 'base64'
                         ? Buffer.from(rawContent, 'base64').toString('utf-8')
                         : rawContent;
+
+                // Verify if the file should be ignored due to the @kody-ignore marker
+                if (this.shouldIgnoreFile(decoded)) {
+                    this.logger.log({
+                        message: 'File ignored due to @kody-ignore marker - removing existing rules',
+                        context: KodyRulesSyncService.name,
+                        metadata: { 
+                            file: file.path,
+                            repositoryId: repository.id,
+                            syncType: 'main'
+                        },
+                    });
+                    
+                    // Remove existing rules for this file
+                    await this.deleteRuleBySourcePath({
+                        organizationAndTeamData,
+                        repositoryId: repository.id,
+                        sourcePath: file.path,
+                    });
+                    continue;
+                }
 
                 const rules = await this.convertFileToKodyRules({
                     filePath: file.path,
@@ -717,6 +759,41 @@ export class KodyRulesSyncService {
         } catch {
             return null;
         }
+    }
+
+    /**
+     * Verifica se um arquivo deve ser ignorado baseado na marcação @kody-ignore
+     * A marcação pode estar no início ou final do arquivo
+     */
+    private shouldIgnoreFile(content: string): boolean {
+        if (!content || typeof content !== 'string') {
+            return false;
+        }
+
+        const trimmedContent = content.trim();
+        if (!trimmedContent) {
+            return false;
+        }
+
+        // Verifica as primeiras 10 linhas do arquivo
+        const lines = trimmedContent.split('\n');
+        const firstLines = lines.slice(0, 10);
+        const lastLines = lines.slice(-10);
+
+        // Padrão para detectar @kody-ignore (case insensitive, com possíveis comentários)
+        const ignorePattern = /@kody-ignore\b/i;
+
+        // Verifica no início do arquivo
+        const hasIgnoreAtStart = firstLines.some(line => 
+            ignorePattern.test(line.trim())
+        );
+
+        // Verifica no final do arquivo
+        const hasIgnoreAtEnd = lastLines.some(line => 
+            ignorePattern.test(line.trim())
+        );
+
+        return hasIgnoreAtStart || hasIgnoreAtEnd;
     }
 
     private async getConfiguredDirectories(
