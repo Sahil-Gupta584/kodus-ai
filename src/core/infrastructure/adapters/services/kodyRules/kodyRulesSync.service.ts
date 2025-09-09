@@ -313,7 +313,8 @@ export class KodyRulesSyncService {
                         metadata: { 
                             file: f.filename,
                             repositoryId: repository.id,
-                            pullRequestNumber 
+                            pullRequestNumber,
+                            organizationAndTeamData,
                         },
                     });
                     
@@ -485,7 +486,8 @@ export class KodyRulesSyncService {
                         metadata: { 
                             file: file.path,
                             repositoryId: repository.id,
-                            syncType: 'main'
+                            syncType: 'main',
+                            organizationAndTeamData,
                         },
                     });
                     
