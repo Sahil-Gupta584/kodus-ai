@@ -390,6 +390,18 @@ export class ContextFormatter {
             );
         }
 
+        if (identity.language) {
+            sections.push(
+                `**🌐 Language Preference:** ${formatValue(identity.language)}`,
+            );
+        }
+
+        if (identity.languageInstructions) {
+            sections.push(
+                `**📝 Language Instructions:** ${formatValue(identity.languageInstructions)}`,
+            );
+        }
+
         // Campos adicionais usando formatação genérica
         const additionalFields = Object.keys(identity).filter(
             (key) =>
@@ -399,6 +411,8 @@ export class ContextFormatter {
                     'role',
                     'capabilities',
                     'personality',
+                    'language', // 🔥 Excluído para não duplicar
+                    'languageInstructions', // 🔥 Excluído para não duplicar
                 ].includes(key),
         );
 

@@ -38,6 +38,9 @@ export type AgentIdentity = {
     style?: string;
 
     systemPrompt?: string;
+
+    language?: string;
+    languageInstructions?: string;
 };
 
 export const agentIdentitySchema = z.object({
@@ -48,6 +51,8 @@ export const agentIdentitySchema = z.object({
     personality: z.string().optional(),
     style: z.string().optional(),
     systemPrompt: z.string().optional(),
+    language: z.string().optional(),
+    languageInstructions: z.string().optional(),
 });
 
 export interface AgentAction<TContent = unknown> {

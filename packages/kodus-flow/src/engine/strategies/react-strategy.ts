@@ -14,6 +14,7 @@ import type {
 import { StrategyPromptFactory } from './prompts/index.js';
 import { ContextService } from '../../core/contextNew/index.js';
 import { EnhancedJSONParser } from '../../utils/json-parser.js';
+import { isEnhancedError } from '../../core/error-unified.js';
 
 export class ReActStrategy extends BaseExecutionStrategy {
     private readonly logger = createLogger('react-strategy');
@@ -756,6 +757,28 @@ export class ReActStrategy extends BaseExecutionStrategy {
                             threadId: context.agentContext.thread?.id,
                         });
 
+                        // stepsJournal: success entry with timing
+                        try {
+                            const threadId = context.agentContext.thread?.id;
+                            if (threadId) {
+                                await ContextService.updateExecution(threadId, {
+                                    stepsJournalAppend: {
+                                        stepId: `react-tool-${Date.now()}`,
+                                        type: 'tool_call',
+                                        toolName: action.toolName,
+                                        status: 'completed',
+                                        endedAt: Date.now(),
+                                        startedAt: actionStartTime,
+                                        durationMs:
+                                            Date.now() - actionStartTime,
+                                    },
+                                    correlationId:
+                                        getObservability().getContext()
+                                            ?.correlationId,
+                                });
+                            }
+                        } catch {}
+
                         return {
                             type: 'tool_result',
                             content: result,
@@ -778,6 +801,36 @@ export class ReActStrategy extends BaseExecutionStrategy {
                                 threadId: context.agentContext.thread?.id,
                             },
                         );
+
+                        // Update steps journal with real subcode when available
+                        try {
+                            const threadId = context.agentContext.thread?.id;
+                            if (threadId) {
+                                const subcode = isEnhancedError(
+                                    toolError as any,
+                                )
+                                    ? (toolError as any).context?.subcode
+                                    : undefined;
+                                await ContextService.updateExecution(threadId, {
+                                    status: 'error',
+                                    stepsJournalAppend: {
+                                        stepId: `react-tool-${Date.now()}`,
+                                        type: 'tool_call',
+                                        toolName: action.toolName,
+                                        status: 'failed',
+                                        endedAt: Date.now(),
+                                        errorSubcode:
+                                            subcode ||
+                                            (toolError instanceof Error
+                                                ? toolError.name
+                                                : 'Error'),
+                                    },
+                                    correlationId:
+                                        getObservability().getContext()
+                                            ?.correlationId,
+                                });
+                            }
+                        } catch {}
 
                         return {
                             type: 'error',

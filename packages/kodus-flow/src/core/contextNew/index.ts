@@ -72,7 +72,11 @@ export interface EnhancedContextBuilderConfig {
     sessionsCollection?: string;
     snapshotsCollection?: string;
     memoryCollection?: string;
-    sessionTTL?: number;
+    sessionTTL?: number | string;
+    maxMessagesInMemory?: number;
+    maxMessagesInMemoryByRole?: Partial<
+        Record<'user' | 'assistant' | 'tool' | 'system', number>
+    >;
     snapshotTTL?: number;
 }
 
@@ -89,13 +93,14 @@ export class EnhancedContextBuilder {
         config: EnhancedContextBuilderConfig = DEFAULT_SESSION_CONFIG,
     ) {
         // ✅ SIMPLE CONFIG - Apenas o essencial!
+        const resolvedTTL = this.resolveTTL(config.sessionTTL);
         this.config = {
             adapterType: config.connectionString
                 ? StorageEnum.MONGODB
                 : StorageEnum.INMEMORY,
             connectionString: config.connectionString,
             database: config.database || config.dbName,
-            sessionTTL: config.sessionTTL || DEFAULT_SESSION_CONFIG.sessionTTL,
+            sessionTTL: resolvedTTL || DEFAULT_SESSION_CONFIG.sessionTTL,
         };
 
         logger.info('EnhancedContextBuilder created', {
@@ -103,6 +108,30 @@ export class EnhancedContextBuilder {
             database: this.config.database,
             sessionTTL: this.config.sessionTTL,
         });
+    }
+
+    private resolveTTL(ttl?: number | string): number | undefined {
+        if (ttl === undefined) return undefined;
+        if (typeof ttl === 'number') return ttl;
+        const str = ttl.trim().toLowerCase();
+        const match = str.match(/^(\d+)\s*(ms|s|m|h|d)?$/);
+        if (!match) return undefined;
+        const value = parseInt(match[1] as string, 10);
+        const unit = ((match[2] as string) || 'ms') as string;
+        switch (unit) {
+            case 'ms':
+                return value;
+            case 's':
+                return value * 1000;
+            case 'm':
+                return value * 60 * 1000;
+            case 'h':
+                return value * 60 * 60 * 1000;
+            case 'd':
+                return value * 24 * 60 * 60 * 1000;
+            default:
+                return undefined;
+        }
     }
 
     static getInstance(
@@ -195,7 +224,7 @@ export class EnhancedContextBuilder {
                 database: this.config.database, // ✅ Agora usa database customizado
                 sessionsCollection: SESSION_CONSTANTS.COLLECTIONS.SESSIONS,
                 snapshotsCollection: SESSION_CONSTANTS.COLLECTIONS.SNAPSHOTS,
-                sessionTTL: this.config.sessionTTL,
+                sessionTTL: this.config.sessionTTL as number | undefined,
             },
         );
 
@@ -205,7 +234,7 @@ export class EnhancedContextBuilder {
             dbName: this.config.database, // ✅ Agora usa database customizado
             sessionsCollection: SESSION_CONSTANTS.COLLECTIONS.SESSIONS,
             snapshotsCollection: SESSION_CONSTANTS.COLLECTIONS.SNAPSHOTS,
-            sessionTTL: this.config.sessionTTL,
+            sessionTTL: this.config.sessionTTL as number | undefined,
             snapshotTTL: SESSION_CONSTANTS.SNAPSHOT_TTL,
         });
 
