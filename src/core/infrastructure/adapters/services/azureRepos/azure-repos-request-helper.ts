@@ -187,6 +187,33 @@ export class AzureReposRequestHelper {
         return data;
     }
 
+    async createGeneralThread(params: {
+        orgName: string;
+        token: string;
+        projectId: string;
+        repositoryId: string;
+        prId: number | string;
+        comment: string;
+    }): Promise<any> {
+        const instance = await this.azureRequest(params);
+
+        const payload = {
+            comments: [
+                {
+                    content: params.comment,
+                    commentType: AzureRepoCommentType.TEXT,
+                },
+            ],
+            status: 'active',
+        };
+
+        const { data } = await instance.post(
+            `/${params.projectId}/_apis/git/repositories/${params.repositoryId}/pullRequests/${params.prId}/threads?api-version=7.1`,
+            payload,
+        );
+        return data;
+    }
+
     async getDefaultBranch(params: {
         orgName: string;
         token: string;
@@ -1088,6 +1115,10 @@ export class AzureReposRequestHelper {
         const values = (data?.value || []) as any[];
         return values
             .filter((v) => v?.gitObjectType === 'blob')
-            .map((v) => ({ path: String(v?.path || '').replace(/^\//, ''), objectId: v?.objectId, size: v?.size }));
+            .map((v) => ({
+                path: String(v?.path || '').replace(/^\//, ''),
+                objectId: v?.objectId,
+                size: v?.size,
+            }));
     }
 }

@@ -88,7 +88,6 @@ export class AzureReposService
             | 'getListMembers'
             | 'getCommitsByReleaseMode'
             | 'getPullRequestsForRTTM'
-            | 'createCommentInPullRequest'
             | 'getPullRequestReviewThreads'
             | 'getListOfValidReviews'
             | 'getPullRequestsWithChangesRequested'
@@ -4169,5 +4168,64 @@ export class AzureReposService
             size: -1, // Size not available in Azure Repo FileItem
             type: file?.gitObjectType ?? 'blob',
         };
+    }
+
+    async createCommentInPullRequest(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { name: string; id: string };
+        prNumber: number;
+        overallComment: string;
+    }): Promise<any | null> {
+        try {
+            const {
+                organizationAndTeamData,
+                repository,
+                prNumber,
+                overallComment,
+            } = params;
+
+            const { orgName, token } = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+            const projectId = await this.getProjectIdFromRepository(
+                organizationAndTeamData,
+                repository.id,
+            );
+
+            // Criar um thread geral (não em arquivo específico)
+            const response =
+                await this.azureReposRequestHelper.createGeneralThread({
+                    orgName,
+                    token,
+                    projectId,
+                    repositoryId: repository.id,
+                    prId: prNumber,
+                    comment: overallComment,
+                });
+
+            this.logger.log({
+                message: `Created general comment for PR#${prNumber}`,
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService createCommentInPullRequest',
+                metadata: {
+                    repository: repository.name,
+                    prNumber,
+                },
+            });
+
+            return response;
+        } catch (error) {
+            this.logger.error({
+                message: `Error creating general comment for PR#${params.prNumber}`,
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService createCommentInPullRequest',
+                error,
+                metadata: {
+                    repository: params.repository.name,
+                    prNumber: params.prNumber,
+                },
+            });
+            return null;
+        }
     }
 }

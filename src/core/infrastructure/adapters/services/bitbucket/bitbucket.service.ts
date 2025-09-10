@@ -1920,11 +1920,15 @@ export class BitbucketService
         organizationAndTeamData: OrganizationAndTeamData;
         repository: Partial<IRepository>;
         prNumber: number;
-        body: string;
+        overallComment: string;
     }): Promise<any | null> {
         try {
-            const { organizationAndTeamData, repository, prNumber, body } =
-                params;
+            const {
+                organizationAndTeamData,
+                repository,
+                prNumber,
+                overallComment,
+            } = params;
 
             const bitbucketAuthDetails = await this.getAuthDetails(
                 organizationAndTeamData,
@@ -1951,7 +1955,7 @@ export class BitbucketService
                     // @ts-ignore
                     _body: {
                         content: {
-                            raw: body,
+                            raw: overallComment,
                         },
                     },
                 })
@@ -3527,7 +3531,7 @@ export class BitbucketService
             const bodyFormatted = `${title}\n\n${listOfCriticalIssues}`;
 
             await this.createCommentInPullRequest({
-                body: bodyFormatted,
+                overallComment: bodyFormatted,
                 organizationAndTeamData,
                 prNumber,
                 repository,
