@@ -1857,9 +1857,9 @@
     "@jridgewell/sourcemap-codec" "^1.4.10"
 
 "@jridgewell/trace-mapping@^0.3.12", "@jridgewell/trace-mapping@^0.3.23", "@jridgewell/trace-mapping@^0.3.24", "@jridgewell/trace-mapping@^0.3.25", "@jridgewell/trace-mapping@^0.3.28":
-  version "0.3.30"
-  resolved "https://registry.yarnpkg.com/@jridgewell/trace-mapping/-/trace-mapping-0.3.30.tgz#4a76c4daeee5df09f5d3940e087442fb36ce2b99"
-  integrity sha512-GQ7Nw5G2lTu/BtHTKfXhKHok2WGetd4XYcVKGx00SjAk8GMwgJM3zr6zORiPGuOE+/vkc90KtTosSSvaCjKb2Q==
+  version "0.3.31"
+  resolved "https://registry.yarnpkg.com/@jridgewell/trace-mapping/-/trace-mapping-0.3.31.tgz#db15d6781c931f3a251a3dac39501c98a6082fd0"
+  integrity sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==
   dependencies:
     "@jridgewell/resolve-uri" "^3.1.0"
     "@jridgewell/sourcemap-codec" "^1.4.14"
@@ -4207,9 +4207,9 @@
   integrity sha512-eOunJqu0K1923aExK6y8p6fsihYEn/BYuQ4g0CxAAgFc4b/ZLN4CrsRZ55srTdqoiLzU2B2evC+apEIxprEzkQ==
 
 "@types/ramda@^0.31.0":
-  version "0.31.0"
-  resolved "https://registry.yarnpkg.com/@types/ramda/-/ramda-0.31.0.tgz#a32da24257804d53194875361e0d74b8666c8cb0"
-  integrity sha512-1lWWZ/2YiNttGcIUxQwnvMuh55GIEbn/zlpzzEojAsbxquI/TXQZCRaXsfxG1CHjlqGoqxWePkvaM/5qYHNuvQ==
+  version "0.31.1"
+  resolved "https://registry.yarnpkg.com/@types/ramda/-/ramda-0.31.1.tgz#da637f3110b0677521dbc13d8a86ec7cbbf8e3fe"
+  integrity sha512-Vt6sFXnuRpzaEj+yeutA0q3bcAsK7wdPuASIzR9LXqL4gJPyFw8im9qchlbp4ltuf3kDEIRmPJTD/Fkg60dn7g==
   dependencies:
     types-ramda "^0.31.0"
 
@@ -5816,9 +5816,9 @@ ee-first@1.1.1:
   integrity sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==
 
 electron-to-chromium@^1.5.211:
-  version "1.5.215"
-  resolved "https://registry.yarnpkg.com/electron-to-chromium/-/electron-to-chromium-1.5.215.tgz#200c8d69b1270af6126837b6b1f95077c3a347b1"
-  integrity sha512-TIvGp57UpeNetj/wV/xpFNpWGb0b/ROw372lHPx5Aafx02gjTBtWnEEcaSX3W2dLM3OSdGGyHX/cHl01JQsLaQ==
+  version "1.5.216"
+  resolved "https://registry.yarnpkg.com/electron-to-chromium/-/electron-to-chromium-1.5.216.tgz#c49da93cae9c8b0548755b136423be6982e21a7e"
+  integrity sha512-uVgsufJ+qIiOsZBmqkM2AGPn3gbqPySHl/SLKXJ70nowhI0VsRX4aog+R9EUL2bOjqPPhfR9pG8j8s4Zk4xq+A==
 
 emittery@^0.13.1:
   version "0.13.1"
@@ -8868,9 +8868,9 @@ postgres-interval@^1.1.0:
     xtend "^4.0.0"
 
 posthog-node@^5.8.1:
-  version "5.8.2"
-  resolved "https://registry.yarnpkg.com/posthog-node/-/posthog-node-5.8.2.tgz#413aa0f89561454d8f1d40b0c8f1c5bbc5e47007"
-  integrity sha512-z3XRvYwnc3T/1999FKzv16YTpxERQqLunULl2vkOPfgbCXUGNyJWLgcbTcED2ZIDE11jjZhrSph4De6OSMLphw==
+  version "5.8.3"
+  resolved "https://registry.yarnpkg.com/posthog-node/-/posthog-node-5.8.3.tgz#2eb118c76de32522271904d9bc9b2e578df79980"
+  integrity sha512-eFBUEF8Dn/gZncGDNGlC5FqggwRgf/N4ERkzVZsvhvkjXlM6ncSHb7McJsj1hooWGkxrvn/gABfl2hpDurSb/g==
   dependencies:
     "@posthog/core" "1.0.2"
 

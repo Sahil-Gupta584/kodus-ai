@@ -219,7 +219,6 @@ export class ChatWithKodyFromGitUseCase {
                 },
             });
 
-            // Criar CommandManager simples, sem depender do eventType
             this.commandManager = new CommandManager();
             const commandType = this.detectCommandType(params);
 
@@ -267,7 +266,6 @@ export class ChatWithKodyFromGitUseCase {
     }
 
     private detectCommandType(params: WebhookParams): CommandType {
-        // Para GitHub
         if (params.event === 'issue_comment' || params.payload?.comment?.body) {
             const commentBody =
                 params.payload?.comment?.body ||
@@ -276,28 +274,23 @@ export class ChatWithKodyFromGitUseCase {
             return this.commandManager.getCommandType(commentBody);
         }
 
-        // Para GitLab
         if (params.platformType === PlatformType.GITLAB) {
             const commentType = params.payload?.object_attributes?.type;
             const isSuggestion = commentType === 'DiffNote';
             const isGeneralFlow = commentType === null;
             const commentBody = params.payload?.object_attributes?.note || '';
 
-            // Se for sugestão (DiffNote), sempre retorna CONVERSATION
             if (isSuggestion) {
                 return CommandType.CONVERSATION;
             }
 
-            // Se for fluxo geral, verifica se tem comando business-logic
             if (isGeneralFlow) {
                 return this.commandManager.getCommandType(commentBody);
             }
 
-            // Fallback
             return CommandType.CONVERSATION;
         }
 
-        // Para Bitbucket
         if (params.platformType === PlatformType.BITBUCKET) {
             const comment = params.payload?.comment;
             const isSuggestion =
@@ -305,38 +298,31 @@ export class ChatWithKodyFromGitUseCase {
             const isGeneralFlow = !isSuggestion;
             const commentBody = comment?.content?.raw || '';
 
-            // Se for sugestão (inline), sempre retorna CONVERSATION
             if (isSuggestion) {
                 return CommandType.CONVERSATION;
             }
 
-            // Se for fluxo geral, verifica se tem comando business-logic
             if (isGeneralFlow) {
                 return this.commandManager.getCommandType(commentBody);
             }
 
-            // Fallback
             return CommandType.CONVERSATION;
         }
 
-        // Para Azure DevOps
         if (params.platformType === PlatformType.AZURE_REPOS) {
             const comment = params.payload?.resource?.comment;
             const isSuggestion = comment?.parentCommentId > 0;
             const isGeneralFlow = comment?.parentCommentId === 0;
             const commentBody = comment?.content || '';
 
-            // Se for sugestão (parentCommentId > 0), sempre retorna CONVERSATION
             if (isSuggestion) {
                 return CommandType.CONVERSATION;
             }
 
-            // Se for fluxo geral (parentCommentId === 0), verifica se tem comando business-logic
             if (isGeneralFlow) {
                 return this.commandManager.getCommandType(commentBody);
             }
 
-            // Fallback
             return CommandType.CONVERSATION;
         }
 
@@ -383,6 +369,47 @@ export class ChatWithKodyFromGitUseCase {
             },
         );
 
+        const ackResponse = await this.codeManagementService.createIssueComment(
+            {
+                organizationAndTeamData,
+                repository,
+                prNumber: pullRequestNumber,
+                body: this.getAcknowledgmentBody(params.platformType),
+            },
+        );
+
+        if (!ackResponse) {
+            this.logger.warn({
+                message: 'Failed to create acknowledgment response',
+                context: ChatWithKodyFromGitUseCase.name,
+                metadata: {
+                    repository: repository.name,
+                    pullRequestNumber,
+                },
+            });
+            return;
+        }
+
+        const [ackResponseId, parentId] =
+            this.getBusinessLogicAcknowledgmentIds(
+                ackResponse,
+                params.platformType,
+            );
+
+        if (!ackResponseId) {
+            this.logger.warn({
+                message:
+                    'Failed to get acknowledgment response ID for business logic',
+                context: ChatWithKodyFromGitUseCase.name,
+                metadata: {
+                    repository: repository.name,
+                    pullRequestNumber,
+                    platformType: params.platformType,
+                },
+            });
+            return;
+        }
+
         const prepareContext = {
             userQuestion: commentBody,
             pullRequestNumber,
@@ -413,16 +440,25 @@ export class ChatWithKodyFromGitUseCase {
         }
 
         try {
-            await this.codeManagementService.createCommentInPullRequest({
+            const updateParams: any = {
                 organizationAndTeamData,
                 repository,
                 prNumber: pullRequestNumber,
-                overallComment: response,
-            });
+                commentId: Number(ackResponseId),
+                body: response,
+            };
+
+            if (params.platformType === PlatformType.GITLAB) {
+                updateParams.noteId = parentId ? Number(parentId) : undefined;
+            } else if (params.platformType === PlatformType.AZURE_REPOS) {
+                updateParams.threadId = parentId ? Number(parentId) : undefined;
+            }
+
+            await this.codeManagementService.updateIssueComment(updateParams);
 
             this.logger.log({
                 message:
-                    'Successfully created PR response for business logic validation',
+                    'Successfully updated PR response for business logic validation',
                 context: ChatWithKodyFromGitUseCase.name,
                 metadata: {
                     repository: repository.name,
@@ -432,7 +468,7 @@ export class ChatWithKodyFromGitUseCase {
         } catch (error) {
             this.logger.error({
                 message:
-                    'Failed to create PR response for business logic validation',
+                    'Failed to update PR response for business logic validation',
                 context: ChatWithKodyFromGitUseCase.name,
                 error,
                 metadata: {
@@ -1249,6 +1285,46 @@ export class ChatWithKodyFromGitUseCase {
 
         if (!ackResponseId || !parentId) {
             return ['', ''];
+        }
+
+        return [ackResponseId, parentId];
+    }
+
+    private getBusinessLogicAcknowledgmentIds(
+        ackResponse: any,
+        platformType: PlatformType,
+    ): [string | number | null, string | number | null] {
+        let ackResponseId;
+        let parentId;
+
+        switch (platformType) {
+            case PlatformType.GITHUB:
+                // GitHub: ackResponse.id
+                ackResponseId = ackResponse?.id;
+                parentId = ackResponse?.id; // Para business logic, parentId é o mesmo
+                break;
+
+            case PlatformType.GITLAB:
+                // GitLab: ackResponse.id (discussion ID) e ackResponse.notes[0].id (note ID)
+                ackResponseId = ackResponse?.id; // Discussion ID
+                parentId = ackResponse?.notes?.[0]?.id; // Note ID
+                break;
+
+            case PlatformType.BITBUCKET:
+                // Bitbucket: ackResponse.id (assumindo, precisa confirmar)
+                ackResponseId = ackResponse?.id;
+                parentId = ackResponse?.id; // Para business logic, parentId é o mesmo
+                break;
+
+            case PlatformType.AZURE_REPOS:
+                // Azure: ackResponse.id (comment ID) e ackResponse.threadId (thread ID)
+                ackResponseId = ackResponse?.id; // Comment ID
+                parentId = ackResponse?.threadId; // Thread ID
+                break;
+
+            default:
+                ackResponseId = ackResponse?.id;
+                parentId = ackResponse?.id;
         }
 
         return [ackResponseId, parentId];
