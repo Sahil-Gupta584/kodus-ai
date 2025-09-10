@@ -31,21 +31,17 @@ const ACKNOWLEDGMENT_MESSAGES = {
     MARKDOWN_SUFFIX: '<!-- kody-codereview -->\n&#8203;',
 } as const;
 
-const THREAD_PREFIX = 'cmc';
-
 enum CommandType {
     BUSINESS_LOGIC_VALIDATION = 'business_logic_validation',
     CONVERSATION = 'conversation',
     UNKNOWN = 'unknown',
 }
 
-// Command Handler Interface
 interface CommandHandler {
     canHandle(userQuestion: string): boolean;
     getCommandType(): CommandType;
 }
 
-// Business Logic Validation Command Handler
 class BusinessLogicValidationCommandHandler implements CommandHandler {
     canHandle(userQuestion: string): boolean {
         return userQuestion
@@ -59,7 +55,6 @@ class BusinessLogicValidationCommandHandler implements CommandHandler {
     }
 }
 
-// Conversation Command Handler
 class ConversationCommandHandler implements CommandHandler {
     canHandle(userQuestion: string): boolean {
         const trimmedQuestion = userQuestion.toLowerCase().trim();
@@ -84,12 +79,15 @@ class ConversationCommandHandler implements CommandHandler {
     }
 }
 
-// Command Manager
 class CommandManager {
-    private handlers: CommandHandler[] = [
-        new BusinessLogicValidationCommandHandler(),
-        new ConversationCommandHandler(),
-    ];
+    private handlers: CommandHandler[];
+
+    constructor() {
+        this.handlers = [
+            new BusinessLogicValidationCommandHandler(),
+            new ConversationCommandHandler(),
+        ];
+    }
 
     getCommandType(userQuestion: string): CommandType {
         const handler = this.handlers.find((h) => h.canHandle(userQuestion));
@@ -148,7 +146,7 @@ interface Comment {
 
 @Injectable()
 export class ChatWithKodyFromGitUseCase {
-    private readonly commandManager = new CommandManager();
+    private commandManager: CommandManager;
 
     constructor(
         @Inject(AGENT_SERVICE_TOKEN)
@@ -177,8 +175,33 @@ export class ChatWithKodyFromGitUseCase {
                 params.platformType,
                 repository,
             );
-            const organizationAndTeamData =
-                this.extractOrganizationAndTeamData(integrationConfig);
+
+            const organizationAndTeamData = integrationConfig
+                ? this.extractOrganizationAndTeamData(integrationConfig)
+                : null;
+
+            if (
+                !integrationConfig ||
+                !organizationAndTeamData?.organizationId ||
+                !organizationAndTeamData?.teamId
+            ) {
+                this.logger.warn({
+                    message:
+                        'No integration config or organization/team data found for repository',
+                    context: ChatWithKodyFromGitUseCase.name,
+                    metadata: {
+                        platformType: params.platformType,
+                        repository: repository.name,
+                        repositoryId: repository.id,
+                        hasIntegrationConfig: !!integrationConfig,
+                        organizationId: organizationAndTeamData?.organizationId,
+                        teamId: organizationAndTeamData?.teamId,
+                        integrationConfig,
+                    },
+                });
+                return;
+            }
+
             const pullRequestNumber = this.getPullRequestNumber(params);
             const pullRequestDescription =
                 this.getPullRequestDescription(params);
@@ -196,206 +219,29 @@ export class ChatWithKodyFromGitUseCase {
                 },
             });
 
-            const allComments =
-                await this.codeManagementService.getPullRequestReviewComment({
-                    organizationAndTeamData,
-                    filters: {
-                        pullRequestNumber,
-                        repository,
-                        discussionId:
-                            params.payload?.object_attributes?.discussion_id ??
-                            '',
-                    },
-                });
+            // Criar CommandManager simples, sem depender do eventType
+            this.commandManager = new CommandManager();
+            const commandType = this.detectCommandType(params);
 
-            const commentId = this.getCommentId(params);
-            const comment =
-                params.platformType !== PlatformType.AZURE_REPOS
-                    ? allComments?.find((c) => c.id === commentId)
-                    : this.getReviewThreadByCommentId(commentId, allComments);
-
-            if (!comment) {
-                return;
-            }
-
-            if (this.shouldIgnoreComment(comment, params.platformType)) {
-                this.logger.log({
-                    message:
-                        'Comment made by Kody or does not mention Kody/Kodus. Ignoring.',
-                    context: ChatWithKodyFromGitUseCase.name,
-                    serviceName: ChatWithKodyFromGitUseCase.name,
-                    metadata: {
-                        repository,
-                        pullRequestNumber,
-                    },
-                });
-                return;
-            }
-
-            const originalKodyComment = this.getOriginalKodyComment(
-                comment,
-                allComments,
-                params.platformType,
-            );
-            const othersReplies = this.getOthersReplies(
-                comment,
-                allComments,
-                params.platformType,
-            );
-            const sender = this.getSender(params);
-
-            const message = this.prepareMessage(
-                comment,
-                originalKodyComment,
-                sender.login,
-                othersReplies,
-            );
-
-            const ackResponse =
-                await this.codeManagementService.createResponseToComment({
-                    organizationAndTeamData,
-                    inReplyToId: comment.id,
-                    discussionId:
-                        params.payload?.object_attributes?.discussion_id,
-                    threadId: comment.threadId,
-                    body: this.getAcknowledgmentBody(params.platformType),
+            if (commandType === CommandType.BUSINESS_LOGIC_VALIDATION) {
+                await this.handleBusinessLogicFlow(
+                    params,
                     repository,
-                    prNumber: pullRequestNumber,
-                });
-
-            if (!ackResponse) {
-                this.logger.warn({
-                    message: 'Failed to create acknowledgment response',
-                    context: ChatWithKodyFromGitUseCase.name,
-                    serviceName: ChatWithKodyFromGitUseCase.name,
-                    metadata: {
-                        repository,
-                        pullRequestNumber,
-                        commentId: comment.id,
-                    },
-                });
-                return;
-            }
-
-            const [ackResponseId, parentId] = this.getAcknowledgmentIds(
-                originalKodyComment,
-                ackResponse,
-                params.platformType,
-            );
-
-            if (!ackResponseId || !parentId) {
-                this.logger.warn({
-                    message:
-                        'Failed to get acknowledgment response ID or parent ID',
-                    context: ChatWithKodyFromGitUseCase.name,
-                    serviceName: ChatWithKodyFromGitUseCase.name,
-                    metadata: {
-                        repository,
-                        pullRequestNumber,
-                        commentId: comment.id,
-                    },
-                });
-                return;
-            }
-
-            let response = '';
-            if (
-                await posthogClient.isFeatureEnabled(
-                    'conversation-agent',
-                    organizationAndTeamData.organizationId,
-                    organizationAndTeamData,
-                )
-            ) {
-                const prepareContext = this.prepareContext({
-                    comment,
-                    originalKodyComment,
-                    gitUserName: sender.login,
-                    othersReplies,
                     pullRequestNumber,
-                    repository,
                     pullRequestDescription,
-                    platformType: params.platformType,
-                });
-
-                const thread = createThreadId(
-                    {
-                        organizationId: organizationAndTeamData.organizationId,
-                        teamId: organizationAndTeamData.teamId,
-                        repositoryId: repository.id,
-                        userId: sender.id,
-                        suggestionCommentId: originalKodyComment?.id,
-                    },
-                    {
-                        prefix: THREAD_PREFIX,
-                    },
-                );
-
-                const commandType = this.commandManager.getCommandType(
-                    prepareContext.userQuestion,
-                );
-                response = await this.processCommand(commandType, {
-                    prepareContext,
                     organizationAndTeamData,
-                    thread,
-                });
-            } else {
-                response = await this.agentService.conversationWithKody(
-                    organizationAndTeamData,
-                    sender.id,
-                    message,
-                    sender.login,
                 );
             }
 
-            if (!response) {
-                this.logger.warn({
-                    message: 'No response generated by Kody',
-                    context: ChatWithKodyFromGitUseCase.name,
-                    serviceName: ChatWithKodyFromGitUseCase.name,
-                    metadata: {
-                        repository,
-                        pullRequestNumber,
-                        commentId: comment.id,
-                    },
-                });
-                return;
-            }
-
-            const updatedComment =
-                await this.codeManagementService.updateResponseToComment({
-                    organizationAndTeamData,
-                    parentId,
-                    commentId: ackResponseId,
-                    body: response,
-                    prNumber: pullRequestNumber,
-                    repository,
-                });
-
-            if (!updatedComment) {
-                this.logger.warn({
-                    message: 'Failed to update acknowledgment response',
-                    context: ChatWithKodyFromGitUseCase.name,
-                    serviceName: ChatWithKodyFromGitUseCase.name,
-                    metadata: {
-                        repository,
-                        pullRequestNumber,
-                        commentId: comment.id,
-                    },
-                });
-                return;
-            }
-
-            this.logger.log({
-                message: 'Successfully executed the git comment response agent',
-                context: ChatWithKodyFromGitUseCase.name,
-                serviceName: ChatWithKodyFromGitUseCase.name,
-                metadata: {
+            if (commandType === CommandType.CONVERSATION) {
+                await this.handleConversationFlow(
+                    params,
                     repository,
                     pullRequestNumber,
-                    commentId: comment.id,
-                    responseId: ackResponseId,
-                },
-            });
+                    pullRequestDescription,
+                    organizationAndTeamData,
+                );
+            }
         } catch (error) {
             this.logger.error({
                 message: 'Error while executing the git comment response agent',
@@ -418,6 +264,399 @@ export class ChatWithKodyFromGitUseCase {
         }
 
         return true;
+    }
+
+    private detectCommandType(params: WebhookParams): CommandType {
+        // Para GitHub
+        if (params.event === 'issue_comment' || params.payload?.comment?.body) {
+            const commentBody =
+                params.payload?.comment?.body ||
+                params.payload?.issue?.body ||
+                '';
+            return this.commandManager.getCommandType(commentBody);
+        }
+
+        // Para GitLab
+        if (params.platformType === PlatformType.GITLAB) {
+            const commentType = params.payload?.object_attributes?.type;
+            const isSuggestion = commentType === 'DiffNote';
+            const isGeneralFlow = commentType === null;
+            const commentBody = params.payload?.object_attributes?.note || '';
+
+            // Se for sugestão (DiffNote), sempre retorna CONVERSATION
+            if (isSuggestion) {
+                return CommandType.CONVERSATION;
+            }
+
+            // Se for fluxo geral, verifica se tem comando business-logic
+            if (isGeneralFlow) {
+                return this.commandManager.getCommandType(commentBody);
+            }
+
+            // Fallback
+            return CommandType.CONVERSATION;
+        }
+
+        // Para Bitbucket
+        if (params.platformType === PlatformType.BITBUCKET) {
+            const comment = params.payload?.comment;
+            const isSuggestion =
+                comment?.inline !== null && comment?.inline !== undefined;
+            const isGeneralFlow = !isSuggestion;
+            const commentBody = comment?.content?.raw || '';
+
+            // Se for sugestão (inline), sempre retorna CONVERSATION
+            if (isSuggestion) {
+                return CommandType.CONVERSATION;
+            }
+
+            // Se for fluxo geral, verifica se tem comando business-logic
+            if (isGeneralFlow) {
+                return this.commandManager.getCommandType(commentBody);
+            }
+
+            // Fallback
+            return CommandType.CONVERSATION;
+        }
+
+        // Para Azure DevOps
+        if (params.platformType === PlatformType.AZURE_REPOS) {
+            const comment = params.payload?.resource?.comment;
+            const isSuggestion = comment?.parentCommentId > 0;
+            const isGeneralFlow = comment?.parentCommentId === 0;
+            const commentBody = comment?.content || '';
+
+            // Se for sugestão (parentCommentId > 0), sempre retorna CONVERSATION
+            if (isSuggestion) {
+                return CommandType.CONVERSATION;
+            }
+
+            // Se for fluxo geral (parentCommentId === 0), verifica se tem comando business-logic
+            if (isGeneralFlow) {
+                return this.commandManager.getCommandType(commentBody);
+            }
+
+            // Fallback
+            return CommandType.CONVERSATION;
+        }
+
+        return CommandType.CONVERSATION;
+    }
+
+    private async handleBusinessLogicFlow(
+        params: WebhookParams,
+        repository: Repository,
+        pullRequestNumber: number,
+        pullRequestDescription: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<void> {
+        const sender = this.getSender(params);
+        const commentBody =
+            params.platformType === PlatformType.GITLAB
+                ? params.payload?.object_attributes?.note || ''
+                : params.platformType === PlatformType.BITBUCKET
+                  ? params.payload?.comment?.content?.raw || ''
+                  : params.platformType === PlatformType.AZURE_REPOS
+                    ? params.payload?.resource?.comment?.content || ''
+                    : params.payload?.comment?.body ||
+                      params.payload?.issue?.body ||
+                      '';
+        const issueId =
+            params.platformType === PlatformType.GITLAB
+                ? params?.payload?.object_attributes?.noteable_id
+                : params.platformType === PlatformType.BITBUCKET
+                  ? params?.payload?.pullrequest?.id
+                  : params.platformType === PlatformType.AZURE_REPOS
+                    ? params?.payload?.resource?.pullRequest?.pullRequestId
+                    : params?.payload?.issue?.id;
+
+        const thread = createThreadId(
+            {
+                organizationId: organizationAndTeamData.organizationId,
+                teamId: organizationAndTeamData.teamId,
+                repositoryId: repository.id,
+                userId: sender.id,
+                issueId,
+            },
+            {
+                prefix: 'vbl',
+            },
+        );
+
+        const prepareContext = {
+            userQuestion: commentBody,
+            pullRequestNumber,
+            repository,
+            pullRequestDescription,
+            platformType: params.platformType,
+        };
+
+        const response = await this.businessRulesValidationAgentUseCase.execute(
+            {
+                prepareContext,
+                organizationAndTeamData,
+                thread,
+            },
+        );
+
+        if (!response) {
+            this.logger.warn({
+                message:
+                    'No response generated by Business Logic Validation Agent',
+                context: ChatWithKodyFromGitUseCase.name,
+                metadata: {
+                    repository: repository.name,
+                    pullRequestNumber,
+                },
+            });
+            return;
+        }
+
+        try {
+            await this.codeManagementService.createCommentInPullRequest({
+                organizationAndTeamData,
+                repository,
+                prNumber: pullRequestNumber,
+                overallComment: response,
+            });
+
+            this.logger.log({
+                message:
+                    'Successfully created PR response for business logic validation',
+                context: ChatWithKodyFromGitUseCase.name,
+                metadata: {
+                    repository: repository.name,
+                    pullRequestNumber,
+                },
+            });
+        } catch (error) {
+            this.logger.error({
+                message:
+                    'Failed to create PR response for business logic validation',
+                context: ChatWithKodyFromGitUseCase.name,
+                error,
+                metadata: {
+                    repository: repository.name,
+                    pullRequestNumber,
+                },
+            });
+            return;
+        }
+
+        this.logger.log({
+            message: 'Successfully executed business logic validation',
+            context: ChatWithKodyFromGitUseCase.name,
+            metadata: {
+                repository: repository.name,
+                pullRequestNumber,
+            },
+        });
+    }
+
+    private async handleConversationFlow(
+        params: WebhookParams,
+        repository: Repository,
+        pullRequestNumber: number,
+        pullRequestDescription: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<void> {
+        const allComments =
+            await this.codeManagementService.getPullRequestReviewComment({
+                organizationAndTeamData,
+                filters: {
+                    pullRequestNumber,
+                    repository,
+                    discussionId:
+                        params.payload?.object_attributes?.discussion_id ?? '',
+                },
+            });
+
+        const commentId = this.getCommentId(params);
+        const comment =
+            params.platformType !== PlatformType.AZURE_REPOS
+                ? allComments?.find((c) => c.id === commentId)
+                : this.getReviewThreadByCommentId(
+                      commentId,
+                      allComments,
+                      params,
+                  );
+
+        if (!comment) {
+            return;
+        }
+
+        if (this.shouldIgnoreComment(comment, params.platformType)) {
+            this.logger.log({
+                message:
+                    'Comment made by Kody or does not mention Kody/Kodus. Ignoring.',
+                context: ChatWithKodyFromGitUseCase.name,
+                metadata: {
+                    repository: repository.name,
+                    pullRequestNumber,
+                },
+            });
+            return;
+        }
+
+        const originalKodyComment = this.getOriginalKodyComment(
+            comment,
+            allComments,
+            params.platformType,
+        );
+        const othersReplies = this.getOthersReplies(
+            comment,
+            allComments,
+            params.platformType,
+        );
+        const sender = this.getSender(params);
+
+        const message = this.prepareMessage(
+            comment,
+            originalKodyComment,
+            sender.login,
+            othersReplies,
+        );
+
+        const ackResponse =
+            await this.codeManagementService.createResponseToComment({
+                organizationAndTeamData,
+                inReplyToId: comment.id,
+                discussionId: params.payload?.object_attributes?.discussion_id,
+                threadId: comment.threadId,
+                body: this.getAcknowledgmentBody(params.platformType),
+                repository,
+                prNumber: pullRequestNumber,
+            });
+
+        if (!ackResponse) {
+            this.logger.warn({
+                message: 'Failed to create acknowledgment response',
+                context: ChatWithKodyFromGitUseCase.name,
+                metadata: {
+                    repository: repository.name,
+                    pullRequestNumber,
+                    commentId: comment.id,
+                },
+            });
+            return;
+        }
+
+        const [ackResponseId, parentId] = this.getAcknowledgmentIds(
+            originalKodyComment,
+            ackResponse,
+            params.platformType,
+            comment,
+        );
+
+        if (!ackResponseId || !parentId) {
+            this.logger.warn({
+                message:
+                    'Failed to get acknowledgment response ID or parent ID',
+                context: ChatWithKodyFromGitUseCase.name,
+                metadata: {
+                    repository: repository.name,
+                    pullRequestNumber,
+                    commentId: comment.id,
+                },
+            });
+            return;
+        }
+
+        let response = '';
+        if (
+            await posthogClient.isFeatureEnabled(
+                'conversation-agent',
+                organizationAndTeamData.organizationId,
+                organizationAndTeamData,
+            )
+        ) {
+            const prepareContext = this.prepareContext({
+                comment,
+                originalKodyComment,
+                gitUserName: sender.login,
+                othersReplies,
+                pullRequestNumber,
+                repository,
+                pullRequestDescription,
+                platformType: params.platformType,
+            });
+
+            const thread = createThreadId(
+                {
+                    organizationId: organizationAndTeamData.organizationId,
+                    teamId: organizationAndTeamData.teamId,
+                    repositoryId: repository.id,
+                    userId: sender.id,
+                    suggestionCommentId: originalKodyComment?.id || comment?.id,
+                },
+                {
+                    prefix: 'cmc',
+                },
+            );
+
+            const commandType = this.commandManager.getCommandType(
+                prepareContext.userQuestion,
+            );
+            response = await this.processCommand(commandType, {
+                prepareContext,
+                organizationAndTeamData,
+                thread,
+            });
+        } else {
+            response = await this.agentService.conversationWithKody(
+                organizationAndTeamData,
+                sender.id,
+                message,
+                sender.login,
+            );
+        }
+
+        if (!response) {
+            this.logger.warn({
+                message: 'No response generated by Kody',
+                context: ChatWithKodyFromGitUseCase.name,
+                metadata: {
+                    repository: repository.name,
+                    pullRequestNumber,
+                    commentId: comment.id,
+                },
+            });
+            return;
+        }
+
+        const updatedComment =
+            await this.codeManagementService.updateResponseToComment({
+                organizationAndTeamData,
+                parentId,
+                commentId: ackResponseId,
+                body: response,
+                prNumber: pullRequestNumber,
+                repository,
+            });
+
+        if (!updatedComment) {
+            this.logger.warn({
+                message: 'Failed to update acknowledgment response',
+                context: ChatWithKodyFromGitUseCase.name,
+                metadata: {
+                    repository: repository.name,
+                    pullRequestNumber,
+                    commentId: comment.id,
+                },
+            });
+            return;
+        }
+
+        this.logger.log({
+            message: 'Successfully executed conversation flow',
+            context: ChatWithKodyFromGitUseCase.name,
+            metadata: {
+                repository: repository.name,
+                pullRequestNumber,
+                commentId: comment.id,
+                responseId: ackResponseId,
+            },
+        });
     }
 
     private prepareMessage(
@@ -505,7 +744,20 @@ export class ChatWithKodyFromGitUseCase {
     private getPullRequestNumber(params: WebhookParams): number {
         switch (params.platformType) {
             case PlatformType.GITHUB:
-                return params.payload?.pull_request?.number;
+                if (
+                    params.event === 'issue_comment' &&
+                    params.payload?.issue?.pull_request?.url
+                ) {
+                    const url = params.payload.issue.pull_request.url;
+                    const match = url.match(/\/pulls\/(\d+)/);
+                    if (match) {
+                        return parseInt(match[1], 10);
+                    } else {
+                        return 0;
+                    }
+                }
+
+                return params.payload?.pull_request?.number || 0;
             case PlatformType.GITLAB:
                 return params.payload?.merge_request?.iid;
             case PlatformType.BITBUCKET:
@@ -526,10 +778,16 @@ export class ChatWithKodyFromGitUseCase {
 
         switch (params.platformType) {
             case PlatformType.GITHUB:
-                description =
-                    params.payload?.pull_request?.body ||
-                    params.payload?.pull_request?.description ||
-                    '';
+                // Se for issue_comment, pegar description do issue
+                if (params.event === 'issue_comment') {
+                    description = params.payload?.issue?.body || '';
+                } else {
+                    // Caso normal (PR webhook)
+                    description =
+                        params.payload?.pull_request?.body ||
+                        params.payload?.pull_request?.description ||
+                        '';
+                }
                 break;
             case PlatformType.GITLAB:
                 description =
@@ -573,46 +831,37 @@ export class ChatWithKodyFromGitUseCase {
     private getReviewThreadByCommentId(
         commentId: number,
         reviewComments: any[],
+        params?: WebhookParams,
     ): any | null {
         try {
-            let thread = null;
-            let targetComment = null;
-
-            for (const commentThread of reviewComments) {
-                // Check if the main comment matches the ID
-                if (commentThread.id === commentId) {
-                    thread = commentThread;
-                    targetComment = commentThread;
-                    break;
+            if (params?.platformType === PlatformType.AZURE_REPOS) {
+                const threadId = this.getThreadIdFromAzurePayload(params);
+                if (threadId) {
+                    const thread = reviewComments?.find(
+                        (t) => t.threadId === threadId,
+                    );
+                    if (thread) {
+                        const targetComment = thread.replies?.find(
+                            (c: any) => c.id === commentId,
+                        );
+                        if (targetComment) {
+                            return {
+                                ...targetComment,
+                                thread,
+                            };
+                        }
+                    }
                 }
-
-                // Check if any reply matches the ID
-                const matchingReply = commentThread.replies?.find(
-                    (reply: any) => reply.id === commentId,
-                );
-
-                if (matchingReply) {
-                    thread = commentThread;
-                    targetComment = matchingReply;
-                    break;
-                }
-            }
-
-            if (thread && targetComment) {
-                // Return the exact format requested
-                return {
-                    ...targetComment,
-                    thread,
-                };
             }
 
             return null;
         } catch (error) {
             this.logger.error({
                 message: 'Failed to find thread by commentId',
-                context: 'AzureReposService.getReviewThreadByCommentId',
+                context:
+                    'ChatWithKodyFromGitUseCase.getReviewThreadByCommentId',
                 error,
-                metadata: { commentId },
+                metadata: { commentId, platformType: params?.platformType },
             });
             return null;
         }
@@ -637,11 +886,50 @@ export class ChatWithKodyFromGitUseCase {
         }
     }
 
+    private getThreadIdFromAzurePayload(params: WebhookParams): number | null {
+        if (params.platformType !== PlatformType.AZURE_REPOS) {
+            return null;
+        }
+
+        try {
+            // Extrair threadId da URL nos _links do comentário
+            const threadLink =
+                params.payload?.resource?.comment?._links?.threads?.href;
+            if (threadLink) {
+                const threadIdMatch = threadLink.match(/\/threads\/(\d+)/);
+                if (threadIdMatch) {
+                    return parseInt(threadIdMatch[1], 10);
+                }
+            }
+
+            // Fallback: extrair da URL do HTML (discussionId)
+            const htmlContent =
+                params.payload?.message?.html ||
+                params.payload?.detailedMessage?.html;
+            if (htmlContent) {
+                const discussionIdMatch =
+                    htmlContent.match(/discussionId=(\d+)/);
+                if (discussionIdMatch) {
+                    return parseInt(discussionIdMatch[1], 10);
+                }
+            }
+
+            return null;
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to extract threadId from Azure payload',
+                context: ChatWithKodyFromGitUseCase.name,
+                error,
+                metadata: { platformType: params.platformType },
+            });
+            return null;
+        }
+    }
+
     private shouldIgnoreComment(
         comment: any,
         platformType: PlatformType,
     ): boolean {
-        // For all platforms, check if the comment is from Kody or doesn't mention Kody
         return (
             this.isKodyComment(comment, platformType) ||
             !this.mentionsKody(comment, platformType)
@@ -667,12 +955,10 @@ export class ChatWithKodyFromGitUseCase {
             case PlatformType.GITLAB:
                 return comment?.originalCommit;
             case PlatformType.BITBUCKET:
-                // If the comment doesn't have a parent, it is the original comment
                 if (!comment?.parent?.id) {
                     return undefined;
                 }
 
-                // Find the original comment that is a reply to the parent comment
                 const originalComment = allComments.find(
                     (c) =>
                         c.id === comment.parent.id &&
@@ -681,9 +967,7 @@ export class ChatWithKodyFromGitUseCase {
 
                 return originalComment;
             case PlatformType.AZURE_REPOS:
-                // For Azure Repos, check if this is a reply to a thread
                 if (comment.threadId && comment.id !== comment.threadId) {
-                    // This is a reply, find the original thread comment
                     const originalComment = comment.thread;
                     return originalComment;
                 }
@@ -927,6 +1211,7 @@ export class ChatWithKodyFromGitUseCase {
         originalKodyComment: Comment,
         ackResponse: any,
         platformType: PlatformType,
+        comment?: Comment,
     ): [ackResponseId: string, parentId: string] {
         let ackResponseId;
         let parentId;
@@ -936,8 +1221,10 @@ export class ChatWithKodyFromGitUseCase {
                 parentId = originalKodyComment?.id;
                 break;
             case PlatformType.GITLAB:
-                ackResponseId = ackResponse?.notes?.[0]?.id ?? ackResponse.id;
-                parentId = originalKodyComment?.id;
+                ackResponseId = ackResponse.id;
+                // Para GitLab, o parentId é o ID do comentário que está sendo respondido
+                // Como originalKodyComment não tem id, usamos o comment.id
+                parentId = comment?.id;
                 break;
             case PlatformType.BITBUCKET:
                 ackResponseId = ackResponse.id;

@@ -8,7 +8,6 @@ import {
     DirectLLMAdapter,
     PlannerType,
     StorageEnum,
-    getExecutionTraceability,
 } from '@kodus/flow';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
@@ -28,29 +27,7 @@ import { Inject } from '@nestjs/common';
 export interface ValidationResult {
     needsMoreInfo?: boolean;
     missingInfo?: string;
-    taskInfoQuality?: 'EMPTY' | 'MINIMAL' | 'PARTIAL' | 'COMPLETE';
-    taskInfoFound?: string;
-    isValid: boolean;
     summary: string;
-    confidence?: 'high' | 'medium' | 'low';
-
-    implementedCorrectly?: string[];
-    missingOrIncomplete?: Array<{
-        requirement: string;
-        impact: string;
-        suggestion: string;
-    }>;
-    edgeCasesAndAssumptions?: Array<{
-        scenario: string;
-        risk: string;
-        recommendation: string;
-    }>;
-    businessLogicIssues?: Array<{
-        issue: string;
-        severity: 'error' | 'warning' | 'info';
-        fix: string;
-    }>;
-    rulesFound?: string[];
 }
 
 @Injectable()
@@ -388,44 +365,11 @@ export class BusinessRulesValidationAgentProvider {
                 },
             );
 
-            let uri = new ConnectionString('', {
-                user: this.config.username,
-                password: this.config.password,
-                protocol: this.config.port ? 'mongodb' : 'mongodb+srv',
-                hosts: [{ name: this.config.host, port: this.config.port }],
-            }).toString();
-
-            const corr = (result?.context?.correlationId as string) ?? '';
-
-            const traceability = await getExecutionTraceability(
-                uri,
-                corr,
-                'kodus_db',
-            );
-
-            console.log(
-                'Business Rules Validation Traceability:',
-                JSON.stringify(traceability, null, 2),
-            );
-
             const validationResult = this.parseValidationResult(result.result);
-
-            this.logger.log({
-                message: 'Formatting validation response',
-                context: BusinessRulesValidationAgentProvider.name,
-                serviceName: BusinessRulesValidationAgentProvider.name,
-                metadata: {
-                    organizationId:
-                        context.organizationAndTeamData?.organizationId,
-                    hasValidationResult: !!validationResult,
-                    needsMoreInfo: validationResult?.needsMoreInfo,
-                },
-            });
 
             const formattedResponse = await this.formatValidationResponse(
                 validationResult,
                 context,
-                userLanguage,
             );
 
             this.logger.log({
@@ -462,14 +406,28 @@ export class BusinessRulesValidationAgentProvider {
     private async formatValidationResponse(
         validationResult: ValidationResult,
         context: any,
-        userLanguage: string,
     ): Promise<string> {
         if (!validationResult) {
             return '❌ Error processing business rules validation.';
         }
 
         if (validationResult.needsMoreInfo) {
-            const missingInfoPrompt = `Based on the validation result, I need more task information to perform proper business rules validation.
+            return await this.generateMissingInfoResponse(
+                validationResult,
+                context,
+            );
+        }
+
+        return (
+            validationResult.summary || 'Business rules validation completed.'
+        );
+    }
+
+    private async generateMissingInfoResponse(
+        validationResult: ValidationResult,
+        context: any,
+    ): Promise<string> {
+        const missingInfoPrompt = `Based on the validation result, I need more task information to perform proper business rules validation.
 
 VALIDATION RESULT: ${JSON.stringify(validationResult)}
 
@@ -488,34 +446,28 @@ Please generate a user-friendly response that:
 
 Remember to follow the RESPONSE FORMATTING INSTRUCTIONS from your system prompt.`;
 
-            try {
-                const formattedResult = await this.orchestration.callAgent(
-                    'kodus-business-rules-validation-agent',
-                    missingInfoPrompt,
-                    {
-                        thread: context.thread,
-                        userContext: {
-                            organizationAndTeamData:
-                                context.organizationAndTeamData,
-                        },
+        try {
+            const formattedResult = await this.orchestration.callAgent(
+                'kodus-business-rules-validation-agent',
+                missingInfoPrompt,
+                {
+                    thread: context.thread,
+                    userContext: {
+                        organizationAndTeamData:
+                            context.organizationAndTeamData,
                     },
-                );
+                },
+            );
 
-                return typeof formattedResult.result === 'string'
-                    ? formattedResult.result
-                    : JSON.stringify(formattedResult.result);
-            } catch (error) {
-                return (
-                    validationResult.missingInfo ||
-                    'Erro ao processar validação de regras de negócio.'
-                );
-            }
+            return typeof formattedResult.result === 'string'
+                ? formattedResult.result
+                : JSON.stringify(formattedResult.result);
+        } catch (error) {
+            return (
+                validationResult.missingInfo ||
+                'Error processing business rules validation.'
+            );
         }
-
-        return (
-            validationResult.summary ||
-            'Validação de regras de negócio concluída.'
-        );
     }
 
     private buildValidationPrompt(context: any): string {
@@ -600,60 +552,71 @@ RESPONSE FORMAT:
 {
   "needsMoreInfo": boolean,
   "missingInfo": "I need the task link or description to validate. Please provide information about what should be implemented.",
-  "taskInfoQuality": "EMPTY|MINIMAL|PARTIAL|COMPLETE",
-  "taskInfoFound": "Brief description of what information was found in the task",
-  "summary": "Complete formatted markdown response ready for the user - this is what will be shown to the user. Include all sections: status, summary, implemented correctly, missing/incomplete, edge cases, business logic issues, etc.",
-  "confidence": "high|medium|low"
+  "summary": "Complete formatted markdown response ready for the user - this is what will be shown to the user. Include all sections: status, summary, implemented correctly, missing/incomplete, edge cases, business logic issues, etc."
 }`;
     }
 
+    private extractFieldsFromString(text: string): Partial<ValidationResult> {
+        const fields: Partial<ValidationResult> = {};
+
+        const needsMoreInfoMatch = text.match(
+            /"needsMoreInfo"\s*:\s*(true|false)/,
+        );
+        if (needsMoreInfoMatch) {
+            fields.needsMoreInfo = needsMoreInfoMatch[1] === 'true';
+        }
+
+        const missingInfoMatch = text.match(/"missingInfo"\s*:\s*"([^"]*)"/);
+        if (missingInfoMatch) {
+            fields.missingInfo = missingInfoMatch[1];
+        }
+
+        const summaryMatch = text.match(
+            /"summary"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
+        );
+        if (summaryMatch) {
+            fields.summary = summaryMatch[1]
+                .replace(/\\n/g, '\n')
+                .replace(/\\"/g, '"');
+        }
+
+        return fields;
+    }
+
     private parseValidationResult(result: any): ValidationResult {
-        try {
-            let parsed: any;
-
-            if (typeof result === 'string') {
-                parsed = JSON.parse(result);
-            } else if (typeof result === 'object') {
-                parsed = result;
-            } else {
-                throw new Error('Invalid result format');
-            }
-
-            if (parsed.needsMoreInfo !== undefined) {
+        if (typeof result === 'string') {
+            const extractedFields = this.extractFieldsFromString(result);
+            if (extractedFields.summary) {
                 return {
-                    needsMoreInfo: parsed.needsMoreInfo,
-                    missingInfo: parsed.missingInfo,
-                    isValid: parsed.isValid || false,
-                    summary: parsed.summary || 'Validation completed',
-                    confidence: parsed.confidence || 'medium',
-                    implementedCorrectly: parsed.implementedCorrectly || [],
-                    missingOrIncomplete: parsed.missingOrIncomplete || [],
-                    edgeCasesAndAssumptions:
-                        parsed.edgeCasesAndAssumptions || [],
-                    businessLogicIssues: parsed.businessLogicIssues || [],
+                    needsMoreInfo: extractedFields.needsMoreInfo || false,
+                    missingInfo: extractedFields.missingInfo || '',
+                    summary: extractedFields.summary,
+                };
+            }
+        } else if (typeof result === 'object') {
+            const needsMoreInfo = result.needsMoreInfo === true;
+            const missingInfo = result.missingInfo || '';
+            const summary = result.summary || 'Validation completed';
+
+            if (needsMoreInfo) {
+                return {
+                    needsMoreInfo: true,
+                    missingInfo,
+                    summary,
                 };
             }
 
             return {
-                isValid: parsed.isValid || false,
-                summary: parsed.summary || 'Validation completed',
-            };
-        } catch (error) {
-            this.logger.error({
-                message: 'Error parsing validation result',
-                context: BusinessRulesValidationAgentProvider.name,
-                error,
-                metadata: { result },
-            });
-
-            return {
-                needsMoreInfo: true,
-                missingInfo:
-                    'Unable to process validation result. Please try again.',
-                isValid: false,
-                summary: 'Error during validation',
+                summary,
             };
         }
+
+        return {
+            needsMoreInfo: true,
+            missingInfo: 'Error parsing validation result. Please try again.',
+            summary:
+                '❌ **Erro ao processar validação**\n\nOcorreu um erro ao processar a resposta do sistema. Por favor, tente novamente.',
+        };
     }
 
     private async getLanguage(
