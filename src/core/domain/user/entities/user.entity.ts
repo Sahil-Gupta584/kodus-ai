@@ -3,13 +3,13 @@ import { IUser } from '../interfaces/user.interface';
 import { IOrganization } from '../../organization/interfaces/organization.interface';
 import { ITeamMember } from '../../teamMembers/interfaces/team-members.interface';
 import { STATUS } from '@/config/types/database/status.type';
-import { UserRole } from '../enums/userRole.enum';
+import { Role } from '../../permissions/enums/permissions.enum';
 
 export class UserEntity implements Entity<IUser> {
     private _uuid: string;
     private _email: string;
     private _password: string;
-    private _role: UserRole[];
+    private _role: Role[];
     private _organization?: Partial<IOrganization>;
     private _status: STATUS;
     private _teamMember?: Partial<ITeamMember>[];

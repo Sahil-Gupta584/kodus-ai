@@ -8,7 +8,7 @@ import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import { CreateProfileUseCase } from '../profile/create.use-case';
 import { CreateTeamUseCase } from '../team/create.use-case';
 import { STATUS } from '@/config/types/database/status.type';
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 import { DuplicateRecordException } from '@/shared/infrastructure/filters/duplicate-record.exception';
 import posthogClient from '@/shared/utils/posthog';
 
@@ -19,7 +19,7 @@ export class CreateUserUseCase implements IUseCase {
         private readonly usersService: IUsersService,
         private readonly createProfileUseCase: CreateProfileUseCase,
         private readonly createTeamUseCase: CreateTeamUseCase,
-    ) { }
+    ) {}
     public async execute(payload: any): Promise<Partial<IUser>> {
         const previousUser = await this.usersService.count({
             email: payload.email,
@@ -35,7 +35,7 @@ export class CreateUserUseCase implements IUseCase {
         const user = await this.usersService.register({
             email: payload.email,
             password: payload.password,
-            role: [UserRole.OWNER],
+            role: [Role.OWNER],
             status: STATUS.ACTIVE,
             organization: payload.organization,
         });
@@ -43,7 +43,7 @@ export class CreateUserUseCase implements IUseCase {
         await this.createProfileUseCase.execute({
             user: { uuid: user.uuid },
             name: payload.name,
-            phone: payload?.phone
+            phone: payload?.phone,
         });
 
         await this.createTeamUseCase.execute({

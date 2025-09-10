@@ -6,7 +6,7 @@ import {
     TEAM_SERVICE_TOKEN,
 } from '@/core/domain/team/contracts/team.service.contract';
 import { STATUS } from '@/config/types/database/status.type';
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 
 @Injectable()
 export class ListTeamsUseCase implements IUseCase {
@@ -36,7 +36,7 @@ export class ListTeamsUseCase implements IUseCase {
             },
         };
 
-        if (role === UserRole.OWNER) {
+        if (role === Role.OWNER) {
             const teams = await this.teamService.find(
                 {
                     organization: { uuid: organizationId },

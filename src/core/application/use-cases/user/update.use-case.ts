@@ -11,7 +11,7 @@ import {
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import posthogClient from '@/shared/utils/posthog';
 import { UpdateUserDto } from '@/core/infrastructure/http/dtos/update.dto';
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 
 @Injectable()
 export class UpdateUserUseCase implements IUseCase {
@@ -36,7 +36,7 @@ export class UpdateUserUseCase implements IUseCase {
             );
         }
 
-        let role: UserRole[] | undefined = undefined;
+        let role: Role[] | undefined = undefined;
         if (data.role) {
             role = [data.role];
         }

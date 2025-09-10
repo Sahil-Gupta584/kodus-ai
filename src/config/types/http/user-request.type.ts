@@ -1,6 +1,6 @@
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 import { Request } from 'express';
 
-type User = { id: string; role: UserRole[] };
+type User = { id: string; role: Role[] };
 
 export type UserRequest = Request & { user: User };

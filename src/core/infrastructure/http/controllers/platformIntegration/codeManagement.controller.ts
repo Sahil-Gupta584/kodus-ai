@@ -4,7 +4,15 @@ import { GetCodeManagementMemberListUseCase } from '@/core/application/use-cases
 import { GetRepositoriesUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/get-repositories';
 import { VerifyConnectionUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/verify-connection.use-case';
 import { Repository } from '@/core/domain/integrationConfigs/types/codeManagement/repositories.type';
-import { Body, Controller, Delete, Get, Post, Query } from '@nestjs/common';
+import {
+    Body,
+    Controller,
+    Delete,
+    Get,
+    Post,
+    Query,
+    UseGuards,
+} from '@nestjs/common';
 import { TeamQueryDto } from '../../dtos/teamId-query-dto';
 import { GetOrganizationUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/get-organizations.use-case';
 import { SaveCodeConfigUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/save-config.use-case';
@@ -21,6 +29,13 @@ import { DeleteIntegrationAndRepositoriesUseCase } from '@/core/application/use-
 import { GetRepositoryTreeUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/get-repository-tree.use-case';
 import { RepositoryTreeType } from '@/shared/utils/enums/repositoryTree.enum';
 import { GetRepositoryTreeDto } from '../../dtos/get-repository-tree.dto';
+import {
+    CheckPolicies,
+    PolicyGuard,
+} from '@/core/infrastructure/adapters/services/permissions/policy.guard';
+import { Action } from '@/core/domain/permissions/enums/permissions.enum';
+import { subject } from '@casl/ability';
+import { ResourceRepository } from '@/core/domain/permissions/types/permissions.types';
 
 @Controller('code-management')
 export class CodeManagementController {
@@ -45,6 +60,15 @@ export class CodeManagementController {
     ) {}
 
     @Get('/repositories/org')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies((ability, request) =>
+        ability.can(
+            Action.Read,
+            subject(typeof ResourceRepository, {
+                organizationId: request.query.organizationSelected,
+            }),
+        ),
+    )
     public async getRepositories(
         @Query()
         query: {

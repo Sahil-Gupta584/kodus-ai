@@ -20,7 +20,7 @@ import {
     IUsersService,
     USER_SERVICE_TOKEN,
 } from '@/core/domain/user/contracts/user.service.contract';
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { JoinOrganizationDto } from '@/core/infrastructure/http/dtos/join-organization.dto';
@@ -119,7 +119,7 @@ export class JoinOrganizationUseCase implements IUseCase {
                     uuid: user.uuid,
                 },
                 {
-                    role: [UserRole.OWNER],
+                    role: [Role.OWNER],
                     status: STATUS.AWAITING_APPROVAL,
                     organization,
                 },

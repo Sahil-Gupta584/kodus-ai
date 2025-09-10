@@ -14,7 +14,7 @@ import {
     USER_SERVICE_TOKEN,
     IUsersService,
 } from '@/core/domain/user/contracts/user.service.contract';
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { UpdateAnotherUserDto } from '@/core/infrastructure/http/dtos/update-another-user.dto';
@@ -53,7 +53,7 @@ export class UpdateAnotherUserUseCase implements IUseCase {
                 throw new Error('User not found');
             }
 
-            if (!mainUser.role?.includes(UserRole.OWNER)) {
+            if (!mainUser.role?.includes(Role.OWNER)) {
                 throw new Error('Only owners can update other users');
             }
 
@@ -97,7 +97,7 @@ export class UpdateAnotherUserUseCase implements IUseCase {
                 );
             }
 
-            let updatedRole: UserRole[] | undefined = undefined;
+            let updatedRole: Role[] | undefined = undefined;
             if (role) {
                 updatedRole = [role];
             }

@@ -7,6 +7,7 @@ import {
     Patch,
     Post,
     Query,
+    UseGuards,
 } from '@nestjs/common';
 import { GetUserUseCase } from '@/core/application/use-cases/user/get-user.use-case';
 import { InviteDataUserUseCase } from '@/core/application/use-cases/user/invite-data.use-case';
@@ -23,6 +24,11 @@ import { REQUEST } from '@nestjs/core';
 import { GetUsersAwaitingApprovalUseCase } from '@/core/application/use-cases/user/get-awaiting-approval.use-case';
 import { UpdateAnotherUserDto } from '../dtos/update-another-user.dto';
 import { UpdateAnotherUserUseCase } from '@/core/application/use-cases/user/update-another.use-case';
+import {
+    CheckPolicies,
+    PolicyGuard,
+} from '../../adapters/services/permissions/policy.guard';
+import { Action } from '@/core/domain/permissions/enums/permissions.enum';
 
 @Controller('user')
 export class UsersController {

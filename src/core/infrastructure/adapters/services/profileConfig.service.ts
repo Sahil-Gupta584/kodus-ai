@@ -1,5 +1,8 @@
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { IProfileService, PROFILE_SERVICE_TOKEN } from '@/core/domain/profile/contracts/profile.service.contract';
+import {
+    IProfileService,
+    PROFILE_SERVICE_TOKEN,
+} from '@/core/domain/profile/contracts/profile.service.contract';
 import {
     IProfileConfigRepository,
     PROFILE_CONFIG_REPOSITORY_TOKEN,
@@ -12,7 +15,7 @@ import {
     IUsersService,
     USER_SERVICE_TOKEN,
 } from '@/core/domain/user/contracts/user.service.contract';
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -26,12 +29,12 @@ export class ProfileConfigService implements IProfileConfigService {
         private readonly usersService: IUsersService,
 
         @Inject(PROFILE_SERVICE_TOKEN)
-        private readonly profileService: IProfileService
-    ) { }
+        private readonly profileService: IProfileService,
+    ) {}
 
     findProfileIdsByOrganizationAndRole(
         organizationId: string,
-        role: UserRole,
+        role: Role,
     ): Promise<string[]> {
         throw new Error('Method not implemented.');
     }
@@ -45,7 +48,7 @@ export class ProfileConfigService implements IProfileConfigService {
             const profileIds =
                 await this.usersService.findProfileIdsByOrganizationAndRole(
                     organizationAndTeamData.organizationId,
-                    UserRole.OWNER,
+                    Role.OWNER,
                 );
 
             profileIds.forEach(async (profileId) => {
@@ -113,31 +116,37 @@ export class ProfileConfigService implements IProfileConfigService {
         return this.profileConfigRepository.find(filter);
     }
 
-    async findProfileConfigOrganizationOwner(organization_id: string): Promise<ProfileConfigEntity> {
+    async findProfileConfigOrganizationOwner(
+        organization_id: string,
+    ): Promise<ProfileConfigEntity> {
         try {
             const owner = await this.usersService.findOne({
                 organization: {
-                    uuid: organization_id
+                    uuid: organization_id,
                 },
-                role: [UserRole.OWNER]
+                role: [Role.OWNER],
             });
 
             const ownerProfile = await this.profileService.findOne({
-                user: { uuid: owner.uuid }
+                user: { uuid: owner.uuid },
             });
 
             const ownerProfileConfig = await this.findOne({
                 profile: {
-                    uuid: ownerProfile.uuid
-                }
+                    uuid: ownerProfile.uuid,
+                },
             });
 
             return ownerProfileConfig;
-        }
-        catch (err) {
-            console.error('Error while fetching the owner profile configuration:', err);
+        } catch (err) {
+            console.error(
+                'Error while fetching the owner profile configuration:',
+                err,
+            );
 
-            throw new Error('Failed to retrieve the organization owner profile configuration');
+            throw new Error(
+                'Failed to retrieve the organization owner profile configuration',
+            );
         }
     }
 

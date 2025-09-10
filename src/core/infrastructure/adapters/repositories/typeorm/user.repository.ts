@@ -13,7 +13,7 @@ import { UserEntity } from '@/core/domain/user/entities/user.entity';
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import { mapSimpleModelToEntity } from '@/shared/infrastructure/repositories/mappers';
 import { UserModel } from './schema/user.model';
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 import { STATUS } from '@/config/types/database/status.type';
 
 @Injectable()
@@ -294,7 +294,7 @@ export class UserDatabaseRepository implements IUserRepository {
 
     async findProfileIdsByOrganizationAndRole(
         organizationId: string,
-        role: UserRole,
+        role: Role,
     ): Promise<string[]> {
         try {
             const queryBuilder =
