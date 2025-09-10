@@ -1,9 +1,8 @@
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { Injectable } from '@nestjs/common';
-import {
-    BusinessRulesValidationAgentProvider,
-    ValidationResult,
-} from '@/core/infrastructure/adapters/services/agent/kodus-flow/businessRulesValidationAgent';
+import { BusinessRulesValidationAgentProvider } from '@/core/infrastructure/adapters/services/agent/kodus-flow/businessRulesValidationAgent';
+import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { Thread } from '@kodus/flow';
 
 @Injectable()
 export class BusinessRulesValidationAgentUseCase implements IUseCase {
@@ -11,9 +10,13 @@ export class BusinessRulesValidationAgentUseCase implements IUseCase {
         private readonly businessRulesValidationAgentProvider: BusinessRulesValidationAgentProvider,
     ) {}
 
-    async execute(context: any): Promise<ValidationResult> {
+    async execute(context: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        thread?: Thread;
+        prepareContext?: any;
+    }): Promise<string> {
         try {
-            return await this.businessRulesValidationAgentProvider.validateBusinessRules(
+            return await this.businessRulesValidationAgentProvider.execute(
                 context,
             );
         } catch (error) {

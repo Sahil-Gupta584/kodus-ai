@@ -18,24 +18,22 @@ import { ConnectionString } from 'connection-string';
 import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
 import { SDKOrchestrator } from '@kodus/flow/dist/orchestration';
 import { PinoLoggerService } from '../../logger/pino.service';
+import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
+import {
+    PARAMETERS_SERVICE_TOKEN,
+    IParametersService,
+} from '@/core/domain/parameters/contracts/parameters.service.contract';
+import { Inject } from '@nestjs/common';
 
 export interface ValidationResult {
     needsMoreInfo?: boolean;
     missingInfo?: string;
+    taskInfoQuality?: 'EMPTY' | 'MINIMAL' | 'PARTIAL' | 'COMPLETE';
+    taskInfoFound?: string;
     isValid: boolean;
-    violations: Array<{
-        rule: string;
-        severity: 'error' | 'warning' | 'info';
-        message: string;
-        line?: number;
-        file?: string;
-        suggestion?: string;
-    }>;
     summary: string;
-    complianceScore: number;
     confidence?: 'high' | 'medium' | 'low';
 
-    // Novos campos para análise mais detalhada
     implementedCorrectly?: string[];
     missingOrIncomplete?: Array<{
         requirement: string;
@@ -55,9 +53,6 @@ export interface ValidationResult {
     rulesFound?: string[];
 }
 
-// Removed TaskInfo, PreValidationResult, and ValidationContext interfaces
-// as we no longer perform pre-validation - the agent handles everything via MCP tools
-
 @Injectable()
 export class BusinessRulesValidationAgentProvider {
     protected config: DatabaseConnection;
@@ -70,6 +65,8 @@ export class BusinessRulesValidationAgentProvider {
         private readonly configService: ConfigService,
         private readonly llmProviderService: LLMProviderService,
         private readonly logger: PinoLoggerService,
+        @Inject(PARAMETERS_SERVICE_TOKEN)
+        private readonly parametersService: IParametersService,
         private readonly mcpManagerService?: MCPManagerService,
     ) {
         this.config =
@@ -80,7 +77,7 @@ export class BusinessRulesValidationAgentProvider {
     private createLLMAdapter() {
         const base = this.llmProviderService.getLLMProvider({
             model: LLMModelProvider.GEMINI_2_5_PRO,
-            temperature: 0.1, // Baixa temperatura para validações consistentes
+            temperature: 0,
             maxTokens: 20000,
             maxReasoningTokens: 1000,
         });
@@ -213,7 +210,7 @@ export class BusinessRulesValidationAgentProvider {
                     privacy: { includeSensitiveData: false },
                     spanTimeouts: {
                         enabled: true,
-                        maxDurationMs: 10 * 60 * 1000, // 10 minutos para validações complexas
+                        maxDurationMs: 10 * 60 * 1000,
                     },
                 },
             },
@@ -225,7 +222,10 @@ export class BusinessRulesValidationAgentProvider {
         });
     }
 
-    private async initialize(organizationAndTeamData: OrganizationAndTeamData) {
+    private async initialize(
+        organizationAndTeamData: OrganizationAndTeamData,
+        userLanguage: string,
+    ) {
         await this.createMCPAdapter(organizationAndTeamData);
         await this.createOrchestration();
 
@@ -269,6 +269,14 @@ export class BusinessRulesValidationAgentProvider {
                 - GAP ANALYSIS: Focus on what SHOULD exist in code but doesn't, based on EXTERNAL task requirements
                 - RISK ASSESSMENT: Flag business scenarios that may cause problems if not properly handled
                 - COMPLIANCE VALIDATION: Ensure all business rules from EXTERNAL task are correctly implemented in code`,
+                language: userLanguage,
+                languageInstructions: `LANGUAGE REQUIREMENTS:
+- Respond in the user's preferred language: ${userLanguage}
+- Default to English if no language preference is configured
+- Use appropriate business terminology for the selected language
+- Maintain professional tone consistent with selected language
+- Format validation reports according to language-specific conventions
+- Adapt business analysis style to target language expectations`,
                 expertise: [
                     'Business requirements extraction from external task management systems',
                     'Task context analysis and interpretation',
@@ -291,25 +299,37 @@ export class BusinessRulesValidationAgentProvider {
             enableMemory: true,
             plannerOptions: {
                 type: PlannerType.REACT,
-                replanPolicy: {
-                    toolUnavailable: 'replan',
-                    maxReplans: 5,
-                },
             },
         });
     }
 
-    async validateBusinessRules(context: any): Promise<ValidationResult> {
+    async execute(context: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        prepareContext?: any;
+        thread?: Thread;
+    }): Promise<string> {
         try {
+            const userLanguage = await this.getLanguage(
+                context.organizationAndTeamData,
+            );
+
             this.logger.log({
                 message:
                     'Starting business rules validation with advanced orchestration',
                 context: BusinessRulesValidationAgentProvider.name,
                 serviceName: BusinessRulesValidationAgentProvider.name,
                 metadata: {
-                    organizationAndTeamData: context.organizationAndTeamData,
-                    validationScope: context.validationScope,
-                    thread: context.thread,
+                    userLanguage,
+                    organizationId:
+                        context.organizationAndTeamData?.organizationId,
+                    teamId: context.organizationAndTeamData?.teamId,
+                    userMessage: context.prepareContext?.userQuestion || '',
+                    pullRequestDescription: context.prepareContext
+                        ?.pullRequestDescription
+                        ? 'Available'
+                        : 'Not available',
+                    threadId: context.thread?.id,
+                    hasPrepareContext: !!context.prepareContext,
                 },
             });
 
@@ -319,12 +339,42 @@ export class BusinessRulesValidationAgentProvider {
                 );
             }
 
-            await this.initialize(context.organizationAndTeamData);
+            await this.initialize(
+                context.organizationAndTeamData,
+                userLanguage,
+            );
 
-            // No pre-validation needed - let the agent handle context discovery via MCP tools
+            this.logger.log({
+                message: 'Building validation prompt',
+                context: BusinessRulesValidationAgentProvider.name,
+                serviceName: BusinessRulesValidationAgentProvider.name,
+                metadata: {
+                    organizationId:
+                        context.organizationAndTeamData?.organizationId,
+                    promptLength:
+                        context.prepareContext?.userQuestion?.length || 0,
+                    hasPullRequestDescription:
+                        !!context.prepareContext?.pullRequestDescription,
+                },
+            });
 
-            // 🔍 STEP 1: Validation execution - let agent discover context via MCP tools
-            const validationPrompt = this.buildValidationPrompt(context);
+            const validationPrompt = this.buildValidationPrompt({
+                ...context,
+                userLanguage,
+            });
+
+            this.logger.log({
+                message: 'Calling business rules validation agent',
+                context: BusinessRulesValidationAgentProvider.name,
+                serviceName: BusinessRulesValidationAgentProvider.name,
+                metadata: {
+                    organizationId:
+                        context.organizationAndTeamData?.organizationId,
+                    promptLength: validationPrompt.length,
+                    threadId: context.thread?.id,
+                },
+            });
+
             const result = await this.orchestration.callAgent(
                 'kodus-business-rules-validation-agent',
                 validationPrompt,
@@ -358,22 +408,42 @@ export class BusinessRulesValidationAgentProvider {
                 JSON.stringify(traceability, null, 2),
             );
 
+            const validationResult = this.parseValidationResult(result.result);
+
             this.logger.log({
-                message: 'Finish business rules validation',
+                message: 'Formatting validation response',
                 context: BusinessRulesValidationAgentProvider.name,
                 serviceName: BusinessRulesValidationAgentProvider.name,
                 metadata: {
-                    organizationAndTeamData: context.organizationAndTeamData,
-                    thread: context.thread,
-                    result: {
-                        correlationId: result.context.correlationId ?? null,
-                        threadId: result.context.threadId ?? null,
-                        sessionId: result.context.sessionId ?? null,
-                    },
+                    organizationId:
+                        context.organizationAndTeamData?.organizationId,
+                    hasValidationResult: !!validationResult,
+                    needsMoreInfo: validationResult?.needsMoreInfo,
                 },
             });
 
-            return this.parseValidationResult(result.result);
+            const formattedResponse = await this.formatValidationResponse(
+                validationResult,
+                context,
+                userLanguage,
+            );
+
+            this.logger.log({
+                message: 'Business rules validation completed successfully',
+                context: BusinessRulesValidationAgentProvider.name,
+                serviceName: BusinessRulesValidationAgentProvider.name,
+                metadata: {
+                    organizationId:
+                        context.organizationAndTeamData?.organizationId,
+                    teamId: context.organizationAndTeamData?.teamId,
+                    responseLength: formattedResponse.length,
+                    correlationId: result.context.correlationId ?? null,
+                    threadId: result.context.threadId ?? null,
+                    sessionId: result.context.sessionId ?? null,
+                },
+            });
+
+            return formattedResponse;
         } catch (error) {
             this.logger.error({
                 message: 'Error during business rules validation',
@@ -389,16 +459,85 @@ export class BusinessRulesValidationAgentProvider {
         }
     }
 
+    private async formatValidationResponse(
+        validationResult: ValidationResult,
+        context: any,
+        userLanguage: string,
+    ): Promise<string> {
+        if (!validationResult) {
+            return '❌ Error processing business rules validation.';
+        }
+
+        if (validationResult.needsMoreInfo) {
+            const missingInfoPrompt = `Based on the validation result, I need more task information to perform proper business rules validation.
+
+VALIDATION RESULT: ${JSON.stringify(validationResult)}
+
+Please generate a user-friendly response that:
+1. Uses emojis to make it engaging and easy to read
+2. Clearly explains what specific information is missing
+3. Provides practical examples of how to provide the information
+4. Uses helpful, encouraging language
+5. Includes specific guidance for the user's context
+6. Follows this structure:
+   - Title with emoji: "## 🤔 Need Task Information"
+   - Main message explaining what's needed
+   - Section "### 🔍 What I need to validate:" with bullet points
+   - Section "### 💡 Examples of how to provide:" with practical examples
+   - Section "### ⚠️ Important:" with final note
+
+Remember to follow the RESPONSE FORMATTING INSTRUCTIONS from your system prompt.`;
+
+            try {
+                const formattedResult = await this.orchestration.callAgent(
+                    'kodus-business-rules-validation-agent',
+                    missingInfoPrompt,
+                    {
+                        thread: context.thread,
+                        userContext: {
+                            organizationAndTeamData:
+                                context.organizationAndTeamData,
+                        },
+                    },
+                );
+
+                return typeof formattedResult.result === 'string'
+                    ? formattedResult.result
+                    : JSON.stringify(formattedResult.result);
+            } catch (error) {
+                return (
+                    validationResult.missingInfo ||
+                    'Erro ao processar validação de regras de negócio.'
+                );
+            }
+        }
+
+        return (
+            validationResult.summary ||
+            'Validação de regras de negócio concluída.'
+        );
+    }
+
     private buildValidationPrompt(context: any): string {
         return `BUSINESS RULES GAP ANALYSIS - Find what's missing, forgotten, or overlooked
 
-USER REQUEST: ${context.userMessage || 'Analyze business rules compliance'}
+USER REQUEST: ${context?.prepareContext?.userQuestion || 'Analyze business rules compliance'}
+
+LANGUAGE REQUIREMENTS:
+- Default response language is English
+- If user specifies a different language preference, use that language
+- Use appropriate terminology and formatting for the requested language
 
 CRITICAL VALIDATION CHECK:
 - Did I successfully find task information from available external systems?
-- If NO task information was found, I MUST set needsMoreInfo=true and ask for task details
-- If ONLY PR description is available, I MUST still ask for explicit task information
+- Evaluate task information quality: EMPTY, MINIMAL, PARTIAL, or COMPLETE
+- If task is EMPTY (no summary, description, requirements) → needsMoreInfo=true
+- If task is MINIMAL (basic summary only) → needsMoreInfo=true, but acknowledge what was found
+- If task is PARTIAL (summary + some description) → proceed with validation, flag missing pieces
+- If task is COMPLETE (summary + description + requirements/criteria) → proceed with full validation
+- If ONLY PR description is available → needsMoreInfo=true
 - NEVER proceed with validation using only PR context as "task requirements"
+- If user already provided task info and I executed tools, be smart about what's actually missing
 
 CRITICAL ANALYSIS QUESTIONS:
 ❌ What business requirements are NOT implemented in the code?
@@ -418,6 +557,35 @@ CRITICAL EXECUTION ORDER (MANDATORY):
 7. ⚠️  SEVENTH: Alert about forgotten edge cases or assumptions
 8. 📊 EIGHTH: Score compliance with business requirements
 
+TOOL USAGE GUIDELINES:
+- Use appropriate parameters for each tool (don't over-expand)
+- Focus on essential information needed for validation
+- Be efficient with API calls - get only what you need
+- Work with any external system (Jira, Notion, Google Docs, etc.)
+
+RESPONSE FORMATTING INSTRUCTIONS:
+- Return a complete markdown response ready for the user in the "summary" field
+- If needsMoreInfo is true: Generate a user-friendly markdown response with emojis explaining what information is needed
+- If needsMoreInfo is false: Return the complete validation report in markdown format with all sections:
+  * ## 🔍 Business Rules Validation
+  * **Status:** ❌ Issues Found / ✅ Valid
+  * **Analysis Confidence:** high/medium/low
+  * **Summary:** Overall assessment
+  * ### ✅ Implemented Correctly (if any)
+  * ### ❌ Missing or Incomplete (if any)
+  * ### ⚠️ Edge Cases and Assumptions (if any)
+  * ### 🎯 Business Logic Issues (if any)
+  * --- *Analysis performed by Kodus AI Business Rules Validator*
+- Always use clear, professional language appropriate for the user's language setting
+- Include specific examples and helpful guidance for providing the missing information
+- Use emojis to make the response more engaging and easier to read
+- Structure the response with clear sections: "What I need", "Examples", "Important"
+- If task exists but is empty: Clearly explain that the task was found but lacks content, and provide specific guidance on how to populate it
+- If task has minimal info: Acknowledge what was found, explain what's still needed
+- If task has partial info: Proceed with validation but clearly flag what's missing
+- Be specific about the quality of information found (EMPTY, MINIMAL, PARTIAL, COMPLETE)
+- Always use the correct command format: @kody -v business-logic [task info]
+
 VALIDATION FRAMEWORK:
 - 🔴 EXTERNAL CONTEXT IS CRITICAL: PR description alone is NOT sufficient. Must have task context from external sources
 - 🚫 NO ASSUMPTIONS: Never proceed without understanding what SHOULD be implemented
@@ -431,39 +599,10 @@ REMEMBER: Use whatever MCP tools are available to get task information. If no to
 RESPONSE FORMAT:
 {
   "needsMoreInfo": boolean,
-  "missingInfo": "Preciso do link ou descrição da tarefa para validar. Forneça informações sobre o que deve ser implementado.",
-
-  "implementedCorrectly": [
-    "Business rule/feature that is properly implemented",
-    "Another correctly implemented requirement"
-  ],
-
-  "missingOrIncomplete": [
-    {
-      "requirement": "Business requirement not found in code",
-      "impact": "What this missing piece affects",
-      "suggestion": "How to implement it"
-    }
-  ],
-
-  "edgeCasesAndAssumptions": [
-    {
-      "scenario": "Edge case that may have been overlooked",
-      "risk": "Potential business impact",
-      "recommendation": "How to handle it"
-    }
-  ],
-
-  "businessLogicIssues": [
-    {
-      "issue": "Problem with business logic implementation",
-      "severity": "error|warning|info",
-      "fix": "Suggested correction"
-    }
-  ],
-
-  "summary": "Overall assessment of business requirements compliance",
-  "complianceScore": 0-100,
+  "missingInfo": "I need the task link or description to validate. Please provide information about what should be implemented.",
+  "taskInfoQuality": "EMPTY|MINIMAL|PARTIAL|COMPLETE",
+  "taskInfoFound": "Brief description of what information was found in the task",
+  "summary": "Complete formatted markdown response ready for the user - this is what will be shown to the user. Include all sections: status, summary, implemented correctly, missing/incomplete, edge cases, business logic issues, etc.",
   "confidence": "high|medium|low"
 }`;
     }
@@ -472,7 +611,6 @@ RESPONSE FORMAT:
         try {
             let parsed: any;
 
-            // Se é uma string, tenta fazer parse do JSON
             if (typeof result === 'string') {
                 parsed = JSON.parse(result);
             } else if (typeof result === 'object') {
@@ -481,15 +619,12 @@ RESPONSE FORMAT:
                 throw new Error('Invalid result format');
             }
 
-            // Valida se tem os campos necessários
             if (parsed.needsMoreInfo !== undefined) {
                 return {
                     needsMoreInfo: parsed.needsMoreInfo,
                     missingInfo: parsed.missingInfo,
                     isValid: parsed.isValid || false,
-                    violations: parsed.violations || [],
                     summary: parsed.summary || 'Validation completed',
-                    complianceScore: parsed.complianceScore || 0,
                     confidence: parsed.confidence || 'medium',
                     implementedCorrectly: parsed.implementedCorrectly || [],
                     missingOrIncomplete: parsed.missingOrIncomplete || [],
@@ -499,12 +634,9 @@ RESPONSE FORMAT:
                 };
             }
 
-            // Fallback para formato antigo
             return {
                 isValid: parsed.isValid || false,
-                violations: parsed.violations || [],
                 summary: parsed.summary || 'Validation completed',
-                complianceScore: parsed.complianceScore || 0,
             };
         } catch (error) {
             this.logger.error({
@@ -519,10 +651,27 @@ RESPONSE FORMAT:
                 missingInfo:
                     'Unable to process validation result. Please try again.',
                 isValid: false,
-                violations: [],
                 summary: 'Error during validation',
-                complianceScore: 0,
             };
         }
+    }
+
+    private async getLanguage(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<string> {
+        let language = null;
+
+        if (organizationAndTeamData && organizationAndTeamData.teamId) {
+            language = await this.parametersService.findByKey(
+                ParametersKey.LANGUAGE_CONFIG,
+                organizationAndTeamData,
+            );
+        }
+
+        if (!language) {
+            return 'en-US';
+        }
+
+        return language?.configValue || 'en-US';
     }
 }

@@ -25,6 +25,10 @@ export interface SessionConfig {
 
     // ⏰ SESSION TTL - Opcional com default inteligente
     sessionTTL?: number; // Default: 24h (24 * 60 * 60 * 1000)
+    maxMessagesInMemory?: number; // Optional window size for messages
+    maxMessagesInMemoryByRole?: Partial<
+        Record<'user' | 'assistant' | 'tool' | 'system', number>
+    >;
 }
 
 /**
@@ -46,6 +50,7 @@ export const SESSION_CONSTANTS = {
 
     PERFORMANCE: {
         CLEANUP_INTERVAL: 300000, // 5min
+        MAX_MESSAGES_IN_MEMORY: 50, // Keep last N messages for fast access
     } as const,
 
     RECOVERY: {
@@ -151,6 +156,7 @@ export interface AgentRuntimeContext {
 
     // Essential conversation (last 6 messages max)
     messages: ChatMessage[];
+    messagesDigest?: string;
 
     // Entities for reference resolution (framework agnostic)
     entities: Record<string, EntityRef[] | Record<string, object>>;
@@ -184,6 +190,17 @@ export interface AgentRuntimeContext {
         toolCallCount?: number;
         iterationCount?: number;
         lastToolsUsed?: string[]; // 🆕 Track which tools were actually used
+        // 📝 Lightweight journal of recent steps (cap 20)
+        stepsJournal?: Array<{
+            stepId: string;
+            type: string;
+            toolName?: string;
+            status: 'executing' | 'completed' | 'failed' | 'skipped';
+            startedAt?: number;
+            endedAt?: number;
+            durationMs?: number;
+            errorSubcode?: string;
+        }>;
     };
 
     // Tools and connections are handled by ToolEngine, not stored in context

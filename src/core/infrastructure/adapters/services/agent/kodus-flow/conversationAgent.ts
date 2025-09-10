@@ -18,6 +18,12 @@ import { ConnectionString } from 'connection-string';
 import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
 import { SDKOrchestrator } from '@kodus/flow/dist/orchestration';
 import { PinoLoggerService } from '../../logger/pino.service';
+import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
+import {
+    PARAMETERS_SERVICE_TOKEN,
+    IParametersService,
+} from '@/core/domain/parameters/contracts/parameters.service.contract';
+import { Inject } from '@nestjs/common';
 
 @Injectable()
 export class ConversationAgentProvider {
@@ -29,6 +35,8 @@ export class ConversationAgentProvider {
     private llmAdapter: DirectLLMAdapter;
 
     constructor(
+        @Inject(PARAMETERS_SERVICE_TOKEN)
+        private readonly parametersService: IParametersService,
         private readonly configService: ConfigService,
         private readonly llmProviderService: LLMProviderService,
         private readonly logger: PinoLoggerService,
@@ -191,7 +199,10 @@ export class ConversationAgentProvider {
     }
 
     // -------------------------------------------------------------------------
-    private async initialize(organizationAndTeamData: OrganizationAndTeamData) {
+    private async initialize(
+        organizationAndTeamData: OrganizationAndTeamData,
+        userLanguage: string,
+    ) {
         await this.createMCPAdapter(organizationAndTeamData);
         await this.createOrchestration();
 
@@ -206,7 +217,15 @@ export class ConversationAgentProvider {
             name: 'kodus-conversational-agent',
             identity: {
                 description:
-                    'Agente de conversação para interações com usuários.',
+                    'Agente de conversação inteligente para interações com usuários.',
+                goal: 'Engage in natural, helpful conversations while respecting user language preferences',
+                language: userLanguage,
+                languageInstructions: `LANGUAGE REQUIREMENTS:
+- Respond in the user's preferred language: ${userLanguage}
+- Default to English if no language preference is configured
+- Maintain consistent language throughout conversation
+- Use appropriate terminology and formatting for the selected language
+- Adapt communication style to the target language conventions`,
             },
             plannerOptions: {
                 type: PlannerType.REACT,
@@ -230,11 +249,16 @@ export class ConversationAgentProvider {
         const { organizationAndTeamData, prepareContext, thread } =
             context || {};
         try {
+            // Detect user language preference
+            const userLanguage = await this.getLanguage(
+                organizationAndTeamData,
+            );
+
             this.logger.log({
                 message: 'Starting conversation agent execution',
                 context: ConversationAgentProvider.name,
                 serviceName: ConversationAgentProvider.name,
-                metadata: { organizationAndTeamData, thread },
+                metadata: { organizationAndTeamData, thread, userLanguage },
             });
 
             if (!organizationAndTeamData) {
@@ -245,7 +269,7 @@ export class ConversationAgentProvider {
                 throw new Error('thread and team data is required.');
             }
 
-            await this.initialize(organizationAndTeamData);
+            await this.initialize(organizationAndTeamData, userLanguage);
 
             const result = await this.orchestration.callAgent(
                 'kodus-conversational-agent',
@@ -306,5 +330,29 @@ export class ConversationAgentProvider {
             });
             throw error;
         }
+    }
+
+    /**
+     * 🌐 GET LANGUAGE CONFIGURATION
+     * Gets the language preference from team parameters
+     * Falls back to 'en-US' if no configuration is found
+     */
+    private async getLanguage(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<string> {
+        let language = null;
+
+        if (organizationAndTeamData && organizationAndTeamData.teamId) {
+            language = await this.parametersService.findByKey(
+                ParametersKey.LANGUAGE_CONFIG,
+                organizationAndTeamData,
+            );
+        }
+
+        if (!language) {
+            return 'en-US';
+        }
+
+        return language?.configValue || 'en-US';
     }
 }

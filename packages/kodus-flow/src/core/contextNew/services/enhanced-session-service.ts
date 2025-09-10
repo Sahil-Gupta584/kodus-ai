@@ -44,6 +44,10 @@ export class EnhancedSessionService implements SessionManager {
             snapshotsCollection?: string; // Ignorado
             sessionTTL?: number; // Default 24h
             snapshotTTL?: number; // Ignorado
+            maxMessagesInMemory?: number;
+            maxMessagesInMemoryByRole?: Partial<
+                Record<'user' | 'assistant' | 'tool' | 'system', number>
+            >;
         },
     ) {
         this.config = {
@@ -53,6 +57,8 @@ export class EnhancedSessionService implements SessionManager {
             connectionString,
             sessionTTL:
                 options?.sessionTTL || DEFAULT_SESSION_CONFIG.sessionTTL,
+            maxMessagesInMemory: options?.maxMessagesInMemory,
+            maxMessagesInMemoryByRole: options?.maxMessagesInMemoryByRole,
         };
 
         // Use database customizado se fornecido, senão use default
@@ -64,6 +70,8 @@ export class EnhancedSessionService implements SessionManager {
             options: {
                 database: databaseName,
                 collection: SESSION_CONSTANTS.COLLECTIONS.SESSIONS,
+                sessionTTL: this.config.sessionTTL as number | undefined,
+                maxMessagesInMemory: this.config.maxMessagesInMemory,
             },
         });
 
@@ -254,12 +262,65 @@ export class EnhancedSessionService implements SessionManager {
             newMessageRole: message.role,
         });
 
-        const messages = [...session.runtime.messages, message];
+        let messages = [...session.runtime.messages, message];
+
+        // Windowing: cap messages in memory and keep a digest of older ones
+        const MAX =
+            this.config.maxMessagesInMemory ||
+            SESSION_CONSTANTS.PERFORMANCE.MAX_MESSAGES_IN_MEMORY;
+        const caps = this.config.maxMessagesInMemoryByRole;
+        let messagesDigest = session.runtime.messagesDigest || '';
+        const digestLine = (m: ChatMessage) =>
+            `[${m.role}] ${m.content?.substring(0, 60) || ''}$${
+                m.content && m.content.length > 60 ? '…' : ''
+            }`;
+        // 1) Apply per-role caps if provided
+        if (caps && Object.keys(caps).length > 0) {
+            const roles: Array<'user' | 'assistant' | 'tool' | 'system'> = [
+                'user',
+                'assistant',
+                'tool',
+                'system',
+            ];
+            for (const role of roles) {
+                const cap = caps[role];
+                if (!cap || cap <= 0) continue;
+                const count = messages.filter(
+                    (m) => m.role === (role as any),
+                ).length;
+                if (count > cap) {
+                    let toRemove = count - cap;
+                    const keep: ChatMessage[] = [];
+                    for (const m of messages) {
+                        if (toRemove > 0 && m.role === (role as any)) {
+                            messagesDigest = messagesDigest
+                                ? `${messagesDigest} | ${digestLine(m)}`
+                                : digestLine(m);
+                            toRemove--;
+                            continue;
+                        }
+                        keep.push(m);
+                    }
+                    messages = keep;
+                }
+            }
+        }
+        // 2) Apply global cap
+        if (messages.length > MAX) {
+            const excess = messages.length - MAX;
+            const removed = messages.slice(0, excess);
+            const digestPart = removed.map(digestLine).join(' | ');
+            messagesDigest = messagesDigest
+                ? `${messagesDigest} | ${digestPart}`
+                : digestPart;
+            messages = messages.slice(excess);
+        }
 
         // Update runtime with new message
         const updatedRuntime: AgentRuntimeContext = {
             ...session.runtime,
             messages,
+            ...(messagesDigest ? { messagesDigest } : {}),
             timestamp: new Date().toISOString(),
         };
 
@@ -286,6 +347,7 @@ export class EnhancedSessionService implements SessionManager {
             updatedRuntime,
             session.createdAt,
             Date.now(),
+            { expectedVersion: (session as any).version },
         );
 
         logger.info(
@@ -435,7 +497,20 @@ export class EnhancedSessionService implements SessionManager {
 
     async updateExecution(
         threadId: string,
-        execution: Partial<AgentRuntimeContext['execution']>,
+        execution: Partial<AgentRuntimeContext['execution']> & {
+            phase?: AgentRuntimeContext['state']['phase'];
+            correlationId?: string;
+            stepsJournalAppend?: {
+                stepId: string;
+                type: string;
+                toolName?: string;
+                status: 'executing' | 'completed' | 'failed' | 'skipped';
+                startedAt?: number;
+                endedAt?: number;
+                durationMs?: number;
+                errorSubcode?: string;
+            };
+        },
     ): Promise<void> {
         await this.ensureInitialized();
 
@@ -449,10 +524,25 @@ export class EnhancedSessionService implements SessionManager {
 
         // 📊 OPTIMIZATION: Auto-increment counters
         const currentExecution = session.runtime.execution || {};
-        const updatedExecution = {
+        const updatedExecution: AgentRuntimeContext['execution'] = {
             ...currentExecution,
             ...execution,
         };
+
+        // Append stepsJournal entry (cap 20)
+        if (execution.stepsJournalAppend) {
+            const journal = currentExecution.stepsJournal || [];
+            const next = [...journal, execution.stepsJournalAppend];
+            const capped = next.slice(Math.max(0, next.length - 20));
+            (updatedExecution as any).stepsJournal = capped;
+        }
+
+        // Merge completedSteps without duplicados
+        if (execution.completedSteps && execution.completedSteps.length > 0) {
+            const existing = new Set(currentExecution.completedSteps || []);
+            for (const s of execution.completedSteps) existing.add(s);
+            updatedExecution.completedSteps = Array.from(existing);
+        }
 
         // Auto-increment tool call counter if currentTool changed
         if (
@@ -483,7 +573,32 @@ export class EnhancedSessionService implements SessionManager {
             timestamp: new Date().toISOString(),
         };
 
+        // Phase update (coerência com finalização)
+        if (execution.phase) {
+            updatedRuntime.state = {
+                ...updatedRuntime.state,
+                phase: execution.phase,
+            } as any;
+        }
+
         // Store updated session
+        // Correlation history (cap 20)
+        let extras:
+            | { lastCorrelationId?: string; correlationIdHistory?: string[] }
+            | undefined = undefined;
+        if (execution.correlationId) {
+            // Read last stored history from session (optional)
+            const historyPrev: string[] | undefined = (session as any)
+                .correlationIdHistory;
+            const set = new Set<string>(historyPrev || []);
+            set.add(execution.correlationId);
+            const newHistory = Array.from(set).slice(-20);
+            extras = {
+                lastCorrelationId: execution.correlationId,
+                correlationIdHistory: newHistory,
+            };
+        }
+
         await this.sessionsAdapter.storeContextSession(
             session.sessionId, // Use sessionId as primary key
             session.threadId, // Keep threadId
@@ -492,6 +607,7 @@ export class EnhancedSessionService implements SessionManager {
             updatedRuntime,
             session.createdAt,
             Date.now(),
+            extras,
         );
 
         // 🆕 Log tools being tracked

@@ -31,9 +31,8 @@ const ACKNOWLEDGMENT_MESSAGES = {
     MARKDOWN_SUFFIX: '<!-- kody-codereview -->\n&#8203;',
 } as const;
 
-const THREAD_PREFIX = 'cmc'; // Code Management Chat
+const THREAD_PREFIX = 'cmc';
 
-// Enums
 enum CommandType {
     BUSINESS_LOGIC_VALIDATION = 'business_logic_validation',
     CONVERSATION = 'conversation',
@@ -181,6 +180,22 @@ export class ChatWithKodyFromGitUseCase {
             const organizationAndTeamData =
                 this.extractOrganizationAndTeamData(integrationConfig);
             const pullRequestNumber = this.getPullRequestNumber(params);
+            const pullRequestDescription =
+                this.getPullRequestDescription(params);
+
+            this.logger.log({
+                message: 'Extracted PR information',
+                context: ChatWithKodyFromGitUseCase.name,
+                serviceName: ChatWithKodyFromGitUseCase.name,
+                metadata: {
+                    platformType: params.platformType,
+                    repository: repository.name,
+                    pullRequestNumber,
+                    hasDescription: !!pullRequestDescription,
+                    descriptionLength: pullRequestDescription?.length || 0,
+                },
+            });
+
             const allComments =
                 await this.codeManagementService.getPullRequestReviewComment({
                     organizationAndTeamData,
@@ -298,6 +313,7 @@ export class ChatWithKodyFromGitUseCase {
                     othersReplies,
                     pullRequestNumber,
                     repository,
+                    pullRequestDescription,
                     platformType: params.platformType,
                 });
 
@@ -320,8 +336,6 @@ export class ChatWithKodyFromGitUseCase {
                 response = await this.processCommand(commandType, {
                     prepareContext,
                     organizationAndTeamData,
-                    repository,
-                    pullRequestNumber,
                     thread,
                 });
             } else {
@@ -505,6 +519,55 @@ export class ChatWithKodyFromGitUseCase {
                 });
                 return 0;
         }
+    }
+
+    private getPullRequestDescription(params: WebhookParams): string {
+        let description = '';
+
+        switch (params.platformType) {
+            case PlatformType.GITHUB:
+                description =
+                    params.payload?.pull_request?.body ||
+                    params.payload?.pull_request?.description ||
+                    '';
+                break;
+            case PlatformType.GITLAB:
+                description =
+                    params.payload?.merge_request?.description ||
+                    params.payload?.merge_request?.body ||
+                    '';
+                break;
+            case PlatformType.BITBUCKET:
+                description =
+                    params.payload?.pullrequest?.description ||
+                    params.payload?.pullrequest?.summary ||
+                    '';
+                break;
+            case PlatformType.AZURE_REPOS:
+                description =
+                    params.payload?.resource?.pullRequest?.description || '';
+                break;
+            default:
+                this.logger.warn({
+                    message: `Unsupported platform type: ${params.platformType} for PR description`,
+                    context: ChatWithKodyFromGitUseCase.name,
+                });
+                return '';
+        }
+
+        this.logger.log({
+            message: 'PR description extracted',
+            context: ChatWithKodyFromGitUseCase.name,
+            serviceName: ChatWithKodyFromGitUseCase.name,
+            metadata: {
+                platformType: params.platformType,
+                hasDescription: !!description,
+                descriptionLength: description.length,
+                descriptionPreview: description.substring(0, 100),
+            },
+        });
+
+        return description;
     }
 
     private getReviewThreadByCommentId(
@@ -783,6 +846,7 @@ export class ChatWithKodyFromGitUseCase {
         othersReplies,
         pullRequestNumber,
         repository,
+        pullRequestDescription,
         platformType,
     }: {
         comment?: Comment;
@@ -792,6 +856,7 @@ export class ChatWithKodyFromGitUseCase {
         repository?: Repository;
         platformType?: PlatformType;
         pullRequestNumber?: number;
+        pullRequestDescription?: string;
     }): any {
         const userQuestion =
             comment.body.trim() === '@kody'
@@ -803,6 +868,7 @@ export class ChatWithKodyFromGitUseCase {
             userQuestion,
             pullRequestNumber,
             repository,
+            pullRequestDescription,
             platformType,
             codeManagementContext: {
                 originalComment: {
@@ -901,149 +967,11 @@ export class ChatWithKodyFromGitUseCase {
         return [ackResponseId, parentId];
     }
 
-    private formatValidationResponse(validationResult: any): string {
-        if (!validationResult) {
-            return '❌ Erro ao processar validação de regras de negócio.';
-        }
-
-        // Se o agent precisa de mais informações
-        if (validationResult.needsMoreInfo) {
-            return `## 🤔 Preciso de Informações da Tarefa
-
-${validationResult.missingInfo || 'Não encontrei informações específicas da tarefa para validar. Preciso de detalhes sobre o que deve ser implementado.'}
-
-### 🔍 O que preciso para validar:
-- **Link direto da tarefa** (Jira, Notion, Google Docs, etc.)
-- **Descrição detalhada** do que deve ser implementado
-- **Critérios de aceitação** da tarefa
-- **Requisitos de negócio** específicos
-
-### 💡 Exemplos de como fornecer:
-- **Jira:** \`@kody -v business-logic https://kodustech.atlassian.net/jira/KC-123\`
-- **Notion:** \`@kody -v business-logic https://notion.so/minha-task\`
-- **Descrição:** \`@kody -v business-logic implementar validação de CPF com máscara e verificação de dígitos\`
-- **Google Docs:** \`@kody -v business-logic https://docs.google.com/document/d/123\`
-
-### ⚠️ Importante:
-Sem informações específicas da tarefa, não posso validar se as regras de negócio estão corretamente implementadas no código.`;
-        }
-
-        const {
-            isValid,
-            violations,
-            summary,
-            complianceScore,
-            confidence,
-            implementedCorrectly,
-            missingOrIncomplete,
-            edgeCasesAndAssumptions,
-            businessLogicIssues,
-        } = validationResult;
-
-        // Determinar se há problemas baseado em TODOS os campos de problemas
-        const hasAnyProblems =
-            (violations && violations.length > 0) ||
-            (missingOrIncomplete && missingOrIncomplete.length > 0) ||
-            (edgeCasesAndAssumptions && edgeCasesAndAssumptions.length > 0) ||
-            (businessLogicIssues && businessLogicIssues.length > 0) ||
-            complianceScore === 0 ||
-            complianceScore < 50;
-
-        let response = `## 🔍 Validação de Regras de Negócio\n\n`;
-        response += `**Status:** ${hasAnyProblems ? '❌ Problemas encontrados' : '✅ Válido'}\n`;
-        response += `**Score de Compliance:** ${complianceScore || 0}/100\n`;
-        response += `**Confiança da Análise:** ${confidence || 'medium'}\n\n`;
-        response += `**Resumo:** ${summary || 'Validação concluída'}\n\n`;
-
-        if (violations && violations.length > 0) {
-            response += `### 🚨 Violações Encontradas (${violations.length})\n\n`;
-
-            violations.forEach((violation: any, index: number) => {
-                const severityIcon =
-                    violation.severity === 'error'
-                        ? '🔴'
-                        : violation.severity === 'warning'
-                          ? '🟡'
-                          : '🔵';
-
-                response += `${severityIcon} **${violation.severity?.toUpperCase()}** - ${violation.rule}\n`;
-                response += `   ${violation.message}\n`;
-
-                if (violation.file) {
-                    response += `   📁 Arquivo: ${violation.file}`;
-                    if (violation.line) {
-                        response += ` (linha ${violation.line})`;
-                    }
-                    response += `\n`;
-                }
-
-                if (violation.suggestion) {
-                    response += `   💡 Sugestão: ${violation.suggestion}\n`;
-                }
-
-                response += `\n`;
-            });
-        } else if (!hasAnyProblems) {
-            response += `### ✅ Nenhuma violação encontrada!\n`;
-            response += `O código está em conformidade com as regras de negócio definidas.\n\n`;
-        }
-
-        // Seção: Implementado Corretamente
-        if (implementedCorrectly && implementedCorrectly.length > 0) {
-            response += `### ✅ Implementado Corretamente\n\n`;
-            implementedCorrectly.forEach((item: string, index: number) => {
-                response += `${index + 1}. ${item}\n`;
-            });
-            response += `\n`;
-        }
-
-        // Seção: Faltando ou Incompleto
-        if (missingOrIncomplete && missingOrIncomplete.length > 0) {
-            response += `### ❌ Faltando ou Incompleto\n\n`;
-            missingOrIncomplete.forEach((item: any, index: number) => {
-                response += `**${index + 1}. ${item.requirement}**\n`;
-                response += `   📊 **Impacto:** ${item.impact}\n`;
-                response += `   💡 **Sugestão:** ${item.suggestion}\n\n`;
-            });
-        }
-
-        // Seção: Casos de Borda e Hipóteses
-        if (edgeCasesAndAssumptions && edgeCasesAndAssumptions.length > 0) {
-            response += `### ⚠️ Casos de Borda e Hipóteses\n\n`;
-            edgeCasesAndAssumptions.forEach((item: any, index: number) => {
-                response += `**${index + 1}. ${item.scenario}**\n`;
-                response += `   🚨 **Risco:** ${item.risk}\n`;
-                response += `   🛡️ **Recomendação:** ${item.recommendation}\n\n`;
-            });
-        }
-
-        // Seção: Problemas de Lógica de Negócio
-        if (businessLogicIssues && businessLogicIssues.length > 0) {
-            response += `### 🎯 Problemas de Lógica de Negócio\n\n`;
-            businessLogicIssues.forEach((issue: any, index: number) => {
-                const severityIcon =
-                    issue.severity === 'error'
-                        ? '🔴'
-                        : issue.severity === 'warning'
-                          ? '🟡'
-                          : '🔵';
-                response += `${severityIcon} **${issue.severity?.toUpperCase()}** - ${issue.issue}\n`;
-                response += `   🔧 **Correção:** ${issue.fix}\n\n`;
-            });
-        }
-
-        response += `---\n*Análise realizada por Kodus AI Business Rules Validator*`;
-
-        return response;
-    }
-
     private async processCommand(
         commandType: CommandType,
         context: {
             prepareContext: any;
             organizationAndTeamData: OrganizationAndTeamData;
-            repository: Repository;
-            pullRequestNumber: number;
             thread: any;
         },
     ): Promise<string> {
@@ -1060,23 +988,9 @@ Sem informações específicas da tarefa, não posso validar se as regras de neg
     private async handleBusinessLogicValidation(context: {
         prepareContext: any;
         organizationAndTeamData: OrganizationAndTeamData;
-        repository: Repository;
-        pullRequestNumber: number;
         thread: any;
     }): Promise<string> {
-        // Passar a mensagem completa do usuário para o agent
-        // O agent decidirá se precisa de mais informações
-        const enrichedContext = {
-            ...context,
-            userMessage: context.prepareContext.userQuestion,
-        };
-
-        const validationResult =
-            await this.businessRulesValidationAgentUseCase.execute(
-                enrichedContext,
-            );
-
-        return this.formatValidationResponse(validationResult);
+        return await this.businessRulesValidationAgentUseCase.execute(context);
     }
 
     private async handleConversation(context: {
