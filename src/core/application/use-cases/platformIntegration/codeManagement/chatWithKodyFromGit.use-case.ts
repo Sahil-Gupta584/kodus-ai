@@ -1258,8 +1258,6 @@ export class ChatWithKodyFromGitUseCase {
                 break;
             case PlatformType.GITLAB:
                 ackResponseId = ackResponse.id;
-                // Para GitLab, o parentId é o ID do comentário que está sendo respondido
-                // Como originalKodyComment não tem id, usamos o comment.id
                 parentId = comment?.id;
                 break;
             case PlatformType.BITBUCKET:
@@ -1299,27 +1297,23 @@ export class ChatWithKodyFromGitUseCase {
 
         switch (platformType) {
             case PlatformType.GITHUB:
-                // GitHub: ackResponse.id
                 ackResponseId = ackResponse?.id;
-                parentId = ackResponse?.id; // Para business logic, parentId é o mesmo
+                parentId = ackResponse?.id;
                 break;
 
             case PlatformType.GITLAB:
-                // GitLab: ackResponse.id (discussion ID) e ackResponse.notes[0].id (note ID)
-                ackResponseId = ackResponse?.id; // Discussion ID
-                parentId = ackResponse?.notes?.[0]?.id; // Note ID
+                ackResponseId = ackResponse?.id;
+                parentId = ackResponse?.notes?.[0]?.id;
                 break;
 
             case PlatformType.BITBUCKET:
-                // Bitbucket: ackResponse.id (assumindo, precisa confirmar)
                 ackResponseId = ackResponse?.id;
-                parentId = ackResponse?.id; // Para business logic, parentId é o mesmo
+                parentId = ackResponse?.id;
                 break;
 
             case PlatformType.AZURE_REPOS:
-                // Azure: ackResponse.id (comment ID) e ackResponse.threadId (thread ID)
-                ackResponseId = ackResponse?.id; // Comment ID
-                parentId = ackResponse?.threadId; // Thread ID
+                ackResponseId = ackResponse?.id;
+                parentId = ackResponse?.threadId;
                 break;
 
             default:
