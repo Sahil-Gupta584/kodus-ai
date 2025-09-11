@@ -34,6 +34,13 @@ export class ReWooStrategy extends BaseExecutionStrategy {
         maxExecutionTime: 300000, // 5 minutos
         enablePlanValidation: true,
     };
+    private readonly llmDefaults?: {
+        model?: string;
+        temperature?: number;
+        maxTokens?: number;
+        maxReasoningTokens?: number;
+        stop?: string[];
+    };
 
     constructor(
         private llmAdapter: LLMAdapter,
@@ -59,7 +66,8 @@ export class ReWooStrategy extends BaseExecutionStrategy {
             enablePlanValidation: true,
         };
 
-        this.config = { ...defaultConfig, ...options };
+        this.config = { ...defaultConfig, ...options } as any;
+        this.llmDefaults = (options as any)?.llmDefaults;
 
         this.logger.info('🏗️ ReWoo Strategy initialized', {
             config: this.config,
@@ -257,6 +265,11 @@ export class ReWooStrategy extends BaseExecutionStrategy {
                     systemPrompt: prompts.systemPrompt,
                     userPrompt: prompts.userPrompt,
                     tools: this.getAvailableToolsFormatted(context),
+                    model: this.llmDefaults?.model,
+                    temperature: this.llmDefaults?.temperature,
+                    maxTokens: this.llmDefaults?.maxTokens,
+                    maxReasoningTokens: this.llmDefaults?.maxReasoningTokens,
+                    stop: this.llmDefaults?.stop,
                     signal: context.agentContext?.signal,
                 }),
             { attributes: { phase: 'sketch' } },
@@ -440,6 +453,11 @@ export class ReWooStrategy extends BaseExecutionStrategy {
                     systemPrompt: prompts.systemPrompt,
                     userPrompt: prompts.userPrompt,
                     tools: [], // Organizer não usa tools
+                    model: this.llmDefaults?.model,
+                    temperature: this.llmDefaults?.temperature,
+                    maxTokens: this.llmDefaults?.maxTokens,
+                    maxReasoningTokens: this.llmDefaults?.maxReasoningTokens,
+                    stop: this.llmDefaults?.stop,
                     signal: context.agentContext?.signal,
                 }),
             { attributes: { phase: 'organize' } },

@@ -16,7 +16,16 @@ import { SPAN_NAMES } from '../../observability/semantic-conventions.js';
 export class ResponseSynthesizer {
     private logger = createLogger('response-synthesizer');
 
-    constructor(private llmAdapter: LLMAdapter) {
+    constructor(
+        private llmAdapter: LLMAdapter,
+        private llmDefaults?: {
+            model?: string;
+            temperature?: number;
+            maxTokens?: number;
+            maxReasoningTokens?: number;
+            stop?: string[];
+        },
+    ) {
         this.logger.info('Response Synthesizer initialized', {
             llmProvider: llmAdapter.getProvider?.()?.name || 'unknown',
             supportsStructured:
@@ -337,6 +346,11 @@ ${this.composeStructuredExecutionTrace(context, analysis)}
         try {
             const response = await this.llmAdapter.call({
                 messages: [{ role: AgentInputEnum.USER, content: prompt }],
+                model: this.llmDefaults?.model,
+                temperature: this.llmDefaults?.temperature,
+                maxTokens: this.llmDefaults?.maxTokens,
+                maxReasoningTokens: this.llmDefaults?.maxReasoningTokens,
+                stop: this.llmDefaults?.stop,
                 signal: context.signal,
             });
 
@@ -383,6 +397,11 @@ Response:`;
         try {
             const response = await this.llmAdapter.call({
                 messages: [{ role: AgentInputEnum.USER, content: prompt }],
+                model: this.llmDefaults?.model,
+                temperature: this.llmDefaults?.temperature,
+                maxTokens: this.llmDefaults?.maxTokens,
+                maxReasoningTokens: this.llmDefaults?.maxReasoningTokens,
+                stop: this.llmDefaults?.stop,
                 signal: context.signal,
             });
             return (
@@ -550,6 +569,13 @@ Response:`;
 
 export function createResponseSynthesizer(
     llmAdapter: LLMAdapter,
+    llmDefaults?: {
+        model?: string;
+        temperature?: number;
+        maxTokens?: number;
+        maxReasoningTokens?: number;
+        stop?: string[];
+    },
 ): ResponseSynthesizer {
-    return new ResponseSynthesizer(llmAdapter);
+    return new ResponseSynthesizer(llmAdapter, llmDefaults);
 }

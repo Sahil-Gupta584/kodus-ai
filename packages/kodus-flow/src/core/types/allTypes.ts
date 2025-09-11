@@ -84,6 +84,7 @@ export type AgentConfig = {
     enableState?: boolean;
     enableMemory?: boolean;
     timeout?: number;
+    llmDefaults?: LLMDefaults;
     plannerOptions?: {
         type: PlannerType;
         replanPolicy?: Partial<ReplanPolicyConfig>;
@@ -2875,6 +2876,8 @@ export interface LLMRequest {
     model?: string;
     temperature?: number;
     maxTokens?: number;
+    maxReasoningTokens?: number;
+    stop?: string[];
     tools?: Array<{
         name: string;
         description: string;
@@ -2895,7 +2898,16 @@ export interface LLMResponse {
         promptTokens: number;
         completionTokens: number;
         totalTokens: number;
+        reasoningTokens?: number;
     };
+}
+
+export interface LLMDefaults {
+    model?: string;
+    temperature?: number;
+    maxTokens?: number;
+    maxReasoningTokens?: number;
+    stop?: string[];
 }
 
 export interface LLMConfig {
@@ -2941,6 +2953,12 @@ export interface LLMAdapter {
             tools?: ToolMetadataForLLM[];
             previousPlans?: PlanningResult[];
             constraints?: string[];
+            // Optional LLM overrides for planning
+            model?: string;
+            temperature?: number;
+            maxTokens?: number;
+            maxReasoningTokens?: number;
+            stop?: string[];
             signal?: AbortSignal;
         },
     ): Promise<PlanningResult>;
@@ -5339,6 +5357,7 @@ export interface AgentCoreConfig {
     tenantId: TenantId;
     agentName?: string;
     llmAdapter?: LLMAdapter;
+    llmDefaults?: LLMDefaults;
     maxThinkingIterations?: number;
     thinkingTimeout?: number;
 
@@ -5486,8 +5505,10 @@ export interface LangChainMessage {
 }
 
 export interface LangChainOptions {
+    model?: string;
     temperature?: number;
     maxTokens?: number;
+    maxReasoningTokens?: number;
     topP?: number;
     frequencyPenalty?: number;
     presencePenalty?: number;

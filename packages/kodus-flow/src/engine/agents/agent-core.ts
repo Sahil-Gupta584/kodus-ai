@@ -1545,6 +1545,7 @@ export abstract class AgentCore<
                         maxExecutionTime: this.config.thinkingTimeout,
                         enableLogging: true,
                         enableMetrics: true,
+                        llmDefaults: this.config.llmDefaults,
                     },
                 );
 
