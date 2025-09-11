@@ -229,7 +229,7 @@ class CodeReviewConfigWithoutLLMProviderDto {
 
     @IsOptional()
     @IsEnum(CodeReviewVersion)
-    codeReviewVersion?: CodeReviewVersion = CodeReviewVersion.LEGACY;
+    codeReviewVersion?: CodeReviewVersion = CodeReviewVersion.v2;
 }
 
 export class CreateOrUpdateCodeReviewParameterDto {
