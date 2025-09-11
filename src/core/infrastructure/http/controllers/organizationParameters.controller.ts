@@ -39,4 +39,19 @@ export class OrgnizationParametersController {
 
     @Get('/list-all')
     public async listAll() {}
+
+    @Get('/list-providers')
+    public async listProviders() {
+      return {
+        providers: [
+          { id: 'openai', name: 'OpenAI' },
+          { id: 'anthropic', name: 'Anthropic' },
+          { id: 'gemini', name: 'Google Gemini' },
+          { id: 'vertex', name: 'Google Vertex' },
+          { id: 'open_router', name: 'Open Router' },
+          { id: 'novita', name: 'Novita' },
+          { id: 'openai_compatible', name: 'OpenAI Compatible' }
+        ]
+      };
+    }
 }
