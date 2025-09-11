@@ -1,14 +1,24 @@
 import { CreateOrUpdateOrganizationParametersUseCase } from '@/core/application/use-cases/organizationParameters/create-or-update.use-case';
 import { FindByKeyOrganizationParametersUseCase } from '@/core/application/use-cases/organizationParameters/find-by-key.use-case';
+import { GetModelsByProviderUseCase } from '@/core/application/use-cases/organizationParameters/get-models-by-provider.use-case';
 import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
 
-import { Body, Controller, Get, Post, Put, Query } from '@nestjs/common';
+import {
+    BadRequestException,
+    Body,
+    Controller,
+    Get,
+    Post,
+    Put,
+    Query,
+} from '@nestjs/common';
 
 @Controller('organization-parameters')
 export class OrgnizationParametersController {
     constructor(
         private readonly createOrUpdateOrganizationParametersUseCase: CreateOrUpdateOrganizationParametersUseCase,
         private readonly findByKeyOrganizationParametersUseCase: FindByKeyOrganizationParametersUseCase,
+        private readonly getModelsByProviderUseCase: GetModelsByProviderUseCase,
     ) {}
 
     @Post('/create-or-update')
@@ -42,16 +52,29 @@ export class OrgnizationParametersController {
 
     @Get('/list-providers')
     public async listProviders() {
-      return {
-        providers: [
-          { id: 'openai', name: 'OpenAI' },
-          { id: 'anthropic', name: 'Anthropic' },
-          { id: 'gemini', name: 'Google Gemini' },
-          { id: 'vertex', name: 'Google Vertex' },
-          { id: 'open_router', name: 'Open Router' },
-          { id: 'novita', name: 'Novita' },
-          { id: 'openai_compatible', name: 'OpenAI Compatible' }
-        ]
-      };
+        return {
+            providers: [
+                { id: 'openai', name: 'OpenAI' },
+                { id: 'anthropic', name: 'Anthropic' },
+                { id: 'gemini', name: 'Google Gemini' },
+                { id: 'vertex', name: 'Google Vertex' },
+                { id: 'open_router', name: 'Open Router' },
+                { id: 'novita', name: 'Novita' },
+                { id: 'openai_compatible', name: 'OpenAI Compatible' },
+            ],
+        };
+    }
+
+    @Get('/list-models')
+    public async listModels(
+        @Query('provider') provider: string,
+        @Query('apiKey') apiKey?: string,
+        @Query('baseUrl') baseUrl?: string,
+    ) {
+        if (!provider) {
+            throw new BadRequestException('Provider é obrigatório');
+        }
+
+        return await this.getModelsByProviderUseCase.execute(provider);
     }
 }

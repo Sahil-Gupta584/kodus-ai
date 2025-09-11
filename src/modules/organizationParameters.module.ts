@@ -17,6 +17,7 @@ import { ParametersModule } from './parameters.module';
 import { OrgnizationParametersController } from '@/core/infrastructure/http/controllers/organizationParameters.controller';
 import { CreateOrUpdateOrganizationParametersUseCase } from '@/core/application/use-cases/organizationParameters/create-or-update.use-case';
 import { FindByKeyOrganizationParametersUseCase } from '@/core/application/use-cases/organizationParameters/find-by-key.use-case';
+import { GetModelsByProviderUseCase } from '@/core/application/use-cases/organizationParameters/get-models-by-provider.use-case';
 
 @Module({
     imports: [
@@ -31,6 +32,7 @@ import { FindByKeyOrganizationParametersUseCase } from '@/core/application/use-c
         SaveCategoryWorkItemsTypesUseCase,
         CreateOrUpdateOrganizationParametersUseCase,
         FindByKeyOrganizationParametersUseCase,
+        GetModelsByProviderUseCase,
         OrganizationParametersService,
         PromptService,
         ProjectManagementService,
@@ -50,6 +52,7 @@ import { FindByKeyOrganizationParametersUseCase } from '@/core/application/use-c
         ORGANIZATION_PARAMETERS_REPOSITORY_TOKEN,
         SaveCategoryWorkItemsTypesUseCase,
         OrganizationParametersService,
+        GetModelsByProviderUseCase,
     ],
 })
 export class OrganizationParametersModule {}
