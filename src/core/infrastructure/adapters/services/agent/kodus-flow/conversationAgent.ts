@@ -5,10 +5,11 @@ import {
     createOrchestration,
     Thread,
     MCPServerConfig,
-    DirectLLMAdapter,
     PlannerType,
     StorageEnum,
     getExecutionTraceability,
+    LLMAdapter,
+    toHumanAiMessages,
 } from '@kodus/flow';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
@@ -28,11 +29,16 @@ import { Inject } from '@nestjs/common';
 @Injectable()
 export class ConversationAgentProvider {
     protected config: DatabaseConnection;
-
     private orchestration: SDKOrchestrator;
     private mcpAdapter: ReturnType<typeof createMCPAdapter>;
-
-    private llmAdapter: DirectLLMAdapter;
+    private llmAdapter: LLMAdapter;
+    private readonly defaultLLMConfig = {
+        llmProvider: LLMModelProvider.GEMINI_2_5_PRO,
+        temperature: 0,
+        maxTokens: 20000,
+        maxReasoningTokens: 800,
+        stop: undefined as string[] | undefined,
+    };
 
     constructor(
         @Inject(PARAMETERS_SERVICE_TOKEN)
@@ -44,76 +50,45 @@ export class ConversationAgentProvider {
     ) {
         this.config =
             this.configService.get<DatabaseConnection>('mongoDatabase');
-        this.llmAdapter = this.createLLMAdapter();
     }
 
     private createLLMAdapter() {
-        const base = this.llmProviderService.getLLMProvider({
-            model: LLMModelProvider.GEMINI_2_5_PRO,
-            temperature: 0,
-            maxTokens: 20000,
-            maxReasoningTokens: 800,
-        });
-
-        function sanitizeName(name: string) {
-            const cleaned = name.replace(/[^\w.\-]/g, '_');
-            return cleaned.slice(0, 64);
-        }
-
-        function contentToString(content: unknown): string {
-            if (typeof content === 'string') {
-                return content;
-            }
-            if (Array.isArray(content)) {
-                return content
-                    .filter(
-                        (b: unknown): b is { type: string; text?: string } =>
-                            !!b &&
-                            typeof b === 'object' &&
-                            'type' in (b as any),
-                    )
-                    .map((b) =>
-                        (b as any).type === 'text'
-                            ? String((b as any).text ?? '')
-                            : '',
-                    )
-                    .join('');
-            }
-            return '';
-        }
-
+        const self = this;
         const wrappedLLM = {
+            name: 'agent-configurable-llm',
             async call(messages: any[], options: any = {}) {
-                const lcMessages = messages.map((m) => ({
-                    type:
-                        m.role === 'system'
-                            ? 'system'
-                            : m.role === 'user'
-                              ? 'human'
-                              : 'ai',
-                    content: m.content,
-                }));
+                const lcMessages = toHumanAiMessages(messages);
 
-                let model = base;
-                const resp = await model.invoke(lcMessages, {
-                    stop: options.stop,
-                    temperature: options.temperature,
-                    maxReasoningTokens: options.maxReasoningTokens,
+                const resolveProvider = (model?: string): LLMModelProvider => {
+                    return (
+                        (model && (model as any)) ||
+                        self.defaultLLMConfig.llmProvider
+                    );
+                };
+
+                const provider = resolveProvider(options?.model);
+
+                const client = self.llmProviderService.getLLMProvider({
+                    model: provider ?? self.defaultLLMConfig.llmProvider,
+                    temperature:
+                        options?.temperature ??
+                        self.defaultLLMConfig.temperature,
+                    maxTokens:
+                        options?.maxTokens ?? self.defaultLLMConfig.maxTokens,
+                    maxReasoningTokens:
+                        options?.maxReasoningTokens ??
+                        self.defaultLLMConfig.maxReasoningTokens,
                 });
 
-                console.log('LLM response:', JSON.stringify(resp, null, 2));
-
-                const text = contentToString(resp.content);
-
-                return {
-                    content: text,
-                    usage: resp.usage_metadata ?? {
-                        promptTokens: 0,
-                        completionTokens: 0,
-                        totalTokens: 0,
-                    },
-                    tool_calls: resp.tool_calls,
-                };
+                return await client.invoke(lcMessages, {
+                    stop: options?.stop ?? self.defaultLLMConfig.stop,
+                    temperature:
+                        options?.temperature ??
+                        self.defaultLLMConfig.temperature,
+                    maxReasoningTokens:
+                        options?.maxReasoningTokens ??
+                        self.defaultLLMConfig.maxReasoningTokens,
+                });
             },
         };
 
@@ -159,6 +134,8 @@ export class ConversationAgentProvider {
             hosts: [{ name: this.config.host, port: this.config.port }],
         }).toString();
 
+        this.llmAdapter = this.createLLMAdapter();
+
         this.orchestration = await createOrchestration({
             tenantId: 'kodus-agent-conversation',
             llmAdapter: this.llmAdapter,
@@ -198,7 +175,6 @@ export class ConversationAgentProvider {
         });
     }
 
-    // -------------------------------------------------------------------------
     private async initialize(
         organizationAndTeamData: OrganizationAndTeamData,
         userLanguage: string,
@@ -210,7 +186,11 @@ export class ConversationAgentProvider {
             await this.orchestration.connectMCP();
             await this.orchestration.registerMCPTools();
         } catch (error) {
-            console.warn('MCP offline, prosseguindo.');
+            this.logger.warn({
+                message: 'MCP offline, prosseguindo.',
+                context: ConversationAgentProvider.name,
+                error,
+            });
         }
 
         await this.orchestration.createAgent({
@@ -247,9 +227,8 @@ export class ConversationAgentProvider {
         },
     ) {
         const { organizationAndTeamData, prepareContext, thread } =
-            context || {};
+            context || ({} as any);
         try {
-            // Detect user language preference
             const userLanguage = await this.getLanguage(
                 organizationAndTeamData,
             );
@@ -332,11 +311,6 @@ export class ConversationAgentProvider {
         }
     }
 
-    /**
-     * 🌐 GET LANGUAGE CONFIGURATION
-     * Gets the language preference from team parameters
-     * Falls back to 'en-US' if no configuration is found
-     */
     private async getLanguage(
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<string> {

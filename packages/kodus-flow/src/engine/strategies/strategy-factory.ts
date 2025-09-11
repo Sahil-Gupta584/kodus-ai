@@ -18,6 +18,13 @@ export interface BaseStrategyConfig {
     maxExecutionTime?: number;
     enableLogging?: boolean;
     enableMetrics?: boolean;
+    llmDefaults?: {
+        model?: string;
+        temperature?: number;
+        maxTokens?: number;
+        maxReasoningTokens?: number;
+        stop?: string[];
+    };
 }
 
 /**

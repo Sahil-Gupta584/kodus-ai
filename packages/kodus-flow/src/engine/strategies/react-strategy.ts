@@ -26,6 +26,13 @@ export class ReActStrategy extends BaseExecutionStrategy {
         maxExecutionTime: number;
         stepTimeout: number;
     };
+    private readonly llmDefaults?: {
+        model?: string;
+        temperature?: number;
+        maxTokens?: number;
+        maxReasoningTokens?: number;
+        stop?: string[];
+    };
 
     constructor(
         private llmAdapter: LLMAdapter,
@@ -47,7 +54,8 @@ export class ReActStrategy extends BaseExecutionStrategy {
         };
 
         this.promptFactory = new StrategyPromptFactory();
-        this.config = { ...defaultConfig, ...options };
+        this.config = { ...defaultConfig, ...options } as any;
+        this.llmDefaults = (options as any)?.llmDefaults;
 
         this.logger.info('🎯 ReAct Strategy initialized', {
             config: this.config,
@@ -588,6 +596,11 @@ export class ReActStrategy extends BaseExecutionStrategy {
                             content: prompts.userPrompt,
                         },
                     ],
+                    model: this.llmDefaults?.model,
+                    temperature: this.llmDefaults?.temperature,
+                    maxTokens: this.llmDefaults?.maxTokens,
+                    maxReasoningTokens: this.llmDefaults?.maxReasoningTokens,
+                    stop: this.llmDefaults?.stop,
                     signal: context.agentContext?.signal,
                 });
 
@@ -1469,6 +1482,11 @@ export class ReActStrategy extends BaseExecutionStrategy {
                             content: finalPrompt.userPrompt,
                         },
                     ],
+                    model: this.llmDefaults?.model,
+                    temperature: this.llmDefaults?.temperature,
+                    maxTokens: this.llmDefaults?.maxTokens,
+                    maxReasoningTokens: this.llmDefaults?.maxReasoningTokens,
+                    stop: this.llmDefaults?.stop,
                     signal: context.agentContext?.signal,
                 });
             } catch (llmError) {

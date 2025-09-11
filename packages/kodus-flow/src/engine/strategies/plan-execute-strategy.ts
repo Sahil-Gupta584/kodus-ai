@@ -35,6 +35,13 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
         maxExecutionTime: number;
         enablePlanningValidation: boolean;
     };
+    private readonly llmDefaults?: {
+        model?: string;
+        temperature?: number;
+        maxTokens?: number;
+        maxReasoningTokens?: number;
+        stop?: string[];
+    };
 
     constructor(
         private llmAdapter: LLMAdapter,
@@ -61,7 +68,8 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
             enablePlanningValidation: true,
         };
 
-        this.config = { ...defaultConfig, ...options };
+        this.config = { ...defaultConfig, ...options } as any;
+        this.llmDefaults = (options as any)?.llmDefaults;
 
         this.logger.info('🗓️ Plan-Execute Strategy initialized', {
             config: this.config,
@@ -182,6 +190,11 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
                     systemPrompt: prompts.systemPrompt,
                     userPrompt: prompts.userPrompt,
                     tools: this.getAvailableToolsFormatted(context),
+                    model: this.llmDefaults?.model,
+                    temperature: this.llmDefaults?.temperature,
+                    maxTokens: this.llmDefaults?.maxTokens,
+                    maxReasoningTokens: this.llmDefaults?.maxReasoningTokens,
+                    stop: this.llmDefaults?.stop,
                     signal: context.agentContext?.signal,
                 }),
             {
