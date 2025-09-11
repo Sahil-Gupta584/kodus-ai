@@ -202,6 +202,7 @@ export class KodyRulesSyncService {
                             metadata: {
                                 filename: f.filename,
                                 repositoryId: repository.id,
+                                organizationAndTeamData,
                             },
                         });
                     }
@@ -225,6 +226,7 @@ export class KodyRulesSyncService {
                     context: KodyRulesSyncService.name,
                     metadata: {
                         repositoryId: repository.id,
+                        organizationAndTeamData,
                         forceSyncFiles,
                     },
                 });
@@ -529,6 +531,7 @@ export class KodyRulesSyncService {
                             metadata: {
                                 filename: file.path,
                                 repositoryId: repository.id,
+                                organizationAndTeamData,
                             },
                         });
                     }
@@ -539,7 +542,10 @@ export class KodyRulesSyncService {
                         message:
                             'IDE rules sync disabled and no files marked with @kody-sync',
                         context: KodyRulesSyncService.name,
-                        metadata: { repositoryId: repository.id },
+                        metadata: {
+                            repositoryId: repository.id,
+                            organizationAndTeamData,
+                        },
                     });
                     return;
                 }
@@ -553,6 +559,7 @@ export class KodyRulesSyncService {
                     context: KodyRulesSyncService.name,
                     metadata: {
                         repositoryId: repository.id,
+                        organizationAndTeamData,
                         forceSyncFiles,
                     },
                 });
@@ -884,11 +891,11 @@ export class KodyRulesSyncService {
         // Verifica as primeiras 10 linhas do arquivo
         const lines = trimmedContent.split('\n');
         const totalLines = lines.length;
-        
+
         // Se o arquivo tem 20 linhas ou menos, verifica apenas as primeiras e últimas sem sobreposição
         let firstLines: string[];
         let lastLines: string[];
-        
+
         if (totalLines <= 20) {
             const halfPoint = Math.floor(totalLines / 2);
             firstLines = lines.slice(0, halfPoint);
@@ -967,7 +974,10 @@ export class KodyRulesSyncService {
             this.logger.warn({
                 message: 'Failed to get file content',
                 context: KodyRulesSyncService.name,
-                metadata: { filename: params.filename },
+                metadata: {
+                    filename: params.filename,
+                    organizationAndTeamData: params.organizationAndTeamData,
+                },
                 error,
             });
             return null;
@@ -1066,98 +1076,6 @@ export class KodyRulesSyncService {
             );
         } catch {
             return [];
-        }
-    }
-
-    // Método temporário para testar a funcionalidade @kody-sync
-    public testForceSyncDetection(): void {
-        const testCases = [
-            {
-                name: 'Deve detectar @kody-sync no início',
-                content: `@kody-sync\n# My Rules File\nThis should be synced.`,
-                expected: true
-            },
-            {
-                name: 'Deve detectar @kody-sync no final',
-                content: `# My Rules File\nThis should be synced.\n\n@kody-sync`,
-                expected: true
-            },
-            {
-                name: 'Deve detectar em comentário HTML',
-                content: `<!-- @kody-sync -->\n# My Rules File`,
-                expected: true
-            },
-            {
-                name: 'Deve detectar em comentário JS',
-                content: `// @kody-sync\nconst rules = {};`,
-                expected: true
-            },
-            {
-                name: 'Deve detectar case insensitive',
-                content: `@KODY-SYNC\n# Rules`,
-                expected: true
-            },
-            {
-                name: 'Não deve detectar no meio do arquivo (linha 15 de 25)',
-                content: Array(25).fill('# Regular content line').map((line, i) => 
-                    i === 14 ? '@kody-sync' : line
-                ).join('\n'),
-                expected: false
-            },
-            {
-                name: 'Não deve detectar falsos positivos',
-                content: `email@kody-sync.com\nThis is not the marker.`,
-                expected: false
-            },
-            {
-                name: 'Deve retornar false para conteúdo vazio',
-                content: '',
-                expected: false
-            }
-        ];
-
-        this.logger.log({
-            message: '🧪 Testando detecção de @kody-sync',
-            context: KodyRulesSyncService.name,
-        });
-
-        let passed = 0;
-        let failed = 0;
-
-        testCases.forEach((test, index) => {
-            const result = this.shouldForceSync(test.content);
-            const success = result === test.expected;
-            
-            if (success) {
-                this.logger.log({
-                    message: `✅ ${index + 1}. ${test.name}`,
-                    context: KodyRulesSyncService.name,
-                });
-                passed++;
-            } else {
-                this.logger.error({
-                    message: `❌ ${index + 1}. ${test.name} - Esperado: ${test.expected}, Recebido: ${result}`,
-                    context: KodyRulesSyncService.name,
-                });
-                failed++;
-            }
-        });
-
-        this.logger.log({
-            message: `📊 Resultados dos testes: ${passed} ✅ | ${failed} ❌`,
-            context: KodyRulesSyncService.name,
-        });
-
-        if (failed === 0) {
-            this.logger.log({
-                message: '🎉 Todos os testes passaram! A funcionalidade @kody-sync está funcionando corretamente.',
-                context: KodyRulesSyncService.name,
-            });
-        } else {
-            this.logger.error({
-                message: '⚠️ Alguns testes falharam. Verifique a implementação.',
-                context: KodyRulesSyncService.name,
-            });
         }
     }
 }
