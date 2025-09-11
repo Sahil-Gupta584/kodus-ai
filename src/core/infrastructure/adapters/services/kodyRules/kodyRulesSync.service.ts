@@ -120,35 +120,6 @@ export class KodyRulesSyncService {
         }
     }
 
-    private async findRulesBySourcePath(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        repositoryId: string;
-        sourcePath: string;
-    }): Promise<Partial<IKodyRule>[]> {
-        try {
-            const { organizationAndTeamData, repositoryId, sourcePath } =
-                params;
-            const existing = await this.kodyRulesService.findByOrganizationId(
-                organizationAndTeamData.organizationId,
-            );
-            return (
-                existing?.rules?.filter(
-                    (r) =>
-                        r?.repositoryId === repositoryId &&
-                        r?.sourcePath === sourcePath,
-                ) || []
-            );
-        } catch (error) {
-            this.logger.error({
-                message: 'Failed to list rules by sourcePath',
-                context: KodyRulesSyncService.name,
-                error,
-                metadata: params,
-            });
-            return [];
-        }
-    }
-
     async syncFromChangedFiles(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { id: string; name: string; fullName?: string };
@@ -170,16 +141,93 @@ export class KodyRulesSyncService {
                 organizationAndTeamData,
                 repository.id,
             );
+
+            // If the sync is disabled, we need to force sync the files that have @kody-sync
+            let forceSyncFiles: string[] = [];
             if (!syncEnabled) {
+                // First, we need to check which files can be rule files
+                const directoryPatterns = await this.getDirectoryPatterns(
+                    organizationAndTeamData,
+                    repository.id,
+                );
+                const patterns = [...RULE_FILE_PATTERNS, ...directoryPatterns];
+                const isRuleFile = (fp?: string) =>
+                    !!fp && isFileMatchingGlob(fp, patterns);
+
+                const ruleChanges = files.filter(
+                    (f) =>
+                        isRuleFile(f.filename) ||
+                        isRuleFile(f.previous_filename),
+                );
+
+                // Get the PR details once
+                const prDetails =
+                    await this.codeManagementService.getPullRequestByNumber({
+                        organizationAndTeamData,
+                        repository: {
+                            id: repository.id,
+                            name: repository.name,
+                        },
+                        prNumber: pullRequestNumber,
+                    });
+
+                const { head, base } =
+                    this.extractRefsFromPullRequest(prDetails);
+                const pullRequestParam: any = {
+                    number: pullRequestNumber,
+                    head: head ? { ref: head } : undefined,
+                    base: base ? { ref: base } : undefined,
+                };
+
+                // Now we need to check which files have @kody-sync in the content
+                for (const f of ruleChanges) {
+                    if (f.status === 'removed') continue;
+
+                    const content = await this.getFileContent({
+                        organizationAndTeamData,
+                        repository: {
+                            id: repository.id,
+                            name: repository.name,
+                        },
+                        filename: f.filename,
+                        pullRequest: pullRequestParam,
+                    });
+
+                    if (content && this.shouldForceSync(content)) {
+                        forceSyncFiles.push(f.filename);
+                        this.logger.log({
+                            message:
+                                'File marked for force sync with @kody-sync',
+                            context: KodyRulesSyncService.name,
+                            metadata: {
+                                filename: f.filename,
+                                repositoryId: repository.id,
+                            },
+                        });
+                    }
+                }
+
+                if (forceSyncFiles.length === 0) {
+                    this.logger.log({
+                        message:
+                            'IDE rules sync disabled and no files marked with @kody-sync',
+                        context: KodyRulesSyncService.name,
+                        metadata: {
+                            repositoryId: repository.id,
+                            organizationAndTeamData,
+                        },
+                    });
+                    return;
+                }
+
                 this.logger.log({
-                    message: 'IDE rules sync disabled by CODE_REVIEW_CONFIG',
+                    message: `Found ${forceSyncFiles.length} files marked for force sync`,
                     context: KodyRulesSyncService.name,
                     metadata: {
                         repositoryId: repository.id,
-                        organizationAndTeamData,
+                        forceSyncFiles,
                     },
                 });
-                return;
             }
 
             const prDetails =
@@ -205,10 +253,18 @@ export class KodyRulesSyncService {
             const isRuleFile = (fp?: string) =>
                 !!fp && isFileMatchingGlob(fp, patterns);
 
-            const ruleChanges = files.filter(
+            let ruleChanges = files.filter(
                 (f) =>
                     isRuleFile(f.filename) || isRuleFile(f.previous_filename),
             );
+
+            // Se o sync não estiver habilitado, filtrar apenas os arquivos marcados para force sync
+            if (!syncEnabled && forceSyncFiles.length > 0) {
+                ruleChanges = ruleChanges.filter((f) =>
+                    forceSyncFiles.includes(f.filename),
+                );
+            }
+
             if (!ruleChanges.length) return;
 
             for (const f of ruleChanges) {
@@ -308,16 +364,17 @@ export class KodyRulesSyncService {
                 //Verify if the file should be ignored due to the @kody-ignore marker
                 if (this.shouldIgnoreFile(decoded)) {
                     this.logger.log({
-                        message: 'File ignored due to @kody-ignore marker - removing existing rules',
+                        message:
+                            'File ignored due to @kody-ignore marker - removing existing rules',
                         context: KodyRulesSyncService.name,
-                        metadata: { 
+                        metadata: {
                             file: f.filename,
                             repositoryId: repository.id,
                             pullRequestNumber,
                             organizationAndTeamData,
                         },
                     });
-                    
+
                     // Remove existing rules for this file
                     await this.deleteRuleBySourcePath({
                         organizationAndTeamData,
@@ -423,14 +480,6 @@ export class KodyRulesSyncService {
                 organizationAndTeamData,
                 repository.id,
             );
-            if (!syncEnabled) {
-                this.logger.log({
-                    message: 'IDE rules sync disabled by CODE_REVIEW_CONFIG',
-                    context: KodyRulesSyncService.name,
-                    metadata: { repositoryId: repository.id },
-                });
-                return;
-            }
 
             const branch = await this.codeManagementService.getDefaultBranch({
                 organizationAndTeamData,
@@ -445,7 +494,7 @@ export class KodyRulesSyncService {
             const patterns = [...RULE_FILE_PATTERNS, ...directoryPatterns];
 
             // List only rule files
-            const files =
+            const allFiles =
                 await this.codeManagementService.getRepositoryAllFiles({
                     organizationAndTeamData,
                     repository: { id: repository.id, name: repository.name },
@@ -455,7 +504,61 @@ export class KodyRulesSyncService {
                     },
                 });
 
-            for (const file of files) {
+            // Se o sync não estiver habilitado, verificar quais arquivos têm @kody-sync
+            let filesToSync = allFiles;
+            if (!syncEnabled) {
+                const forceSyncFiles: string[] = [];
+
+                for (const file of allFiles) {
+                    const content = await this.getFileContent({
+                        organizationAndTeamData,
+                        repository: {
+                            id: repository.id,
+                            name: repository.name,
+                        },
+                        filename: file.path,
+                        branch,
+                    });
+
+                    if (content && this.shouldForceSync(content)) {
+                        forceSyncFiles.push(file.path);
+                        this.logger.log({
+                            message:
+                                'File marked for force sync with @kody-sync',
+                            context: KodyRulesSyncService.name,
+                            metadata: {
+                                filename: file.path,
+                                repositoryId: repository.id,
+                            },
+                        });
+                    }
+                }
+
+                if (forceSyncFiles.length === 0) {
+                    this.logger.log({
+                        message:
+                            'IDE rules sync disabled and no files marked with @kody-sync',
+                        context: KodyRulesSyncService.name,
+                        metadata: { repositoryId: repository.id },
+                    });
+                    return;
+                }
+
+                filesToSync = allFiles.filter((file) =>
+                    forceSyncFiles.includes(file.path),
+                );
+
+                this.logger.log({
+                    message: `Found ${forceSyncFiles.length} files marked for force sync`,
+                    context: KodyRulesSyncService.name,
+                    metadata: {
+                        repositoryId: repository.id,
+                        forceSyncFiles,
+                    },
+                });
+            }
+
+            for (const file of filesToSync) {
                 const contentResp =
                     await this.codeManagementService.getRepositoryContentFile({
                         organizationAndTeamData,
@@ -481,16 +584,17 @@ export class KodyRulesSyncService {
                 // Verify if the file should be ignored due to the @kody-ignore marker
                 if (this.shouldIgnoreFile(decoded)) {
                     this.logger.log({
-                        message: 'File ignored due to @kody-ignore marker - removing existing rules',
+                        message:
+                            'File ignored due to @kody-ignore marker - removing existing rules',
                         context: KodyRulesSyncService.name,
-                        metadata: { 
+                        metadata: {
                             file: file.path,
                             repositoryId: repository.id,
                             syncType: 'main',
                             organizationAndTeamData,
                         },
                     });
-                    
+
                     // Remove existing rules for this file
                     await this.deleteRuleBySourcePath({
                         organizationAndTeamData,
@@ -764,6 +868,113 @@ export class KodyRulesSyncService {
     }
 
     /**
+     * Verifica se um arquivo deve ser sincronizado forçadamente baseado na marcação @kody-sync
+     * A marcação pode estar no início ou final do arquivo
+     */
+    private shouldForceSync(content: string): boolean {
+        if (!content || typeof content !== 'string') {
+            return false;
+        }
+
+        const trimmedContent = content.trim();
+        if (!trimmedContent) {
+            return false;
+        }
+
+        // Verifica as primeiras 10 linhas do arquivo
+        const lines = trimmedContent.split('\n');
+        const totalLines = lines.length;
+        
+        // Se o arquivo tem 20 linhas ou menos, verifica apenas as primeiras e últimas sem sobreposição
+        let firstLines: string[];
+        let lastLines: string[];
+        
+        if (totalLines <= 20) {
+            const halfPoint = Math.floor(totalLines / 2);
+            firstLines = lines.slice(0, halfPoint);
+            lastLines = lines.slice(halfPoint);
+        } else {
+            firstLines = lines.slice(0, 10);
+            lastLines = lines.slice(-10);
+        }
+
+        // Padrão para detectar @kody-sync (case insensitive, com word boundary)
+        // Deve ter uma quebra de palavra antes do @ E depois de "sync" para evitar falsos positivos
+        const syncPattern = /(?:^|[^a-zA-Z0-9._-])@kody-sync(?![a-zA-Z0-9_-])/i;
+
+        // Verifica no início do arquivo
+        const hasSyncAtStart = firstLines.some((line) =>
+            syncPattern.test(line.trim()),
+        );
+
+        // Verifica no final do arquivo
+        const hasSyncAtEnd = lastLines.some((line) =>
+            syncPattern.test(line.trim()),
+        );
+
+        return hasSyncAtStart || hasSyncAtEnd;
+    }
+
+    /**
+     * Busca e decodifica o conteúdo de um arquivo do repositório
+     */
+    private async getFileContent(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        filename: string;
+        pullRequest?: any;
+        branch?: string;
+    }): Promise<string | null> {
+        try {
+            const {
+                organizationAndTeamData,
+                repository,
+                filename,
+                pullRequest,
+                branch,
+            } = params;
+
+            const requestParams: any = {
+                organizationAndTeamData,
+                repository,
+                file: { filename },
+            };
+
+            if (pullRequest) {
+                requestParams.pullRequest = pullRequest;
+            } else if (branch) {
+                requestParams.pullRequest = {
+                    head: { ref: branch },
+                    base: { ref: branch },
+                };
+            }
+
+            const contentResp =
+                await this.codeManagementService.getRepositoryContentFile(
+                    requestParams,
+                );
+            const rawContent = contentResp?.data?.content;
+
+            if (!rawContent) return null;
+
+            const decoded =
+                contentResp?.data?.encoding === 'base64'
+                    ? Buffer.from(rawContent, 'base64').toString('utf-8')
+                    : rawContent;
+
+            return decoded;
+        } catch (error) {
+            this.logger.warn({
+                message: 'Failed to get file content',
+                context: KodyRulesSyncService.name,
+                metadata: { filename: params.filename },
+                error,
+            });
+            return null;
+        }
+    }
+
+    /**
      * Verifica se um arquivo deve ser ignorado baseado na marcação @kody-ignore
      * A marcação pode estar no início ou final do arquivo
      */
@@ -786,13 +997,13 @@ export class KodyRulesSyncService {
         const ignorePattern = /@kody-ignore\b/i;
 
         // Verifica no início do arquivo
-        const hasIgnoreAtStart = firstLines.some(line => 
-            ignorePattern.test(line.trim())
+        const hasIgnoreAtStart = firstLines.some((line) =>
+            ignorePattern.test(line.trim()),
         );
 
         // Verifica no final do arquivo
-        const hasIgnoreAtEnd = lastLines.some(line => 
-            ignorePattern.test(line.trim())
+        const hasIgnoreAtEnd = lastLines.some((line) =>
+            ignorePattern.test(line.trim()),
         );
 
         return hasIgnoreAtStart || hasIgnoreAtEnd;
@@ -855,6 +1066,98 @@ export class KodyRulesSyncService {
             );
         } catch {
             return [];
+        }
+    }
+
+    // Método temporário para testar a funcionalidade @kody-sync
+    public testForceSyncDetection(): void {
+        const testCases = [
+            {
+                name: 'Deve detectar @kody-sync no início',
+                content: `@kody-sync\n# My Rules File\nThis should be synced.`,
+                expected: true
+            },
+            {
+                name: 'Deve detectar @kody-sync no final',
+                content: `# My Rules File\nThis should be synced.\n\n@kody-sync`,
+                expected: true
+            },
+            {
+                name: 'Deve detectar em comentário HTML',
+                content: `<!-- @kody-sync -->\n# My Rules File`,
+                expected: true
+            },
+            {
+                name: 'Deve detectar em comentário JS',
+                content: `// @kody-sync\nconst rules = {};`,
+                expected: true
+            },
+            {
+                name: 'Deve detectar case insensitive',
+                content: `@KODY-SYNC\n# Rules`,
+                expected: true
+            },
+            {
+                name: 'Não deve detectar no meio do arquivo (linha 15 de 25)',
+                content: Array(25).fill('# Regular content line').map((line, i) => 
+                    i === 14 ? '@kody-sync' : line
+                ).join('\n'),
+                expected: false
+            },
+            {
+                name: 'Não deve detectar falsos positivos',
+                content: `email@kody-sync.com\nThis is not the marker.`,
+                expected: false
+            },
+            {
+                name: 'Deve retornar false para conteúdo vazio',
+                content: '',
+                expected: false
+            }
+        ];
+
+        this.logger.log({
+            message: '🧪 Testando detecção de @kody-sync',
+            context: KodyRulesSyncService.name,
+        });
+
+        let passed = 0;
+        let failed = 0;
+
+        testCases.forEach((test, index) => {
+            const result = this.shouldForceSync(test.content);
+            const success = result === test.expected;
+            
+            if (success) {
+                this.logger.log({
+                    message: `✅ ${index + 1}. ${test.name}`,
+                    context: KodyRulesSyncService.name,
+                });
+                passed++;
+            } else {
+                this.logger.error({
+                    message: `❌ ${index + 1}. ${test.name} - Esperado: ${test.expected}, Recebido: ${result}`,
+                    context: KodyRulesSyncService.name,
+                });
+                failed++;
+            }
+        });
+
+        this.logger.log({
+            message: `📊 Resultados dos testes: ${passed} ✅ | ${failed} ❌`,
+            context: KodyRulesSyncService.name,
+        });
+
+        if (failed === 0) {
+            this.logger.log({
+                message: '🎉 Todos os testes passaram! A funcionalidade @kody-sync está funcionando corretamente.',
+                context: KodyRulesSyncService.name,
+            });
+        } else {
+            this.logger.error({
+                message: '⚠️ Alguns testes falharam. Verifique a implementação.',
+                context: KodyRulesSyncService.name,
+            });
         }
     }
 }
