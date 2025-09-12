@@ -13,6 +13,7 @@ import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { SaveAllTeamMetricsHistoryUseCase } from '../metrics/save-all-metrics-history.use-case';
 import { SaveAllOrganizationMetricsHistoryUseCase } from '../organizationMetrics/save-metrics-history.use-case';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+import { CodeReviewVersion } from '@/config/types/general/codeReview.type';
 
 @Injectable()
 export class FinishSetupUseCase {
@@ -87,18 +88,23 @@ export class FinishSetupUseCase {
                                         reviewOptions: {
                                             security: true,
                                             code_style: true,
+                                            kody_rules: true,
                                             refactoring: true,
                                             error_handling: true,
                                             maintainability: true,
                                             potential_issues: true,
                                             documentation_and_comments: true,
                                             performance_and_optimization: true,
-                                            kody_rules: true,
+                                            breaking_changes: true,
+                                            bug: true,
+                                            performance: true,
+                                            cross_file: true,
                                         },
                                         limitationType: 'pr',
                                         maxSuggestions: 8,
                                         severityLevelFilter:
                                             SeverityLevel.MEDIUM,
+                                        codeReviewVersion: CodeReviewVersion.v2,
                                     },
                                     {
                                         teamId: teamId,

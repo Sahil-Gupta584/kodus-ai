@@ -459,7 +459,13 @@ export class CommentAnalysisService {
                         value <= thresholds.upperThreshold,
                 ]),
             ) as { [key in keyof ReviewOptions]: boolean };
+
+            // Force specific categories to always be true
+            categories.bug = true;
+            categories.cross_file = true;
+            categories.performance = true;
             categories.kody_rules = true;
+            categories.security = true;
             categories.breaking_changes = true;
 
             const severityLevels: SeverityLevel[] = [
@@ -580,11 +586,14 @@ export class CommentAnalysisService {
             const count: CommentFrequency = {
                 categories: {
                     breaking_changes: 0,
+                    bug: 0,
                     code_style: 0,
+                    cross_file: 0,
                     documentation_and_comments: 0,
                     error_handling: 0,
                     kody_rules: 0,
                     maintainability: 0,
+                    performance: 0,
                     performance_and_optimization: 0,
                     potential_issues: 0,
                     refactoring: 0,
