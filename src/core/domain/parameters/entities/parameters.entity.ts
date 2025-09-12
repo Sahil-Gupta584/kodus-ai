@@ -7,12 +7,16 @@ export class ParametersEntity implements IParameters {
     private _configKey: ParametersKey;
     private _configValue: any;
     private _team?: Partial<ITeam>;
+    private _createdAt?: Date;
+    private _updatedAt?: Date;
 
     constructor(parameters: IParameters | Partial<IParameters>) {
         this._uuid = parameters.uuid;
         this._configKey = parameters.configKey;
         this._configValue = parameters.configValue;
         this._team = parameters.team;
+        this._createdAt = parameters.createdAt;
+        this._updatedAt = parameters.updatedAt;
     }
 
     public static create(parameters: IParameters | Partial<IParameters>) {
@@ -33,5 +37,13 @@ export class ParametersEntity implements IParameters {
 
     public get team() {
         return this._team;
+    }
+
+    public get createdAt() {
+        return this._createdAt;
+    }
+
+    public get updatedAt() {
+        return this._updatedAt;
     }
 }
