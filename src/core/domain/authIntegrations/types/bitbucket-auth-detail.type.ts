@@ -4,4 +4,5 @@ export type BitbucketAuthDetail = {
     username: string;
     appPassword: string;
     authMode: AuthMode;
+    email?: string;
 };
