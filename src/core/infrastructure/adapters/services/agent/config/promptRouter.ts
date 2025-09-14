@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 import zodToJsonSchema from 'zod-to-json-schema';
 import { JsonOutputFunctionsParser } from 'langchain/output_parsers';
+import { convertToOpenAITool } from '@langchain/core/utils/function_calling';
+import { DynamicStructuredTool } from '@langchain/core/tools';
 import { Inject } from '@nestjs/common';
 import { IAgentRouterStrategy } from '@/shared/domain/contracts/agent-router.strategy.contracts';
 import {
@@ -201,20 +203,23 @@ export class PromptRouter {
 
             const outputParser = new JsonOutputFunctionsParser();
 
-            const functionCallingModel = llm.withConfig({
-                functions: [
-                    {
-                        name: 'output_formatter',
-                        description:
-                            'Should always be used to properly format output',
-                        parameters: zodToJsonSchema(zodSchema),
-                    },
-                ],
-                function_call: { name: 'output_formatter' },
+            const formatterTool = new DynamicStructuredTool({
+                name: 'output_formatter',
+                description: 'Should always be used to properly format output',
+                schema: zodToJsonSchema(zodSchema) as any, // Adicionar 'as any' temporariamente
+                func: async () => 'formatted',
+            });
+            
+            const functionCallingModel = (llm as any).bind({
+                tools: [convertToOpenAITool(formatterTool)],
+                tool_choice: {
+                    type: 'function',
+                    function: { name: 'output_formatter' },
+                },
             });
 
             const chain = prompt
-                .pipe(functionCallingModel as any)
+                .pipe(functionCallingModel)
                 .pipe(outputParser);
 
             const collection = this.memoryService.getNativeCollection();
