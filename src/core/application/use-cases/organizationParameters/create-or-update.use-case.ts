@@ -27,8 +27,12 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
         try {
             // Processa a criptografia da apiKey se for BYOK_CONFIG
             let processedConfigValue = configValue;
-            if (organizationParametersKey === OrganizationParametersKey.BYOK_CONFIG) {
-                processedConfigValue = this.encryptByokConfigApiKey(configValue);
+            if (
+                organizationParametersKey ===
+                OrganizationParametersKey.BYOK_CONFIG
+            ) {
+                processedConfigValue =
+                    this.encryptByokConfigApiKey(configValue);
             }
 
             return await this.organizationParametersService.createOrUpdateConfig(
@@ -53,20 +57,29 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
         }
     }
 
-    private encryptByokConfigApiKey(configValue: any): OrganizationParametersByokConfig {
+    private encryptByokConfigApiKey(
+        configValue: any,
+    ): OrganizationParametersByokConfig {
         if (!configValue || typeof configValue !== 'object') {
             throw new Error('Invalid BYOK config value');
         }
 
         const byokConfig = configValue as OrganizationParametersByokConfig;
-        
-        if (!byokConfig.apiKey) {
+
+        if (!byokConfig.main.apiKey) {
             throw new Error('apiKey is required for BYOK config');
         }
 
         return {
             ...byokConfig,
-            apiKey: encrypt(byokConfig.apiKey),
+            main: {
+                ...byokConfig.main,
+                apiKey: encrypt(byokConfig.main.apiKey),
+            },
+            fallback: {
+                ...byokConfig.fallback,
+                apiKey: encrypt(byokConfig.fallback.apiKey),
+            },
         };
     }
 }

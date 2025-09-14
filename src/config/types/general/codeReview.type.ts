@@ -12,6 +12,7 @@ import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullReque
 import { ConfigLevel } from './pullRequestMessages.type';
 import z from 'zod';
 import { CodeReviewPipelineContext } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/context/code-review-pipeline.context';
+import { OrganizationParametersByokConfig } from '@/core/domain/organizationParameters/types/organizationParameters.types';
 
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
@@ -315,6 +316,7 @@ export type CodeReviewConfig = {
     directoryPath?: string;
     runOnDraft?: boolean;
     codeReviewVersion?: CodeReviewVersion;
+    byokConfig?: OrganizationParametersByokConfig;
 };
 
 export enum CodeReviewVersion {

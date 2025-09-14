@@ -4,8 +4,16 @@ export type OrganizationParametersAutoJoinConfig = {
 };
 
 export type OrganizationParametersByokConfig = {
-    apiKey: string;
-    provider: string;
-    model: string;
-    baseUrl?: string;
+    main: {
+        apiKey: string;
+        provider: string;
+        model: string;
+        baseUrl?: string;
+    };
+    fallback?: {
+        apiKey: string;
+        provider: string;
+        model: string;
+        baseUrl?: string;
+    };
 };
