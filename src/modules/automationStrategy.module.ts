@@ -41,6 +41,7 @@ import { PullRequestsModule } from './pullRequests.module';
 import { TeamArtifactsModule } from './teamArtifacts.module';
 import { LicenseModule } from '@/ee/license/license.module';
 import { CodeReviewExecutionModule } from './codeReviewExecution.module';
+import { OrganizationParametersModule } from './organizationParameters.module';
 
 @Module({
     imports: [
@@ -68,6 +69,7 @@ import { CodeReviewExecutionModule } from './codeReviewExecution.module';
         forwardRef(() => OrganizationModule),
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => PullRequestsModule),
+        forwardRef(() => OrganizationParametersModule),
         CheckinHistoryOrganizationModule,
         AuthIntegrationModule,
         CheckinHistoryModule,

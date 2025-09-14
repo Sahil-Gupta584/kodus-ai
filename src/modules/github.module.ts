@@ -24,6 +24,7 @@ import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.us
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 import { CodebaseModule } from './codeBase.module';
 import { LicenseModule } from '@/ee/license/license.module';
+import { OrganizationParametersModule } from './organizationParameters.module';
 
 @Module({
     imports: [
@@ -44,6 +45,7 @@ import { LicenseModule } from '@/ee/license/license.module';
         forwardRef(() => AgentModule),
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
+        forwardRef(() => OrganizationParametersModule),
         LicenseModule
     ],
     providers: [
