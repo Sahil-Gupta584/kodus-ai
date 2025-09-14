@@ -3,9 +3,8 @@ import { Inject, Injectable, LoggerService } from '@nestjs/common';
 import { LLMModelProvider, MODEL_STRATEGIES, getChatGPT } from './helper';
 import { ChatOpenAI } from '@langchain/openai';
 import { Runnable } from '@langchain/core/runnables';
-import { ChatAnthropic } from '@langchain/anthropic';
-import { ChatVertexAI } from '@langchain/google-vertexai';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { BYOKConfig, BYOKProviderService } from './byokProvider.service';
 
 export type LLMProviderOptions = {
     model: LLMModelProvider | string;
@@ -14,23 +13,45 @@ export type LLMProviderOptions = {
     maxTokens?: number;
     jsonMode?: boolean;
     maxReasoningTokens?: number;
+    byokConfig?: BYOKConfig;
 };
 
-export type LLMProviderReturn =
-    | ChatOpenAI
-    | ChatAnthropic
-    | ChatVertexAI
-    | Runnable;
+export type LLMProviderReturn = (BaseChatModel | Runnable) & {
+    invoke: (input: any, options?: any) => Promise<any>;
+};
 
 @Injectable()
 export class LLMProviderService {
     constructor(
         @Inject('LLM_LOGGER')
         private readonly logger: LoggerService,
+        private readonly byokProviderService: BYOKProviderService,
     ) {}
 
     getLLMProvider(options: LLMProviderOptions): LLMProviderReturn {
         try {
+            if (options.byokConfig) {
+                const byokProvider =
+                    this.byokProviderService.createBYOKProvider(
+                        options.byokConfig,
+                        {
+                            temperature: options.temperature,
+                            maxTokens: options.maxTokens,
+                            callbacks: options.callbacks,
+                            jsonMode: options.jsonMode,
+                            maxReasoningTokens: options.maxReasoningTokens,
+                        },
+                    );
+
+                if (options.jsonMode && byokProvider instanceof ChatOpenAI) {
+                    return byokProvider.withConfig({
+                        response_format: { type: 'json_object' },
+                    });
+                }
+
+                return byokProvider;
+            }
+
             const envMode = process.env.API_LLM_PROVIDER_MODEL ?? 'auto';
 
             if (envMode !== 'auto') {
