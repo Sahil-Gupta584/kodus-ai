@@ -9,6 +9,7 @@ import {
     PromptRunnerService,
 } from './promptRunner.service';
 import z from 'zod';
+import { BYOKConfig } from './byokProvider.service';
 
 export enum ParserType {
     STRING = 'string',
@@ -86,10 +87,32 @@ export class PromptBuilder {
  * and execute them using the `PromptRunnerService`.
  */
 class PromptBuilderWithProviders {
+    private byokConfig?: BYOKConfig['main'];
+    private byokFallbackConfig?: BYOKConfig['fallback'];
     constructor(
         private readonly runner: PromptRunnerService,
         private readonly params: Partial<PromptRunnerParams<void>> = {},
     ) {}
+
+    /**
+     * Sets BYOK configuration for the main provider
+     * @param config BYOK configuration with provider, apiKey, model, and optional baseURL
+     * @returns The PromptBuilderWithProviders instance for chaining
+     */
+    setBYOKConfig(config: BYOKConfig): this {
+        this.byokConfig = config.main;
+        return this;
+    }
+
+    /**
+     * Sets BYOK configuration for the fallback provider
+     * @param config BYOK configuration for fallback
+     * @returns The PromptBuilderWithProviders instance for chaining
+     */
+    setBYOKFallbackConfig(config: BYOKConfig): this {
+        this.byokFallbackConfig = config.fallback;
+        return this;
+    }
 
     /**
      * Sets a custom parser for the prompt execution.
@@ -144,6 +167,13 @@ class PromptBuilderWithProviders {
         NewOutputType | string | z.infer<z.ZodObject>,
         ParserType
     > {
+        const newParams = {
+            ...this.params,
+            byokConfig: this.byokConfig ? { main: this.byokConfig } : undefined,
+            byokFallbackConfig: this.byokFallbackConfig
+                ? { main: this.byokFallbackConfig }
+                : undefined,
+        };
         switch (type) {
             case ParserType.STRING: {
                 return new ConfigurablePromptBuilderWithoutPayload<
@@ -152,7 +182,7 @@ class PromptBuilderWithProviders {
                 >(
                     this.runner,
                     {
-                        ...this.params,
+                        ...newParams,
                         parser: new CustomStringOutputParser(),
                     },
                     ParserType.STRING,
@@ -165,7 +195,7 @@ class PromptBuilderWithProviders {
                 >(
                     this.runner,
                     {
-                        ...this.params,
+                        ...newParams,
                         parser: new JsonOutputParser<
                             SafeJsonOutput<NewOutputType>
                         >(),
@@ -189,7 +219,7 @@ class PromptBuilderWithProviders {
                 >(
                     this.runner,
                     {
-                        ...this.params,
+                        ...newParams,
                         parser: parserOrSchema,
                     },
                     ParserType.CUSTOM,
@@ -208,7 +238,7 @@ class PromptBuilderWithProviders {
                 >(
                     this.runner,
                     {
-                        ...this.params,
+                        ...newParams,
                         parser: new ZodOutputParser({
                             schema: parserOrSchema,
                             promptRunnerService: this.runner,
@@ -266,6 +296,26 @@ class ConfigurablePromptBuilder<
             tags: [],
             ...initialParams,
         };
+    }
+
+    /**
+     * Sets BYOK configuration for the main provider
+     * @param config BYOK configuration with provider, apiKey, model, and optional baseURL
+     * @returns The ConfigurablePromptBuilder instance for chaining
+     */
+    setBYOKConfig(config: BYOKConfig): this {
+        this.params.byokConfig = config;
+        return this;
+    }
+
+    /**
+     * Sets BYOK configuration for the fallback provider
+     * @param config BYOK configuration for fallback
+     * @returns The ConfigurablePromptBuilder instance for chaining
+     */
+    setBYOKFallbackConfig(config: BYOKConfig): this {
+        this.params.byokFallbackConfig = config;
+        return this;
     }
 
     /**

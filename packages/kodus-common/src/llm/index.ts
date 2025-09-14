@@ -3,6 +3,7 @@
  */
 
 export * from './builder';
+export * from './byokProvider.service';
 export * from './helper';
 export * from './llm.module';
 export * from './llmModelProvider.service';

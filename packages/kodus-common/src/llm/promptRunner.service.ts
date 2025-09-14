@@ -13,6 +13,7 @@ import {
     BaseMessageLike,
     isBaseMessage,
 } from '@langchain/core/messages';
+import { BYOKConfig } from './byokProvider.service';
 
 export type PromptFn<Payload> = (input: Payload) => string;
 
@@ -43,6 +44,8 @@ export type PromptRunnerParams<Payload, OutputType = any> = {
     parser: BaseOutputParser<OutputType>;
     prompts: PromptConfig<Payload>[];
     payload?: Payload;
+    byokConfig?: BYOKConfig;
+    byokFallbackConfig?: BYOKConfig;
 } & Partial<Omit<LLMProviderOptions, 'model'>> &
     /** Options passed to the `withConfig` langchain method */
     Partial<RunnableConfig>;
@@ -138,7 +141,7 @@ export class PromptRunnerService {
         try {
             this.validateParams(params);
 
-            const { fallbackProvider } = params;
+            const { fallbackProvider, byokFallbackConfig } = params;
 
             const mainChain = this.createProviderChain<Payload, OutputType>(
                 params,
@@ -148,7 +151,8 @@ export class PromptRunnerService {
                 throw new Error('Main chain could not be created');
             }
 
-            if (!fallbackProvider) {
+            // Considerar tanto fallbackProvider quanto byokFallbackConfig
+            if (!fallbackProvider && !byokFallbackConfig) {
                 return mainChain.withConfig(params);
             }
 
@@ -204,10 +208,15 @@ export class PromptRunnerService {
             const providerToUse =
                 fallback && fallbackProvider ? fallbackProvider : provider;
 
+            const byokConfig = fallback
+                ? params.byokFallbackConfig
+                : params.byokConfig;
+
             const llm = this.llmProvider.getLLMProvider({
                 ...params,
                 model: providerToUse,
                 temperature,
+                byokConfig,
             });
 
             const promptFn = (input: Payload) => {
@@ -304,8 +313,11 @@ export class PromptRunnerService {
     private validateParams<Payload>(
         params: PromptRunnerParams<Payload>,
     ): asserts params is PromptRunnerParams<Payload> {
-        if (!params.provider) {
-            throw new Error('Provider must be defined in the parameters.');
+        // BYOK é opcional, então ajustar validação
+        if (!params.provider && !params.byokConfig) {
+            throw new Error(
+                'Provider or BYOK config must be defined in the parameters.',
+            );
         }
         if (!params.parser) {
             throw new Error('Parser must be defined in the parameters.');
