@@ -34,8 +34,6 @@ export class PullRequestController {
     }
 
     @Get('/executions')
-    @UseInterceptors(CacheInterceptor)
-    @CacheTTL(300000) // 5 minutos em milliseconds
     public async getPullRequestExecutions(
         @Query() query: EnrichedPullRequestsQueryDto,
     ): Promise<PaginatedEnrichedPullRequestsResponse> {
