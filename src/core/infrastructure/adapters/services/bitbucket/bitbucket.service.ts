@@ -259,7 +259,6 @@ export class BitbucketService
             if (!bitbucketAuthDetail) {
                 throw new BadRequestException('Installation not found');
             }
-            // Construct the full Bitbucket URL
             const fullBitbucketUrl = `https://bitbucket.org/${params?.repository?.fullName}`;
 
             return {
@@ -270,6 +269,7 @@ export class BitbucketService
                 branch: params?.repository?.defaultBranch,
                 provider: PlatformType.BITBUCKET,
                 auth: {
+                    username: bitbucketAuthDetail.username,
                     type: bitbucketAuthDetail.authMode,
                     token: decrypt(bitbucketAuthDetail.appPassword),
                 },

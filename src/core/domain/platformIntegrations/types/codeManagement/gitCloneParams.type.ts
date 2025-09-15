@@ -7,6 +7,7 @@ export type GitCloneParams = {
     branch?: string;
     auth?: {
         type?: AuthMode;
+        username?: string;
         token?: string;
         org?: string;
     };
