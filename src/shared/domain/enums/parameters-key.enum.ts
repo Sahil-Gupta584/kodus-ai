@@ -8,4 +8,5 @@ export enum ParametersKey {
     TEAM_ARTIFACTS_CONFIG = 'team_artifacts_config',
     PLATFORM_CONFIGS = 'platform_configs',
     LANGUAGE_CONFIG = 'language_config',
+    ISSUE_CREATION_CONFIG = 'issue_creation_config'
 }

@@ -239,6 +239,11 @@ export class KodyIssuesManagementService
                     status: IssueStatus.OPEN,
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString(),
+                    owner: {
+                        email: pullRequest.user.email,
+                        id: pullRequest.user.id,
+                        name: pullRequest.user.name,
+                    },
                 });
             }
         } catch (error) {

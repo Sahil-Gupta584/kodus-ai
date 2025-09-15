@@ -19,6 +19,16 @@ export class IssuesEntity implements Entity<IIssue> {
     public organizationId: string;
     public createdAt: string;
     public updatedAt: string;
+    public owner?: {
+        id: string;
+        name: string;
+        email: string;
+    };
+    public reporter?: {
+        id: string;
+        name: string;
+        email: string;
+    };
 
     constructor(issue: IIssue) {
         this.uuid = issue.uuid;
