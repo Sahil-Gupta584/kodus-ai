@@ -170,6 +170,7 @@ export class KodyRulesService implements IKodyRulesService {
                 sourcePath: kodyRule?.sourcePath,
                 sourceAnchor: kodyRule?.sourceAnchor,
                 repositoryId: kodyRule?.repositoryId,
+                directoryId: kodyRule?.directoryId,
                 examples: kodyRule?.examples,
                 origin: kodyRule?.origin ?? KodyRulesOrigin.USER,
                 scope: kodyRule?.scope ?? KodyRulesScope.FILE,

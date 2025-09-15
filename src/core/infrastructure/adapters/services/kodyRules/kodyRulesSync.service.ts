@@ -58,6 +58,85 @@ export class KodyRulesSyncService {
         private readonly parametersService: IParametersService,
     ) {}
 
+    /**
+     * Find the configured directory (if any) that contains a given repository-relative file path.
+     * Returns the most specific matching directory (longest path prefix) to support nested configs.
+     */
+    private async resolveDirectoryForFile(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+        filePath: string; // repository-relative, posix path
+    }): Promise<{ id: string; path: string } | null> {
+        try {
+            const { organizationAndTeamData, repositoryId, filePath } = params;
+            const cfg = await this.parametersService.findByKey(
+                ParametersKey.CODE_REVIEW_CONFIG,
+                organizationAndTeamData,
+            );
+
+            const repos = cfg?.configValue?.repositories;
+            if (!repositoryId || !Array.isArray(repos) || !repos.length) {
+                return null;
+            }
+
+            // Normalize path for safe prefix checks (posix style)
+            const normalizedFile = path.posix.normalize(
+                filePath.startsWith('/') ? filePath.slice(1) : filePath,
+            );
+
+            const repoCfg = repos.find(
+                (r: any) =>
+                    r &&
+                    (r.id === repositoryId || r.id === repositoryId.toString()),
+            );
+            const directories: Array<{ id: string; path: string }> = (
+                repoCfg?.directories || []
+            )
+                .filter((d: any) => d && typeof d.path === 'string' && d.id)
+                .map((d: any) => ({
+                    id: d.id,
+                    path: d.path,
+                }));
+
+            if (!directories.length) return null;
+
+            // Choose the most specific directory whose path is a prefix of the file path
+            let best: { id: string; path: string } | null = null;
+            for (const d of directories) {
+                const normalizedDir = path.posix.normalize(
+                    (d.path || '').replace(/^\/*/, ''),
+                );
+                if (!normalizedDir || normalizedDir === '.') continue;
+
+                // Ensure exact segment boundary (e.g., 'apps/app' should not match 'apps/app1')
+                const isPrefix =
+                    normalizedFile === normalizedDir ||
+                    normalizedFile.startsWith(normalizedDir + '/');
+                if (!isPrefix) continue;
+
+                if (
+                    !best ||
+                    normalizedDir.length >
+                        path.posix.normalize(
+                            (best.path || '').replace(/^\/*/, ''),
+                        ).length
+                ) {
+                    best = d;
+                }
+            }
+
+            return best;
+        } catch (error) {
+            this.logger.warn({
+                message: 'Failed to resolve directory for file',
+                context: KodyRulesSyncService.name,
+                error,
+                metadata: params,
+            });
+            return null;
+        }
+    }
+
     private async findRuleBySourcePath(params: {
         organizationAndTeamData: OrganizationAndTeamData;
         repositoryId: string;
@@ -427,6 +506,14 @@ export class KodyRulesSyncService {
                         )?.toLowerCase?.() as KodyRuleSeverity) ||
                         KodyRuleSeverity.MEDIUM,
                     repositoryId: repository.id,
+                    // If the rule file is inside a configured directory (monorepo folder), attach directoryId
+                    directoryId: (
+                        await this.resolveDirectoryForFile({
+                            organizationAndTeamData,
+                            repositoryId: repository.id,
+                            filePath: f.filename,
+                        })
+                    )?.id,
                     origin: KodyRulesOrigin.USER,
                     status: oneRule.status as any,
                     scope:
@@ -640,6 +727,13 @@ export class KodyRulesSyncService {
                         )?.toLowerCase?.() as KodyRuleSeverity) ||
                         KodyRuleSeverity.MEDIUM,
                     repositoryId: repository.id,
+                    directoryId: (
+                        await this.resolveDirectoryForFile({
+                            organizationAndTeamData,
+                            repositoryId: repository.id,
+                            filePath: file.path,
+                        })
+                    )?.id,
                     origin: KodyRulesOrigin.USER,
                     status: oneRule.status as any,
                     scope:
