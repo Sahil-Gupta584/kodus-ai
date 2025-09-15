@@ -17,6 +17,8 @@ import { LLM_ANALYSIS_SERVICE_TOKEN } from '@/core/infrastructure/adapters/servi
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { KODY_RULES_ANALYSIS_SERVICE_TOKEN } from './kodyRulesAnalysis.service';
+import { BYOKProvider } from 'packages/kodus-common/dist/llm/byokProvider.service';
+import { decrypt } from '@/shared/utils/crypto';
 
 @Injectable()
 export class CodeAnalysisOrchestrator {
@@ -54,7 +56,34 @@ export class CodeAnalysisOrchestrator {
                         fileContext,
                         reviewModeResponse,
                         context,
-
+                        {
+                            main: {
+                                provider: context.codeReviewConfig?.byokConfig
+                                    ?.main.provider as BYOKProvider,
+                                apiKey: decrypt(
+                                    context.codeReviewConfig?.byokConfig?.main
+                                        .apiKey,
+                                ),
+                                model: context.codeReviewConfig?.byokConfig
+                                    ?.main.model,
+                                baseURL:
+                                    context.codeReviewConfig?.byokConfig?.main
+                                        .baseUrl,
+                            },
+                            fallback: {
+                                provider: context.codeReviewConfig?.byokConfig
+                                    ?.fallback?.provider as BYOKProvider,
+                                apiKey: decrypt(
+                                    context.codeReviewConfig?.byokConfig
+                                        ?.fallback?.apiKey,
+                                ),
+                                model: context.codeReviewConfig?.byokConfig
+                                    ?.fallback?.model,
+                                baseURL:
+                                    context.codeReviewConfig?.byokConfig
+                                        ?.fallback?.baseUrl,
+                            },
+                        },
                     );
             } else {
                 result =
