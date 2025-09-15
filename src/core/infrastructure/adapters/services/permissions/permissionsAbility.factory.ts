@@ -7,12 +7,15 @@ import {
     AppAbility,
     ResourceBilling,
     ResourceCockpit,
-    ResourceSettings,
-    ResourceRepository,
-    ResourceIssue,
+    ResourceCodeReviewSettings,
+    ResourcePullRequests,
+    ResourceIssues,
+    ResourceLogs,
+    ResourceGitSettings,
+    ResourcePluginSettings,
 } from '@/core/domain/permissions/types/permissions.types';
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
-import { AbilityBuilder, createMongoAbility } from '@casl/ability';
+import { AbilityBuilder, createMongoAbility, Subject } from '@casl/ability';
 import { Inject, Injectable } from '@nestjs/common';
 
 @Injectable()
@@ -22,10 +25,10 @@ export class PermissionsAbilityFactory {
         private readonly permissionsService: IPermissionsService,
     ) {}
 
-    async createFor(user: IUser): Promise<AppAbility> {
+    async createForUser(user: IUser): Promise<AppAbility> {
         const { can, cannot, build } = new AbilityBuilder(createMongoAbility);
 
-        const userRoles = user.role || [];
+        const userRole = user.role;
         const userOrganizationId = user.organization?.uuid;
         const permissionsEntity = await this.permissionsService.findOne({
             user: { uuid: user.uuid },
@@ -33,65 +36,83 @@ export class PermissionsAbilityFactory {
         const assignedRepoUuids =
             permissionsEntity?.assignedRepositoryIds || [];
 
-        if (userRoles.includes(Role.OWNER)) {
-            // Owners can do everything in their organization.
-            can(Action.Manage, 'all', {
+        const canInOrg = <S extends Subject, C>(
+            action: Action,
+            subject: S,
+            conditions?: C,
+        ) => {
+            const finalConditions = {
+                ...conditions,
                 organizationId: userOrganizationId,
-            });
-        }
+            };
+            can(action, subject, finalConditions);
+        };
 
-        if (userRoles.includes(Role.BILLING_MANAGER)) {
-            // Billing Managers have full control over billing and can view/update settings.
-            can(Action.Manage, ResourceBilling, {
+        const canInRepo = <S extends Subject, C>(
+            action: Action,
+            subject: S,
+            globalAccess = false,
+            conditions?: C,
+        ) => {
+            const finalConditions = {
+                ...conditions,
                 organizationId: userOrganizationId,
-            });
-            can(Action.Read, ResourceRepository, {
-                organizationId: userOrganizationId,
-            });
-            // Combining VIEW_ACTIVITY_LOG and MANAGE_GIT_SETTINGS under Resource.Settings
-            can(Action.Manage, ResourceSettings, {
-                organizationId: userOrganizationId,
-            });
-        }
+                repoId: {
+                    $in: globalAccess
+                        ? [...assignedRepoUuids, 'global']
+                        : [...assignedRepoUuids],
+                },
+            };
 
-        if (userRoles.includes(Role.REPO_ADMIN)) {
-            // Repo Admins can manage repositories they are assigned to.
-            can(Action.Manage, ResourceRepository, {
-                uuid: { $in: assignedRepoUuids },
-            });
+            can(action, subject, finalConditions);
+        };
 
-            // They can manage their own issues.
-            can(Action.Manage, ResourceIssue, { authorId: user.uuid });
-            // And view all issues within their assigned repositories.
-            can(Action.Read, ResourceIssue, {
-                repositoryUuid: { $in: assignedRepoUuids },
-            });
+        switch (userRole) {
+            case Role.OWNER:
+                canInOrg(Action.Manage, 'all');
+                break;
 
-            // They can view their own cockpit data.
-            can(Action.Read, ResourceCockpit, { ownerId: user.uuid });
+            case Role.REPO_ADMIN:
+                canInRepo(Action.Read, ResourceCodeReviewSettings, true);
+                canInRepo(Action.Update, ResourceCodeReviewSettings);
+                canInRepo(Action.Create, ResourceCodeReviewSettings);
 
-            // They can manage Git settings.
-            can(Action.Manage, ResourceSettings, {
-                organizationId: userOrganizationId,
-            });
-        }
+                canInRepo(Action.Read, ResourceCockpit);
 
-        if (userRoles.includes(Role.CONTRIBUTOR)) {
-            // Contributors can view repositories they are assigned to.
-            can(Action.Read, ResourceRepository, {
-                uuid: { $in: assignedRepoUuids },
-            });
+                canInRepo(Action.Read, ResourceIssues);
+                canInRepo(Action.Update, ResourceIssues);
+                canInRepo(Action.Create, ResourceIssues);
 
-            // They can view issues they created.
-            can(Action.Read, ResourceIssue, { authorId: user.uuid });
+                canInRepo(Action.Read, ResourceLogs);
 
-            // They can view their own cockpit data.
-            can(Action.Read, ResourceCockpit, { ownerId: user.uuid });
+                canInRepo(Action.Read, ResourcePullRequests);
 
-            // They can manage Git settings.
-            can(Action.Read, ResourceSettings, {
-                organizationId: userOrganizationId,
-            });
+                canInOrg(Action.Read, ResourceGitSettings);
+
+                canInOrg(Action.Read, ResourcePluginSettings);
+                break;
+
+            case Role.BILLING_MANAGER:
+                canInRepo(Action.Read, ResourceCodeReviewSettings, true);
+
+                canInOrg(Action.Manage, ResourceBilling);
+
+                canInOrg(Action.Read, ResourceGitSettings);
+
+                canInOrg(Action.Read, ResourcePluginSettings);
+
+                canInOrg(Action.Read, ResourceLogs);
+                break;
+
+            case Role.CONTRIBUTOR:
+                canInRepo(Action.Read, ResourceCodeReviewSettings, true);
+
+                canInRepo(Action.Read, ResourceIssues);
+                break;
+
+            default:
+                cannot(Action.Manage, 'all');
+                break;
         }
 
         return build({

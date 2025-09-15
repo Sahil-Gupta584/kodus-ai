@@ -34,7 +34,7 @@ export class PolicyGuard implements CanActivate {
             return false;
         }
 
-        const ability = await this.abilityFactory.createFor(user);
+        const ability = await this.abilityFactory.createForUser(user);
 
         return policyHandlers.every((handler) =>
             typeof handler === 'function'

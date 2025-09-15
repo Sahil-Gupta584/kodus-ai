@@ -106,7 +106,7 @@ export class GetOrganizationsByDomainUseCase implements IUseCase {
             return organizations.map((org) => ({
                 uuid: org.uuid,
                 name: org.name,
-                owner: org.user.find((u) => u.role.includes(Role.OWNER))?.email,
+                owner: org.user.find((u) => u.role === Role.OWNER)?.email,
             }));
         } catch (error) {
             this.logger.error({

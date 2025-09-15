@@ -12,3 +12,17 @@ export enum Role {
     REPO_ADMIN = 'repo_admin',
     CONTRIBUTOR = 'contributor',
 }
+
+export enum ResourceType {
+    All = 'all',
+    PullRequests = 'pull_requests',
+    Issues = 'issues',
+    Cockpit = 'cockpit',
+    Billing = 'billing',
+    CodeReviewSettings = 'code_review_settings',
+    GitSettings = 'git_settings',
+    UserSettings = 'user_settings',
+    OrganizationSettings = 'organization_settings',
+    PluginSettings = 'plugin_settings',
+    Logs = 'logs',
+}

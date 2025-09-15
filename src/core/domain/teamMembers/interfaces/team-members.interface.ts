@@ -1,4 +1,5 @@
 import { IOrganization } from '../../organization/interfaces/organization.interface';
+import { Role } from '../../permissions/enums/permissions.enum';
 import { ITeam } from '../../team/interfaces/team.interface';
 import { IUser } from '../../user/interfaces/user.interface';
 import { TeamMemberRole } from '../enums/teamMemberRole.enum';
@@ -11,6 +12,7 @@ export interface IMembers {
     active: boolean;
     communicationId: string;
     teamRole: TeamMemberRole;
+    role: Role;
     avatar?: string;
     name: string;
     communication?: { name: string; id: string; chatId?: string };

@@ -174,6 +174,7 @@ export class TeamMemberService implements ITeamMemberService {
                     userStatus: member?.user?.status,
                     userExists:
                         member.user && member.user.status === STATUS.ACTIVE,
+                    role: member?.user?.role || Role.CONTRIBUTOR,
                 }),
             );
 
@@ -394,7 +395,7 @@ export class TeamMemberService implements ITeamMemberService {
             user = await this.usersService.register({
                 email: member.email,
                 password: this.generateTemporaryPassword(),
-                role: [Role.OWNER],
+                role: Role.OWNER,
                 status: STATUS.PENDING,
                 organization: {
                     uuid: organizationAndTeamData.organizationId,
@@ -459,7 +460,7 @@ export class TeamMemberService implements ITeamMemberService {
     ) {
         const admin = await this.usersService.findOne({
             organization: { uuid: organizationAndTeamData.organizationId },
-            role: [Role.OWNER],
+            role: Role.OWNER,
         });
 
         for (const userToSendInvitation of usersToSendInvitation) {

@@ -36,16 +36,10 @@ export class UpdateUserUseCase implements IUseCase {
             );
         }
 
-        let role: Role[] | undefined = undefined;
-        if (data.role) {
-            role = [data.role];
-        }
-
         const user = await this.usersService.update(
             { uuid },
             {
                 ...data,
-                role,
             },
         );
 

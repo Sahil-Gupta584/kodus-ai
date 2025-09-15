@@ -124,7 +124,7 @@ export class ProfileConfigService implements IProfileConfigService {
                 organization: {
                     uuid: organization_id,
                 },
-                role: [Role.OWNER],
+                role: Role.OWNER,
             });
 
             const ownerProfile = await this.profileService.findOne({

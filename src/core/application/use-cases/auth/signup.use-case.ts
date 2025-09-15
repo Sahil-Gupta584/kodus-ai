@@ -64,7 +64,7 @@ export class SignUpUseCase implements IUseCase {
             const user: Omit<IUser, 'uuid'> = {
                 email,
                 password,
-                role: [Role.CONTRIBUTOR],
+                role: Role.CONTRIBUTOR,
                 status: STATUS.PENDING,
                 organization: {
                     name: generateRandomOrgName(name),
@@ -86,7 +86,7 @@ export class SignUpUseCase implements IUseCase {
                     );
                 }
 
-                user.role = [Role.OWNER];
+                user.role = Role.OWNER;
                 user.status = STATUS.ACTIVE;
                 user.organization =
                     await this.organizationService.createOrganizationWithTenant(

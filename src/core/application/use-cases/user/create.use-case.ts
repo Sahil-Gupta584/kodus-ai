@@ -35,7 +35,7 @@ export class CreateUserUseCase implements IUseCase {
         const user = await this.usersService.register({
             email: payload.email,
             password: payload.password,
-            role: [Role.OWNER],
+            role: Role.OWNER,
             status: STATUS.ACTIVE,
             organization: payload.organization,
         });

@@ -35,7 +35,7 @@ import {
 } from '@/core/infrastructure/adapters/services/permissions/policy.guard';
 import { Action } from '@/core/domain/permissions/enums/permissions.enum';
 import { subject } from '@casl/ability';
-import { ResourceRepository } from '@/core/domain/permissions/types/permissions.types';
+import { ResourcePullRequests } from '@/core/domain/permissions/types/permissions.types';
 
 @Controller('code-management')
 export class CodeManagementController {
@@ -60,15 +60,6 @@ export class CodeManagementController {
     ) {}
 
     @Get('/repositories/org')
-    @UseGuards(PolicyGuard)
-    @CheckPolicies((ability, request) =>
-        ability.can(
-            Action.Read,
-            subject(typeof ResourceRepository, {
-                organizationId: request.query.organizationSelected,
-            }),
-        ),
-    )
     public async getRepositories(
         @Query()
         query: {

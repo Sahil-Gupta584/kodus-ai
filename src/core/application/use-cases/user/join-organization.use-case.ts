@@ -119,7 +119,7 @@ export class JoinOrganizationUseCase implements IUseCase {
                     uuid: user.uuid,
                 },
                 {
-                    role: [Role.OWNER],
+                    role: Role.CONTRIBUTOR,
                     status: STATUS.AWAITING_APPROVAL,
                     organization,
                 },

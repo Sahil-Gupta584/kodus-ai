@@ -24,7 +24,7 @@ export class UserModel extends CoreModel {
     password: string;
 
     @Column({ type: 'enum', enum: Role, default: Role.OWNER })
-    role: Role[];
+    role: Role;
 
     @Column({ type: 'enum', enum: STATUS, default: STATUS.PENDING })
     status: STATUS;

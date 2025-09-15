@@ -48,15 +48,6 @@ export class UpdateAnotherUserUseCase implements IUseCase {
         const { role, status } = data;
 
         try {
-            const mainUser = await this.usersService.findOne({ uuid: userId });
-            if (!mainUser) {
-                throw new Error('User not found');
-            }
-
-            if (!mainUser.role?.includes(Role.OWNER)) {
-                throw new Error('Only owners can update other users');
-            }
-
             const targetUser = await this.usersService.findOne({
                 uuid: targetUserId,
             });
@@ -65,7 +56,7 @@ export class UpdateAnotherUserUseCase implements IUseCase {
             }
 
             const organization = await this.organizationService.findOne({
-                uuid: mainUser.organization?.uuid,
+                uuid: targetUser.organization?.uuid,
             });
             if (!organization) {
                 throw new Error('Organization not found');
@@ -97,16 +88,11 @@ export class UpdateAnotherUserUseCase implements IUseCase {
                 );
             }
 
-            let updatedRole: Role[] | undefined = undefined;
-            if (role) {
-                updatedRole = [role];
-            }
-
             const updatedUser = await this.usersService.update(
                 { uuid: targetUserId },
                 {
                     status,
-                    role: updatedRole,
+                    role,
                 },
             );
 

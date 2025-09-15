@@ -29,6 +29,7 @@ import {
     PolicyGuard,
 } from '../../adapters/services/permissions/policy.guard';
 import { Action } from '@/core/domain/permissions/enums/permissions.enum';
+import { ResourceUserSettings } from '@/core/domain/permissions/types/permissions.types';
 
 @Controller('user')
 export class UsersController {
@@ -115,6 +116,10 @@ export class UsersController {
     }
 
     @Patch('/:targetUserId')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies((ability) =>
+        ability.can(Action.Update, ResourceUserSettings),
+    )
     public async updateAnother(
         @Body() body: UpdateAnotherUserDto,
         @Param('targetUserId') targetUserId: string,

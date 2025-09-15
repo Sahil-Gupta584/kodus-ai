@@ -30,7 +30,7 @@ export class UserDatabaseRepository implements IUserRepository {
 
         const whereCondition: any = {
             ...otherFilterAttributes,
-            role: filter.role ? In(filter.role) : undefined,
+            role: filter.role ? filter.role : undefined,
             teamMember: filter.teamMember
                 ? (filter.teamMember as any)
                 : undefined,
@@ -66,6 +66,7 @@ export class UserDatabaseRepository implements IUserRepository {
                 'teamMember',
                 'teamMember.organization',
                 'teamMember.team',
+                'permissions',
             ],
         };
 
@@ -93,7 +94,7 @@ export class UserDatabaseRepository implements IUserRepository {
         }
 
         if (filter.role) {
-            whereCondition.role = In(filter.role);
+            whereCondition.role = filter.role;
         }
         if (filter.teamMember) {
             whereCondition.teamMember = filter.teamMember;
@@ -116,6 +117,7 @@ export class UserDatabaseRepository implements IUserRepository {
                 'teamMember',
                 'teamMember.organization',
                 'teamMember.team',
+                'permissions',
             ],
         };
 
@@ -145,17 +147,18 @@ export class UserDatabaseRepository implements IUserRepository {
 
     async count(filter: Partial<IUser>): Promise<number> {
         try {
-            const { organization, ...otherFilterAttributes } = filter;
+            const { organization, permissions, ...otherFilterAttributes } =
+                filter;
 
             const findOneOptions: FindOneOptions<UserModel> = {
                 where: {
                     ...otherFilterAttributes,
-                    role: filter.role ? In(filter.role) : undefined,
+                    role: filter.role ? filter.role : undefined,
                     teamMember: filter.teamMember
                         ? (filter.teamMember as any)
                         : undefined,
                 },
-                relations: ['organization', 'profile'],
+                relations: ['organization', 'profile', 'permissions'],
             };
 
             if (organization) {
@@ -164,6 +167,16 @@ export class UserDatabaseRepository implements IUserRepository {
                     ...findOneOptions.where,
                     organization: {
                         name: organization.name,
+                    },
+                };
+            }
+
+            if (permissions) {
+                // Add permissions filter criteria
+                findOneOptions.where = {
+                    ...findOneOptions.where,
+                    permissions: {
+                        uuid: permissions.uuid,
                     },
                 };
             }

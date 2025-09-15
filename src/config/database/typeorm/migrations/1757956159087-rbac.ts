@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class Rbac1757484418886 implements MigrationInterface {
-    name = 'Rbac1757484418886'
+export class Rbac1757956159087 implements MigrationInterface {
+    name = 'Rbac1757956159087'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`
@@ -10,6 +10,8 @@ export class Rbac1757484418886 implements MigrationInterface {
                 "createdAt" TIMESTAMP NOT NULL DEFAULT ('now'::text)::timestamp(6) with time zone,
                 "updatedAt" TIMESTAMP NOT NULL DEFAULT ('now'::text)::timestamp(6) with time zone,
                 "assignedRepositoryIds" text array NOT NULL DEFAULT '{}',
+                "user_id" uuid,
+                CONSTRAINT "REL_03f05d2567b1421a6f294d69f4" UNIQUE ("user_id"),
                 CONSTRAINT "PK_82c4b329177eba3db6338f732c5" PRIMARY KEY ("uuid")
             )
         `);
@@ -41,9 +43,16 @@ export class Rbac1757484418886 implements MigrationInterface {
         await queryRunner.query(`
             DROP TYPE "public"."users_role_enum_old"
         `);
+        await queryRunner.query(`
+            ALTER TABLE "permissions"
+            ADD CONSTRAINT "FK_03f05d2567b1421a6f294d69f45" FOREIGN KEY ("user_id") REFERENCES "users"("uuid") ON DELETE NO ACTION ON UPDATE NO ACTION
+        `);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`
+            ALTER TABLE "permissions" DROP CONSTRAINT "FK_03f05d2567b1421a6f294d69f45"
+        `);
         await queryRunner.query(`
             CREATE TYPE "public"."users_role_enum_old" AS ENUM('owner', 'user')
         `);

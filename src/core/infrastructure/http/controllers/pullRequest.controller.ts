@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { UseInterceptors } from '@nestjs/common';
 import { GetPullRequestAuthorsUseCase } from '@/core/application/use-cases/pullRequests/get-pull-request-authors-orderedby-contributions.use-case';
@@ -7,6 +7,10 @@ import { GetEnrichedPullRequestsUseCase } from '@/core/application/use-cases/pul
 import { updatePullRequestDto } from '../dtos/update-pull-request.dto';
 import { EnrichedPullRequestsQueryDto } from '../dtos/enriched-pull-requests-query.dto';
 import { PaginatedEnrichedPullRequestsResponse } from '../dtos/paginated-enriched-pull-requests.dto';
+import {
+    CheckPolicies,
+    PolicyGuard,
+} from '../../adapters/services/permissions/policy.guard';
 
 @Controller('pull-requests')
 export class PullRequestController {
@@ -36,6 +40,8 @@ export class PullRequestController {
     @Get('/executions')
     @UseInterceptors(CacheInterceptor)
     @CacheTTL(300000) // 5 minutos em milliseconds
+    @UseGuards(PolicyGuard)
+    @CheckPolicies()
     public async getPullRequestExecutions(
         @Query() query: EnrichedPullRequestsQueryDto,
     ): Promise<PaginatedEnrichedPullRequestsResponse> {

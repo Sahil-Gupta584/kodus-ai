@@ -1,36 +1,49 @@
 import { IUser } from '../../user/interfaces/user.interface';
-import { Role, Action } from '../enums/permissions.enum';
+import { Role, Action, ResourceType } from '../enums/permissions.enum';
 import { InferSubjects, MongoAbility } from '@casl/ability';
 
-export class ResourceRepository {
-    uuid: string;
+export class Resource {
     organizationId: string;
 }
 
-export class ResourceIssue {
-    authorId: string;
-    repositoryUuid: string;
+export class ResourceWithRepo extends Resource {
+    repoId: string;
 }
 
-export class ResourceCockpit {
-    ownerId: string;
-}
+export class ResourcePullRequests extends ResourceWithRepo {}
 
-export class ResourceBilling {
-    organizationId: string;
-}
+export class ResourceIssues extends ResourceWithRepo {}
 
-export class ResourceSettings {
-    organizationId: string;
-}
+export class ResourceCockpit extends ResourceWithRepo {}
 
-type Subject =
+export class ResourceBilling extends Resource {}
+
+export class ResourceCodeReviewSettings extends ResourceWithRepo {}
+
+export class ResourceGitSettings extends Resource {}
+
+export class ResourceUserSettings extends Resource {}
+
+export class ResourceOrganizationSettings extends Resource {}
+
+export class ResourceLogs extends ResourceWithRepo {}
+
+export class ResourcePluginSettings extends Resource {}
+
+export type Subject =
     | InferSubjects<
-          | typeof ResourceRepository
-          | typeof ResourceIssue
+          | typeof Resource
+          | typeof ResourceWithRepo
+          | typeof ResourcePullRequests
+          | typeof ResourceIssues
           | typeof ResourceCockpit
           | typeof ResourceBilling
-          | typeof ResourceSettings
+          | typeof ResourceCodeReviewSettings
+          | typeof ResourceGitSettings
+          | typeof ResourceUserSettings
+          | typeof ResourceOrganizationSettings
+          | typeof ResourceLogs
+          | typeof ResourcePluginSettings
       >
     | 'all';
 

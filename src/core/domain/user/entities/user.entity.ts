@@ -4,15 +4,17 @@ import { IOrganization } from '../../organization/interfaces/organization.interf
 import { ITeamMember } from '../../teamMembers/interfaces/team-members.interface';
 import { STATUS } from '@/config/types/database/status.type';
 import { Role } from '../../permissions/enums/permissions.enum';
+import { IPermissions } from '../../permissions/types/permissions.types';
 
 export class UserEntity implements Entity<IUser> {
     private _uuid: string;
     private _email: string;
     private _password: string;
-    private _role: Role[];
+    private _role: Role;
     private _organization?: Partial<IOrganization>;
     private _status: STATUS;
     private _teamMember?: Partial<ITeamMember>[];
+    private _permissions?: Partial<IPermissions>;
 
     private constructor(user: IUser | Partial<IUser>) {
         this._uuid = user.uuid;
