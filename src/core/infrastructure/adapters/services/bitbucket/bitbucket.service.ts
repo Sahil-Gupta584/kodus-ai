@@ -259,7 +259,6 @@ export class BitbucketService
             if (!bitbucketAuthDetail) {
                 throw new BadRequestException('Installation not found');
             }
-            // Construct the full Bitbucket URL
             const fullBitbucketUrl = `https://bitbucket.org/${params?.repository?.fullName}`;
 
             return {
@@ -270,6 +269,7 @@ export class BitbucketService
                 branch: params?.repository?.defaultBranch,
                 provider: PlatformType.BITBUCKET,
                 auth: {
+                    username: bitbucketAuthDetail.username,
                     type: bitbucketAuthDetail.authMode,
                     token: decrypt(bitbucketAuthDetail.appPassword),
                 },
@@ -2709,6 +2709,7 @@ export class BitbucketService
         code?: string;
         token?: string;
         username?: string;
+        email?: string;
     }): Promise<{ success: boolean; status?: CreateAuthIntegrationStatus }> {
         try {
             let res: {
@@ -2728,6 +2729,7 @@ export class BitbucketService
                     organizationAndTeamData: params.organizationAndTeamData,
                     token: params.token,
                     username: params.username,
+                    email: params.email,
                 });
             }
 
@@ -2948,7 +2950,9 @@ export class BitbucketService
         try {
             const bitbucketAPI = new Bitbucket({
                 auth: {
-                    username: bitbucketAuthDetail.username,
+                    username:
+                        bitbucketAuthDetail.email ??
+                        bitbucketAuthDetail.username,
                     password: decrypt(bitbucketAuthDetail.appPassword),
                 },
             });
@@ -3010,13 +3014,14 @@ export class BitbucketService
         organizationAndTeamData: OrganizationAndTeamData;
         username: string;
         token: string;
+        email?: string;
     }): Promise<{ success: boolean; status?: CreateAuthIntegrationStatus }> {
         try {
-            const { organizationAndTeamData, token, username } = params;
+            const { organizationAndTeamData, token, username, email } = params;
 
             const bitbucketAPI = new Bitbucket({
                 auth: {
-                    username,
+                    username: email ?? username,
                     password: token,
                 },
             });
@@ -3034,7 +3039,9 @@ export class BitbucketService
             const checkRepos = await this.checkRepositoryPermissions({
                 bitbucketAPI,
             });
-            if (!checkRepos.success) return checkRepos;
+            if (!checkRepos.success) {
+                return checkRepos;
+            }
 
             const integration = await this.integrationService.findOne({
                 organization: {
@@ -3048,6 +3055,7 @@ export class BitbucketService
                 username: username,
                 appPassword: encrypt(token),
                 authMode: AuthMode.TOKEN,
+                email: email,
             };
 
             await this.handleIntegration(
