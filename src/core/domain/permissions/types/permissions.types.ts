@@ -2,9 +2,7 @@ import { IUser } from '../../user/interfaces/user.interface';
 import { Role, Action, ResourceType } from '../enums/permissions.enum';
 import { InferSubjects, MongoAbility } from '@casl/ability';
 
-export class Resource {
-    organizationId: string;
-}
+export class Resource {}
 
 export class ResourceWithRepo extends Resource {
     repoId: string;

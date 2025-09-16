@@ -11,6 +11,14 @@ import {
     CheckPolicies,
     PolicyGuard,
 } from '../../adapters/services/permissions/policy.guard';
+import {
+    checkPermissions,
+    checkRepoPermissions,
+} from '../../adapters/services/permissions/policy.handlers';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 @Controller('pull-requests')
 export class PullRequestController {
@@ -21,6 +29,8 @@ export class PullRequestController {
     ) {}
 
     @Get('/get-pull-request-authors')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.PullRequests))
     public async getPullRequestAuthors(
         @Query() query: { organizationId: string },
     ) {
@@ -31,6 +41,8 @@ export class PullRequestController {
 
     // TODO: remove, deprecated
     @Post('/update-pull-requests')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Update, ResourceType.PullRequests))
     public async updatePullRequestToNewFormat(
         @Body() body: updatePullRequestDto,
     ) {
@@ -41,7 +53,11 @@ export class PullRequestController {
     @UseInterceptors(CacheInterceptor)
     @CacheTTL(300000) // 5 minutos em milliseconds
     @UseGuards(PolicyGuard)
-    @CheckPolicies()
+    @CheckPolicies(
+        checkRepoPermissions(Action.Read, ResourceType.PullRequests, {
+            query: EnrichedPullRequestsQueryDto.prototype.repositoryId,
+        }),
+    )
     public async getPullRequestExecutions(
         @Query() query: EnrichedPullRequestsQueryDto,
     ): Promise<PaginatedEnrichedPullRequestsResponse> {

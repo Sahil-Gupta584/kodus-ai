@@ -12,26 +12,28 @@ import {
     ResourcePluginSettings,
     ResourceUserSettings,
     ResourceOrganizationSettings,
+    ResourceWithRepo,
 } from '@/core/domain/permissions/types/permissions.types';
 
-const resourceMappings = [
-    { type: ResourceType.PullRequests, subject: ResourcePullRequests },
+const resourceMappings: readonly { type: ResourceType; subject: Subject }[] = [
     { type: ResourceType.Billing, subject: ResourceBilling },
     { type: ResourceType.Cockpit, subject: ResourceCockpit },
-    { type: ResourceType.Issues, subject: ResourceIssues },
     {
         type: ResourceType.CodeReviewSettings,
         subject: ResourceCodeReviewSettings,
     },
     { type: ResourceType.GitSettings, subject: ResourceGitSettings },
-    { type: ResourceType.UserSettings, subject: ResourceUserSettings },
+    { type: ResourceType.Issues, subject: ResourceIssues },
+    { type: ResourceType.Logs, subject: ResourceLogs },
     {
         type: ResourceType.OrganizationSettings,
         subject: ResourceOrganizationSettings,
     },
     { type: ResourceType.PluginSettings, subject: ResourcePluginSettings },
-    { type: ResourceType.Logs, subject: ResourceLogs },
+    { type: ResourceType.PullRequests, subject: ResourcePullRequests },
+    { type: ResourceType.UserSettings, subject: ResourceUserSettings },
     { type: ResourceType.All, subject: Resource },
+    { type: ResourceType.All, subject: ResourceWithRepo },
     { type: ResourceType.All, subject: 'all' as const },
 ] as const;
 
@@ -44,7 +46,7 @@ const subjectToTypeMap = new Map<Subject, ResourceType>(
 );
 
 export class ResourceTypeFactory {
-    static getTypeofResource(type: ResourceType): Subject {
+    static getSubjectOfResource(type: ResourceType): Subject {
         const resourceClass = typeToSubjectMap.get(type);
         if (!resourceClass) {
             throw new Error(`Unsupported resource type: ${type}`);
@@ -52,7 +54,7 @@ export class ResourceTypeFactory {
         return resourceClass;
     }
 
-    static getResourceTypeOfTypeofResource(resource: Subject): ResourceType {
+    static getResourceOfSubject(resource: Subject): ResourceType {
         const resourceType = subjectToTypeMap.get(resource);
         if (!resourceType) {
             const constructor = (resource as any)?.constructor;

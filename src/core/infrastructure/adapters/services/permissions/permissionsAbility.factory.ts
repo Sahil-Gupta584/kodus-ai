@@ -69,7 +69,7 @@ export class PermissionsAbilityFactory {
 
         switch (userRole) {
             case Role.OWNER:
-                canInOrg(Action.Manage, 'all');
+                canInRepo(Action.Manage, 'all', true);
                 break;
 
             case Role.REPO_ADMIN:

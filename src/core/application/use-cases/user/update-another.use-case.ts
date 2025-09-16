@@ -14,11 +14,9 @@ import {
     USER_SERVICE_TOKEN,
     IUsersService,
 } from '@/core/domain/user/contracts/user.service.contract';
-import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { UpdateAnotherUserDto } from '@/core/infrastructure/http/dtos/update-another-user.dto';
-import { UpdateUserDto } from '@/core/infrastructure/http/dtos/update.dto';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { Inject, Injectable } from '@nestjs/common';
 

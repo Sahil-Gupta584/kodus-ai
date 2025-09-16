@@ -463,7 +463,9 @@ export class KodyIssuesManagementService
         return `${diffDays} ${daysText} ago`;
     }
 
-    public async buildFilter(filters: GetIssuesByFiltersDto): Promise<any> {
+    public async buildFilter(
+        filters: GetIssuesByFiltersDto & { repositoryIds?: string[] },
+    ): Promise<any> {
         const filter: any = {};
 
         if (filters.title) {
@@ -487,6 +489,10 @@ export class KodyIssuesManagementService
                 $regex: filters.repositoryName,
                 $options: 'i',
             };
+        }
+
+        if (filters.repositoryIds && filters.repositoryIds.length > 0) {
+            filter['repository.id'] = { $in: filters.repositoryIds };
         }
 
         if (filters.beforeAt || filters.afterAt) {

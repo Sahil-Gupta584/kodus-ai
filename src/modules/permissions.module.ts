@@ -10,6 +10,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersModule } from './user.module';
 import { IntegrationConfigModule } from './integrationConfig.module';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
 
 @Module({
     imports: [
@@ -28,10 +29,12 @@ import { IntegrationConfigModule } from './integrationConfig.module';
             provide: PERMISSIONS_REPOSITORY_TOKEN,
             useClass: PermissionsRepository,
         },
+        AuthorizationService,
     ],
     controllers: [PermissionsController],
     exports: [
         PermissionsAbilityFactory,
+        AuthorizationService,
         PERMISSIONS_SERVICE_TOKEN,
         ...UseCases,
     ],

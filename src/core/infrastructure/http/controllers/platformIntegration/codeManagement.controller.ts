@@ -27,15 +27,19 @@ import { FinishOnboardingUseCase } from '@/core/application/use-cases/platformIn
 import { DeleteIntegrationUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/delete-integration.use-case';
 import { DeleteIntegrationAndRepositoriesUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/delete-integration-and-repositories.use-case';
 import { GetRepositoryTreeUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/get-repository-tree.use-case';
-import { RepositoryTreeType } from '@/shared/utils/enums/repositoryTree.enum';
 import { GetRepositoryTreeDto } from '../../dtos/get-repository-tree.dto';
 import {
     CheckPolicies,
     PolicyGuard,
 } from '@/core/infrastructure/adapters/services/permissions/policy.guard';
-import { Action } from '@/core/domain/permissions/enums/permissions.enum';
-import { subject } from '@casl/ability';
-import { ResourcePullRequests } from '@/core/domain/permissions/types/permissions.types';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
+import {
+    checkPermissions,
+    checkRepoPermissions,
+} from '@/core/infrastructure/adapters/services/permissions/policy.handlers';
 
 @Controller('code-management')
 export class CodeManagementController {
@@ -60,6 +64,10 @@ export class CodeManagementController {
     ) {}
 
     @Get('/repositories/org')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Read, ResourceType.CodeReviewSettings),
+    )
     public async getRepositories(
         @Query()
         query: {
@@ -140,6 +148,8 @@ export class CodeManagementController {
     }
 
     @Get('/get-prs')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.PullRequests))
     public async getPRs(
         @Query()
         query: {
@@ -188,6 +198,8 @@ export class CodeManagementController {
     }
 
     @Delete('/delete-integration')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Delete, ResourceType.GitSettings))
     public async deleteIntegration(
         @Query() query: { organizationId: string; teamId: string },
     ) {
@@ -195,6 +207,8 @@ export class CodeManagementController {
     }
 
     @Delete('/delete-integration-and-repositories')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Delete, ResourceType.GitSettings))
     public async deleteIntegrationAndRepositories(
         @Query() query: { organizationId: string; teamId: string },
     ) {
@@ -204,6 +218,12 @@ export class CodeManagementController {
     }
 
     @Get('/get-repository-tree')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkRepoPermissions(Action.Read, ResourceType.CodeReviewSettings, {
+            query: GetRepositoryTreeDto.prototype.repositoryId,
+        }),
+    )
     public async getRepositoryTree(
         @Query()
         query: GetRepositoryTreeDto,

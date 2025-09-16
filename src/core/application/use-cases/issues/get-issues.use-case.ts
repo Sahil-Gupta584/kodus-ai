@@ -9,6 +9,7 @@ import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { REQUEST } from '@nestjs/core';
+import { GetAssignedReposUseCase } from '../permissions/get-assigned-repos.use-case';
 
 @Injectable()
 export class GetIssuesUseCase implements IUseCase {
@@ -20,8 +21,13 @@ export class GetIssuesUseCase implements IUseCase {
 
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: { organization: { uuid: string } };
+            user: {
+                uuid: string;
+                organization: { uuid: string };
+            };
         },
+
+        private readonly getAssignedReposUseCase: GetAssignedReposUseCase,
 
         private readonly cacheService: CacheService,
     ) {}
@@ -67,6 +73,17 @@ export class GetIssuesUseCase implements IUseCase {
 
             if (!allIssues || allIssues.length === 0) {
                 return [];
+            }
+
+            const assignedRepositoryIds =
+                await this.getAssignedReposUseCase.execute({
+                    userId: this.request.user.uuid,
+                });
+
+            if (assignedRepositoryIds.length > 0) {
+                allIssues = allIssues.filter((issue) =>
+                    assignedRepositoryIds.includes(issue.repository.id),
+                );
             }
 
             return allIssues;

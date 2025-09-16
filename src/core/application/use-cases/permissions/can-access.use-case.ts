@@ -45,7 +45,7 @@ export class CanAccessUseCase implements IUseCase {
             );
 
             const resourceType =
-                ResourceTypeFactory.getTypeofResource(resource);
+                ResourceTypeFactory.getSubjectOfResource(resource);
 
             return ability.can(action, resourceType);
         } catch (error) {

@@ -10,6 +10,8 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
 import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
 import { KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/KodyIssuesManagement.contract';
 import { CacheService } from '@/shared/utils/cache/cache.service';
+import { REQUEST } from '@nestjs/core';
+import { GetAssignedReposUseCase } from '../permissions/get-assigned-repos.use-case';
 
 @Injectable()
 export class GetIssuesByFiltersUseCase implements IUseCase {
@@ -23,6 +25,16 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
         private readonly kodyIssuesManagementService: KodyIssuesManagementService,
 
         private readonly cacheService: CacheService,
+
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: {
+                uuid: string;
+                organization: { uuid: string };
+            };
+        },
+
+        private readonly getAssignedReposUseCase: GetAssignedReposUseCase,
     ) {}
 
     async execute(filters: GetIssuesByFiltersDto): Promise<IIssue[]> {
@@ -122,6 +134,17 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
                         (suggestion) =>
                             suggestion.prNumber === filters.prNumber,
                     ),
+                );
+            }
+
+            const assignedRepositoryIds =
+                await this.getAssignedReposUseCase.execute({
+                    userId: this.request.user.uuid,
+                });
+
+            if (assignedRepositoryIds.length > 0) {
+                filteredIssues = filteredIssues.filter((issue) =>
+                    assignedRepositoryIds.includes(issue.repository.id),
                 );
             }
 

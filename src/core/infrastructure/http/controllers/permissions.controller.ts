@@ -46,8 +46,8 @@ export class PermissionsController {
     ) {}
 
     @Get()
-    @UseInterceptors(CacheInterceptor)
-    @CacheTTL(300000)
+    // @UseInterceptors(CacheInterceptor)
+    // @CacheTTL(300000)
     async getPermissions(): ReturnType<GetPermissionsUseCase['execute']> {
         const { user } = this.request;
 
@@ -64,8 +64,8 @@ export class PermissionsController {
     }
 
     @Get('can-access')
-    @UseInterceptors(CacheInterceptor)
-    @CacheTTL(300000)
+    // @UseInterceptors(CacheInterceptor)
+    // @CacheTTL(300000)
     async can(
         @Query('action') action: Action,
         @Query('resource') resource: ResourceType,

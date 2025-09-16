@@ -28,7 +28,7 @@ export class GetPermissionsUseCase implements IUseCase {
 
     async execute(params: { user: Partial<IUser> }): Promise<{
         [K in ResourceType]?: {
-            [A in Action]?: MongoQuery | undefined;
+            [A in Action]?: string | string[];
         };
     }> {
         const {
@@ -66,12 +66,12 @@ export class GetPermissionsUseCase implements IUseCase {
 
     private buildPermissions(rules: AppAbility['rules']): {
         [K in ResourceType]?: {
-            [A in Action]?: MongoQuery | undefined;
+            [A in Action]?: string | string[];
         };
     } {
         const permissions: Map<
             ResourceType,
-            Partial<Record<Action, MongoQuery | undefined>>
+            Partial<Record<Action, string | string[]>>
         > = new Map();
 
         for (const rule of rules) {
@@ -79,7 +79,7 @@ export class GetPermissionsUseCase implements IUseCase {
                 rule.subject === 'all'
                     ? Object.values(ResourceType)
                     : [
-                          ResourceTypeFactory.getResourceTypeOfTypeofResource(
+                          ResourceTypeFactory.getResourceOfSubject(
                               rule.subject as Subject,
                           ),
                       ];
@@ -96,7 +96,19 @@ export class GetPermissionsUseCase implements IUseCase {
 
                     if (rule.conditions) {
                         for (const key of actionKeys) {
-                            subjectPermissions[key] = rule.conditions;
+                            const conditions = rule.conditions;
+
+                            if (conditions.repoId?.['$in']) {
+                                conditions.repoId = Array.isArray(
+                                    conditions.repoId['$in'],
+                                )
+                                    ? conditions.repoId['$in']
+                                    : [conditions.repoId['$in']];
+                            }
+
+                            subjectPermissions[key] = conditions as unknown as
+                                | string
+                                | string[];
                         }
                     }
                 }
