@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { BasePipelineStage } from '../../../pipeline/base-stage.abstract';
 import {
+    processExpression,
+    shouldReviewBranches,
+} from '../../branchReview.service';
+import {
     AUTOMATION_EXECUTION_SERVICE_TOKEN,
     IAutomationExecutionService,
 } from '@/core/domain/automation/contracts/automation-execution.service';
@@ -120,9 +124,10 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         const config = context.codeReviewConfig!;
 
         // Validações básicas primeiro
-        const basicValidation = this.shouldProcessPR(
+        const basicValidation = this.shouldExecuteReview(
             context.pullRequest.title,
             context.pullRequest.base.ref,
+            context.pullRequest.head.ref,
             context.pullRequest.isDraft,
             config,
             context.origin || '',
@@ -422,9 +427,10 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         }
     }
 
-    private shouldProcessPR(
+    private shouldExecuteReview(
         title: string,
         baseBranch: string,
+        targetBranch: string,
         isDraft: boolean,
         config: any,
         origin: string,
@@ -445,11 +451,20 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             return false;
         }
 
-        if (!config.baseBranches?.includes(baseBranch)) {
+        if (isDraft && !config?.runOnDraft) {
             return false;
         }
 
-        if (isDraft && !config?.runOnDraft) {
+        // Use the new branch review logic if baseBranches array is provided
+        if (config?.baseBranches && Array.isArray(config.baseBranches)) {
+            // Convert array to expression string
+            const expression = config.baseBranches.join(', ');
+            const reviewConfig = processExpression(expression);
+            return shouldReviewBranches(baseBranch, targetBranch, reviewConfig);
+        }
+
+        // Fallback to old logic for backward compatibility
+        if (!config.baseBranches?.includes(baseBranch)) {
             return false;
         }
 
