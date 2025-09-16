@@ -27,12 +27,14 @@ import {
 import { prompt_severity_analysis_user } from '@/shared/utils/langchainCommon/prompts/severityAnalysis';
 import { prompt_codeReviewSafeguard_system } from '@/shared/utils/langchainCommon/prompts';
 import {
+    BYOKConfig,
     LLMModelProvider,
     ParserType,
     PromptRole,
     PromptRunnerService,
     PromptScope,
 } from '@kodus/kodus-common/llm';
+import { decrypt } from '@/shared/utils/crypto';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -305,9 +307,37 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         fileContext: FileChangeContext,
         reviewModeResponse: ReviewModeResponse,
         context: AnalysisContext,
+        byokConfig: BYOKConfig,
     ): Promise<AIAnalysisResult> {
-        const provider = LLMModelProvider.GEMINI_2_5_PRO;
-        const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+        const defaultProvider = LLMModelProvider.GEMINI_2_5_PRO;
+        const defaultFallback = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+
+        let analysisBuilder = this.promptRunnerService
+            .builder()
+            .setProviders({
+                main: defaultProvider,
+                fallback: byokConfig?.fallback ? defaultFallback : undefined,
+            });
+
+        if (byokConfig?.main) {
+            analysisBuilder = analysisBuilder
+                .setBYOKConfig({
+                    provider: byokConfig.main.provider,
+                    apiKey: decrypt(byokConfig.main.apiKey),
+                    model: byokConfig.main.model,
+                    baseURL: byokConfig.main.baseURL,
+                })
+                .setBYOKFallbackConfig(
+                    byokConfig.fallback
+                        ? {
+                              provider: byokConfig.fallback.provider,
+                              apiKey: decrypt(byokConfig.fallback.apiKey),
+                              model: byokConfig.fallback.model,
+                              baseURL: byokConfig.fallback.baseURL,
+                          }
+                        : null,
+                );
+        }
 
         // Reset token tracking for new analysis
         this.tokenTracker.reset();
@@ -336,13 +366,8 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 overallSummary: z.string(),
             });
 
-            const analysis = await this.promptRunnerService
-                .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
-                .setParser(ParserType.ZOD, schema, {
+            const analysis = await analysisBuilder
+                .setParser(ParserType.ZOD, schema as any, {
                     provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
                     fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
                 })
@@ -370,8 +395,10 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                         baseContext?.organizationAndTeamData?.organizationId,
                     teamId: baseContext?.organizationAndTeamData?.teamId,
                     pullRequestId: baseContext?.pullRequest?.number,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
+                    provider: defaultProvider,
+                    fallbackProvider: byokConfig?.fallback
+                        ? defaultFallback
+                        : undefined,
                     reviewMode: reviewModeResponse,
                 })
                 .setRunName('analyzeCodeWithAI_v2')
@@ -398,7 +425,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                     analysis.codeSuggestions as Partial<CodeSuggestion>[],
                 overallSummary: analysis.overallSummary,
                 codeReviewModelUsed: {
-                    generateSuggestions: provider,
+                    generateSuggestions: defaultProvider,
                 },
             };
 
@@ -708,7 +735,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                     main: provider,
                     fallback: fallbackProvider,
                 })
-                .setParser(ParserType.ZOD, schema, {
+                .setParser(ParserType.ZOD, schema as any, {
                     provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
                     fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
                 })

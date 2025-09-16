@@ -7,7 +7,7 @@ import {
     ReviewModeResponse,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { LLMModelProvider } from '@kodus/kodus-common/llm';
+import { BYOKConfig, LLMModelProvider } from '@kodus/kodus-common/llm';
 
 export interface IAIAnalysisService {
     analyzeCodeWithAI(
@@ -24,6 +24,7 @@ export interface IAIAnalysisService {
         fileContext: FileChangeContext,
         reviewModeResponse: ReviewModeResponse,
         context: AnalysisContext,
+        byokConfig: BYOKConfig,
     ): Promise<AIAnalysisResult>;
     generateCodeSuggestions(
         organizationAndTeamData: OrganizationAndTeamData,
