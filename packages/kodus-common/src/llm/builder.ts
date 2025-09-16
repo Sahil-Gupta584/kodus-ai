@@ -9,13 +9,22 @@ import {
     PromptRunnerService,
 } from './promptRunner.service';
 import z from 'zod';
-import { BYOKConfig } from './byokProvider.service';
+import { BYOKProvider } from './byokProvider.service';
 
 export enum ParserType {
     STRING = 'string',
     JSON = 'json',
     ZOD = 'zod',
     CUSTOM = 'custom',
+}
+
+export interface BYOKProviderConfig {
+    provider: BYOKProvider;
+    apiKey: string;
+    model: string;
+    baseURL?: string;
+    projectId?: string;
+    region?: string;
 }
 
 //#region Types
@@ -47,7 +56,30 @@ type SafeJsonOutput<T> =
  * and execute them using the `PromptRunnerService`.
  */
 export class PromptBuilder {
+    private byokConfig?: BYOKProviderConfig;
+    private byokFallbackConfig?: BYOKProviderConfig | null;
+
     constructor(private readonly runner: PromptRunnerService) {}
+
+    /**
+     * Sets BYOK configuration for the main provider
+     * @param config Individual provider configuration (main.* properties)
+     * @returns The PromptBuilder instance for chaining.
+     */
+    setBYOKConfig(config: BYOKProviderConfig): this {
+        this.byokConfig = config;
+        return this;
+    }
+
+    /**
+     * Sets BYOK configuration for the fallback provider
+     * @param config Individual provider configuration or null to disable fallback
+     * @returns The PromptBuilder instance for chaining.
+     */
+    setBYOKFallbackConfig(config: BYOKProviderConfig | null): this {
+        this.byokFallbackConfig = config;
+        return this;
+    }
 
     /**
      * Sets the main and optional fallback LLM providers.
@@ -74,7 +106,12 @@ export class PromptBuilder {
             tags: [],
         };
 
-        return new PromptBuilderWithProviders(this.runner, params);
+        return new PromptBuilderWithProviders(
+            this.runner,
+            params,
+            this.byokConfig,
+            this.byokFallbackConfig,
+        );
     }
 }
 
@@ -87,30 +124,34 @@ export class PromptBuilder {
  * and execute them using the `PromptRunnerService`.
  */
 class PromptBuilderWithProviders {
-    private byokConfig?: BYOKConfig['main'];
-    private byokFallbackConfig?: BYOKConfig['fallback'];
+    private byokConfig?: BYOKProviderConfig;
+    private byokFallbackConfig?: BYOKProviderConfig | null;
+
     constructor(
         private readonly runner: PromptRunnerService,
         private readonly params: Partial<PromptRunnerParams<void>> = {},
-    ) {}
+        byokConfig?: BYOKProviderConfig,
+        byokFallbackConfig?: BYOKProviderConfig | null,
+    ) {
+        this.byokConfig = byokConfig;
+        this.byokFallbackConfig = byokFallbackConfig;
+    }
 
     /**
      * Sets BYOK configuration for the main provider
-     * @param config BYOK configuration with provider, apiKey, model, and optional baseURL
-     * @returns The PromptBuilderWithProviders instance for chaining
+     * @param config Individual provider configuration (main.* properties)
      */
-    setBYOKConfig(config: BYOKConfig): this {
-        this.byokConfig = config.main;
+    setBYOKConfig(config: BYOKProviderConfig): this {
+        this.byokConfig = config;
         return this;
     }
 
     /**
      * Sets BYOK configuration for the fallback provider
-     * @param config BYOK configuration for fallback
-     * @returns The PromptBuilderWithProviders instance for chaining
+     * @param config Individual provider configuration or null to disable fallback
      */
-    setBYOKFallbackConfig(config: BYOKConfig): this {
-        this.byokFallbackConfig = config.fallback;
+    setBYOKFallbackConfig(config: BYOKProviderConfig | null): this {
+        this.byokFallbackConfig = config;
         return this;
     }
 
@@ -174,6 +215,7 @@ class PromptBuilderWithProviders {
                 ? { main: this.byokFallbackConfig }
                 : undefined,
         };
+
         switch (type) {
             case ParserType.STRING: {
                 return new ConfigurablePromptBuilderWithoutPayload<
@@ -300,21 +342,21 @@ class ConfigurablePromptBuilder<
 
     /**
      * Sets BYOK configuration for the main provider
-     * @param config BYOK configuration with provider, apiKey, model, and optional baseURL
+     * @param config Individual provider configuration
      * @returns The ConfigurablePromptBuilder instance for chaining
      */
-    setBYOKConfig(config: BYOKConfig): this {
-        this.params.byokConfig = config;
+    setBYOKConfig(config: BYOKProviderConfig): this {
+        this.params.byokConfig = { main: config };
         return this;
     }
 
     /**
      * Sets BYOK configuration for the fallback provider
-     * @param config BYOK configuration for fallback
+     * @param config Individual provider configuration or null to disable fallback
      * @returns The ConfigurablePromptBuilder instance for chaining
      */
-    setBYOKFallbackConfig(config: BYOKConfig): this {
-        this.params.byokFallbackConfig = config;
+    setBYOKFallbackConfig(config: BYOKProviderConfig | null): this {
+        this.params.byokFallbackConfig = config ? { main: config } : undefined;
         return this;
     }
 
