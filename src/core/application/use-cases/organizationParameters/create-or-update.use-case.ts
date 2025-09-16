@@ -4,11 +4,11 @@ import {
     ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/organizationParameters/contracts/organizationParameters.service.contract';
 import { OrganizationParametersEntity } from '@/core/domain/organizationParameters/entities/organizationParameters.entity';
-import { OrganizationParametersByokConfig } from '@/core/domain/organizationParameters/types/organizationParameters.types';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { encrypt } from '@/shared/utils/crypto';
+import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { Inject, Injectable } from '@nestjs/common';
 
 @Injectable()
@@ -57,14 +57,12 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
         }
     }
 
-    private encryptByokConfigApiKey(
-        configValue: any,
-    ): OrganizationParametersByokConfig {
+    private encryptByokConfigApiKey(configValue: any): BYOKConfig {
         if (!configValue || typeof configValue !== 'object') {
             throw new Error('Invalid BYOK config value');
         }
 
-        const byokConfig = configValue as OrganizationParametersByokConfig;
+        const byokConfig = configValue as BYOKConfig;
 
         if (!byokConfig.main.apiKey) {
             throw new Error('apiKey is required for BYOK config');
