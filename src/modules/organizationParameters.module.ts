@@ -18,6 +18,7 @@ import { OrgnizationParametersController } from '@/core/infrastructure/http/cont
 import { CreateOrUpdateOrganizationParametersUseCase } from '@/core/application/use-cases/organizationParameters/create-or-update.use-case';
 import { FindByKeyOrganizationParametersUseCase } from '@/core/application/use-cases/organizationParameters/find-by-key.use-case';
 import { GetModelsByProviderUseCase } from '@/core/application/use-cases/organizationParameters/get-models-by-provider.use-case';
+import { ProviderService } from '@/core/infrastructure/adapters/services/providers/provider.service';
 
 @Module({
     imports: [
@@ -37,6 +38,7 @@ import { GetModelsByProviderUseCase } from '@/core/application/use-cases/organiz
         PromptService,
         ProjectManagementService,
         PlatformIntegrationFactory,
+        ProviderService,
         {
             provide: ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
             useClass: OrganizationParametersService,

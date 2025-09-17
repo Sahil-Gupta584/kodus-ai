@@ -1,17 +1,13 @@
 import { CreateOrUpdateOrganizationParametersUseCase } from '@/core/application/use-cases/organizationParameters/create-or-update.use-case';
 import { FindByKeyOrganizationParametersUseCase } from '@/core/application/use-cases/organizationParameters/find-by-key.use-case';
-import { GetModelsByProviderUseCase } from '@/core/application/use-cases/organizationParameters/get-models-by-provider.use-case';
-import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
-
 import {
-    BadRequestException,
-    Body,
-    Controller,
-    Get,
-    Post,
-    Put,
-    Query,
-} from '@nestjs/common';
+    GetModelsByProviderUseCase,
+    ModelResponse,
+} from '@/core/application/use-cases/organizationParameters/get-models-by-provider.use-case';
+import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
+import { ProviderService } from '@/core/infrastructure/adapters/services/providers/provider.service';
+
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 
 @Controller('organization-parameters')
 export class OrgnizationParametersController {
@@ -19,6 +15,7 @@ export class OrgnizationParametersController {
         private readonly createOrUpdateOrganizationParametersUseCase: CreateOrUpdateOrganizationParametersUseCase,
         private readonly findByKeyOrganizationParametersUseCase: FindByKeyOrganizationParametersUseCase,
         private readonly getModelsByProviderUseCase: GetModelsByProviderUseCase,
+        private readonly providerService: ProviderService,
     ) {}
 
     @Post('/create-or-update')
@@ -47,34 +44,34 @@ export class OrgnizationParametersController {
         });
     }
 
-    @Get('/list-all')
-    public async listAll() {}
+    @Get('/byok-config')
+    public async getByokConfig(
+        @Query('organizationId') organizationId: string,
+    ) {
+        return await this.findByKeyOrganizationParametersUseCase.execute(
+            OrganizationParametersKey.BYOK_CONFIG,
+            { organizationId },
+        );
+    }
 
     @Get('/list-providers')
     public async listProviders() {
+        const providers = this.providerService.getAllProviders();
         return {
-            providers: [
-                { id: 'openai', name: 'OpenAI' },
-                { id: 'anthropic', name: 'Anthropic' },
-                { id: 'gemini', name: 'Google Gemini' },
-                { id: 'vertex', name: 'Google Vertex' },
-                { id: 'open_router', name: 'Open Router' },
-                { id: 'novita', name: 'Novita' },
-                { id: 'openai_compatible', name: 'OpenAI Compatible' },
-            ],
+            providers: providers.map((provider) => ({
+                id: provider.id,
+                name: provider.name,
+                description: provider.description,
+                requiresApiKey: provider.requiresApiKey,
+                requiresBaseUrl: provider.requiresBaseUrl,
+            })),
         };
     }
 
     @Get('/list-models')
     public async listModels(
         @Query('provider') provider: string,
-        @Query('apiKey') apiKey?: string,
-        @Query('baseUrl') baseUrl?: string,
-    ) {
-        if (!provider) {
-            throw new BadRequestException('Provider é obrigatório');
-        }
-
+    ): Promise<ModelResponse> {
         return await this.getModelsByProviderUseCase.execute(provider);
     }
 }
