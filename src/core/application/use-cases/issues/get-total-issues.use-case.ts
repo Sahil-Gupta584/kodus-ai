@@ -10,6 +10,11 @@ import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import { GetAssignedReposUseCase } from '../permissions/get-assigned-repos.use-case';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 @Injectable()
 export class GetTotalIssuesUseCase implements IUseCase {
@@ -29,9 +34,23 @@ export class GetTotalIssuesUseCase implements IUseCase {
         },
 
         private readonly getAssignedReposUseCase: GetAssignedReposUseCase,
+
+        private readonly authorizationService: AuthorizationService,
     ) {}
 
     async execute(filters: GetIssuesByFiltersDto): Promise<number> {
+        const assignedRepositoryIds =
+            await this.getAssignedReposUseCase.execute({
+                userId: this.request.user.uuid,
+            });
+
+        await this.authorizationService.ensure({
+            user: this.request.user,
+            action: Action.Read,
+            resource: ResourceType.Issues,
+            repoIds: assignedRepositoryIds,
+        });
+
         const newFilters: Parameters<
             typeof this.kodyIssuesManagementService.buildFilter
         >[0] = { ...filters };
@@ -39,11 +58,6 @@ export class GetTotalIssuesUseCase implements IUseCase {
         if (!newFilters?.organizationId) {
             newFilters.organizationId = this.request.user.organization.uuid;
         }
-
-        const assignedRepositoryIds =
-            await this.getAssignedReposUseCase.execute({
-                userId: this.request.user.uuid,
-            });
 
         if (assignedRepositoryIds.length > 0) {
             newFilters.repositoryIds = assignedRepositoryIds;

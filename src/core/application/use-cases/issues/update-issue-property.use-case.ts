@@ -50,7 +50,7 @@ export class UpdateIssuePropertyUseCase implements IUseCase {
             user: this.request.user,
             action: Action.Update,
             resource: ResourceType.Issues,
-            repoId: issue.repository.id,
+            repoIds: [issue.repository.id],
         });
 
         await this.kodyIssuesManagementService.clearIssuesCache(

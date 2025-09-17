@@ -58,7 +58,7 @@ export class GetIssueByIdUseCase implements IUseCase {
             user: this.request.user,
             action: Action.Read,
             resource: ResourceType.Issues,
-            repoId: issue.repository.id,
+            repoIds: [issue.repository.id],
         });
 
         const codeReviewFeedback =

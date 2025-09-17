@@ -4,46 +4,61 @@ import {
 } from '@/core/domain/permissions/enums/permissions.enum';
 import { PolicyHandler } from '@/core/domain/permissions/types/policy.types';
 import { subject as caslSubject } from '@casl/ability';
-import { ResourceTypeFactory } from './resourceType.factory';
+
+const getNestedValue = (obj: any, path: string): any => {
+    return path.split('.').reduce((acc, key) => acc?.[key], obj);
+};
 
 export const checkPermissions = (
     action: Action,
     resource: ResourceType,
 ): PolicyHandler => {
-    return (ability) => {
-        const resourceSubject =
-            ResourceTypeFactory.getSubjectOfResource(resource);
+    return (ability, request) => {
+        if (!request.user?.organization?.uuid) {
+            return false;
+        }
 
-        const subject = caslSubject(resourceSubject as string, {});
+        const subject = caslSubject(resource, {
+            organizationId: request.user.organization.uuid,
+        });
 
-        return ability.can(action, subject);
+        return ability.can(action, subject as any);
     };
 };
 
 export const checkRepoPermissions = (
     action: Action,
     resource: ResourceType,
-    key: {
+    key?: {
         params?: string;
         query?: string;
         body?: string;
     },
+    customRepoId?: string | number | (() => string | number) | null,
 ): PolicyHandler => {
     return (ability, request) => {
+        if (!request.user?.organization?.uuid) {
+            return false;
+        }
+
         const repoId =
-            request?.params?.[key?.query] ||
-            request?.query?.[key?.query] ||
-            request?.body?.[key?.body];
+            getNestedValue(request?.params, key?.params || '') ||
+            getNestedValue(request?.query, key?.query || '') ||
+            getNestedValue(request?.body, key?.body || '') ||
+            (typeof customRepoId === 'function'
+                ? customRepoId()
+                : customRepoId) ||
+            null;
 
         if (!repoId) {
             return false;
         }
 
-        const resourceSubject =
-            ResourceTypeFactory.getSubjectOfResource(resource);
+        const subject = caslSubject(resource, {
+            organizationId: request.user.organization.uuid,
+            repoId,
+        });
 
-        const subject = caslSubject(resourceSubject as string, { repoId });
-
-        return ability.can(action, subject);
+        return ability.can(action, subject as any);
     };
 };

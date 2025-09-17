@@ -5,7 +5,6 @@ import {
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { PermissionsAbilityFactory } from '@/core/infrastructure/adapters/services/permissions/permissionsAbility.factory';
-import { ResourceTypeFactory } from '@/core/infrastructure/adapters/services/permissions/resourceType.factory';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { Injectable } from '@nestjs/common';
 
@@ -44,10 +43,7 @@ export class CanAccessUseCase implements IUseCase {
                 user as IUser,
             );
 
-            const resourceType =
-                ResourceTypeFactory.getSubjectOfResource(resource);
-
-            return ability.can(action, resourceType);
+            return ability.can(action, resource);
         } catch (error) {
             this.logger.error({
                 message: 'Error checking access permissions',

@@ -5,8 +5,7 @@ import {
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PermissionsAbilityFactory } from './permissionsAbility.factory';
-import { subject } from '@casl/ability';
-import { ResourceTypeFactory } from './resourceType.factory';
+import { subject as caslSubject } from '@casl/ability';
 
 @Injectable()
 export class AuthorizationService {
@@ -18,37 +17,50 @@ export class AuthorizationService {
         user: Partial<IUser>;
         action: Action;
         resource: ResourceType;
-        repoId?: string;
+        repoIds?: string[];
     }): Promise<boolean> {
-        const { user, action, resource, repoId } = params;
+        const { user, action, resource, repoIds = [undefined] } = params;
 
-        if (!user || !user.uuid) {
+        if (!user || !user.uuid || !user.organization?.uuid) {
             return false;
         }
 
         const ability = await this.permissionsAbilityFactory.createForUser(
             user as IUser,
         );
-        const resourceSubject =
-            ResourceTypeFactory.getSubjectOfResource(resource);
-        const subjectInstance = subject(resourceSubject as string, {
-            ...(repoId ? { repoId } : {}),
-        });
-        return ability.can(action, subjectInstance);
+
+        for (const repoId of repoIds) {
+            const subject = caslSubject(resource, {
+                organizationId: user.organization.uuid,
+                ...(repoId ? { repoId } : {}),
+            });
+
+            if (!ability.can(action, subject as any)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     async ensure(params: {
         user: Partial<IUser>;
         action: Action;
         resource: ResourceType;
-        repoId?: string;
+        repoIds?: string[];
     }): Promise<void> {
-        const { user, action, resource, repoId } = params;
+        const { user, action, resource, repoIds } = params;
 
-        const isAllowed = await this.check({ user, action, resource, repoId });
+        const isAllowed = await this.check({
+            user,
+            action,
+            resource,
+            repoIds,
+        });
+
         if (!isAllowed) {
             throw new ForbiddenException(
-                `User does not have permission to ${action} on ${resource}`,
+                `User does not have permission to ${action} on ${resource}${repoIds ? ` for repos: ${repoIds.join(', ')}` : ''}`,
             );
         }
     }

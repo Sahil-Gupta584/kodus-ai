@@ -10,6 +10,11 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { REQUEST } from '@nestjs/core';
 import { GetAssignedReposUseCase } from '../permissions/get-assigned-repos.use-case';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 @Injectable()
 export class GetIssuesUseCase implements IUseCase {
@@ -30,10 +35,24 @@ export class GetIssuesUseCase implements IUseCase {
         private readonly getAssignedReposUseCase: GetAssignedReposUseCase,
 
         private readonly cacheService: CacheService,
+
+        private readonly authorizationService: AuthorizationService,
     ) {}
 
     async execute(filters: GetIssuesByFiltersDto): Promise<IIssue[]> {
         try {
+            const assignedRepositoryIds =
+                await this.getAssignedReposUseCase.execute({
+                    userId: this.request.user.uuid,
+                });
+
+            await this.authorizationService.ensure({
+                user: this.request.user,
+                action: Action.Read,
+                resource: ResourceType.Issues,
+                repoIds: assignedRepositoryIds,
+            });
+
             if (!filters?.organizationId) {
                 filters.organizationId = this.request.user.organization.uuid;
             }
@@ -74,11 +93,6 @@ export class GetIssuesUseCase implements IUseCase {
             if (!allIssues || allIssues.length === 0) {
                 return [];
             }
-
-            const assignedRepositoryIds =
-                await this.getAssignedReposUseCase.execute({
-                    userId: this.request.user.uuid,
-                });
 
             if (assignedRepositoryIds.length > 0) {
                 allIssues = allIssues.filter((issue) =>

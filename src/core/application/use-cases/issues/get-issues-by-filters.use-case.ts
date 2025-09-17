@@ -12,6 +12,11 @@ import { KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN } from '@/core/domain/codeBase/con
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { REQUEST } from '@nestjs/core';
 import { GetAssignedReposUseCase } from '../permissions/get-assigned-repos.use-case';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 @Injectable()
 export class GetIssuesByFiltersUseCase implements IUseCase {
@@ -35,10 +40,24 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
         },
 
         private readonly getAssignedReposUseCase: GetAssignedReposUseCase,
+
+        private readonly authorizationService: AuthorizationService,
     ) {}
 
     async execute(filters: GetIssuesByFiltersDto): Promise<IIssue[]> {
         try {
+            const assignedRepositoryIds =
+                await this.getAssignedReposUseCase.execute({
+                    userId: this.request.user.uuid,
+                });
+
+            await this.authorizationService.ensure({
+                user: this.request.user,
+                action: Action.Read,
+                resource: ResourceType.Issues,
+                repoIds: assignedRepositoryIds,
+            });
+
             const cacheKey = `issues_${filters.organizationId}`;
 
             let allIssues =
@@ -136,11 +155,6 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
                     ),
                 );
             }
-
-            const assignedRepositoryIds =
-                await this.getAssignedReposUseCase.execute({
-                    userId: this.request.user.uuid,
-                });
 
             if (assignedRepositoryIds.length > 0) {
                 filteredIssues = filteredIssues.filter((issue) =>

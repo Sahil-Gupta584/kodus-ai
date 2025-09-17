@@ -8,13 +8,11 @@ import {
 } from '@/core/domain/permissions/enums/permissions.enum';
 import {
     AppAbility,
-    Resource,
     Subject,
 } from '@/core/domain/permissions/types/permissions.types';
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { PermissionsAbilityFactory } from '@/core/infrastructure/adapters/services/permissions/permissionsAbility.factory';
-import { ResourceTypeFactory } from '@/core/infrastructure/adapters/services/permissions/resourceType.factory';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { MongoQuery } from '@casl/ability';
 import { Inject, Injectable } from '@nestjs/common';
@@ -78,11 +76,7 @@ export class GetPermissionsUseCase implements IUseCase {
             const resources =
                 rule.subject === 'all'
                     ? Object.values(ResourceType)
-                    : [
-                          ResourceTypeFactory.getResourceOfSubject(
-                              rule.subject as Subject,
-                          ),
-                      ];
+                    : [rule.subject as ResourceType];
             if (!resources) continue;
 
             for (const resourceType of resources) {

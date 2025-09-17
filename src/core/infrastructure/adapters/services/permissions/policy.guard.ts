@@ -47,11 +47,11 @@ export class PolicyGuard implements CanActivate {
         );
     }
 
-    private async executeHandler(
+    private executeHandler(
         handler: PolicyHandler,
         ability: any,
         request: any,
-    ): Promise<boolean> {
+    ): boolean {
         // Check if the handler is a class constructor (an injectable handler)
         if (typeof handler === 'function' && 'prototype' in handler) {
             const instance = this.moduleRef.get(
