@@ -151,6 +151,7 @@ interface DiffForFileResponse {
 export class CodeManagementTools {
     private static readonly ERROR_MESSAGES = {
         ORGANIZATION_ID_REQUIRED: 'Organization ID is required',
+        TEAM_ID_REQUIRED: 'Team ID is required',
         REPOSITORY_ID_REQUIRED: 'Repository ID is required',
         VALID_PR_NUMBER_REQUIRED: 'Valid PR number is required',
         NO_REPOSITORIES_FOUND: 'No repositories found for this organization',
@@ -1067,6 +1068,11 @@ export class CodeManagementTools {
                 .describe(
                     'Organization UUID - unique identifier for the organization in the system',
                 ),
+            teamId: z
+                .string()
+                .describe(
+                    'Team UUID - unique identifier for the team in the system',
+                ),
             repositoryId: z
                 .string()
                 .describe('Repository unique identifier to get the diff from'),
@@ -1109,6 +1115,15 @@ export class CodeManagementTools {
                             };
                         }
 
+                        if (!args.teamId) {
+                            return {
+                                success: false,
+                                message:
+                                    CodeManagementTools.ERROR_MESSAGES
+                                        .TEAM_ID_REQUIRED,
+                            };
+                        }
+
                         if (!args.repositoryId) {
                             return {
                                 success: false,
@@ -1129,6 +1144,7 @@ export class CodeManagementTools {
 
                         const organizationAndTeamData = {
                             organizationId: args.organizationId,
+                            teamId: args.teamId,
                         };
 
                         let repositoryName = args.repositoryName;
@@ -1194,7 +1210,6 @@ export class CodeManagementTools {
                             number: args.prNumber,
                         };
 
-                        // Get files changed in the pull request
                         let changedFiles;
                         try {
                             changedFiles =

@@ -9,6 +9,10 @@ export {
 export type { DirectLLMAdapter } from './core/llm/direct-llm-adapter.js';
 
 export { createMockLLMProvider } from './adapters/llm/mock-provider.js';
+export {
+    normalizeLLMContent,
+    toHumanAiMessages,
+} from './core/llm/normalizers.js';
 export { getObservability, createLogger } from './observability/index.js';
 export {
     getExecutionTraceability,

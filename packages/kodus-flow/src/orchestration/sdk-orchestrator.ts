@@ -147,6 +147,7 @@ const orchestrator = new SDKOrchestrator({
             tenantId: this.config.tenantId,
             agentName: config.name,
             llmAdapter: this.config.llmAdapter, // Pass LLM adapter
+            llmDefaults: config.llmDefaults,
             maxThinkingIterations:
                 config.maxIterations || this.config.defaultMaxIterations,
             enableKernelIntegration: true,

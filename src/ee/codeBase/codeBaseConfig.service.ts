@@ -193,6 +193,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     globalConfig.baseBranches,
                     defaultBranch,
                 ),
+                baseBranchDefault: defaultBranch,
                 reviewOptions: this.mergeReviewOptions(
                     {
                         kodusConfig: kodusConfigFile?.reviewOptions,
@@ -314,7 +315,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     timeWindow: 0,
                     pushesToTrigger: 0,
                 },
-                codeReviewVersion: CodeReviewVersion.LEGACY,
+                codeReviewVersion: CodeReviewVersion.v2,
             };
 
             return DEFAULT_CONFIG;
@@ -977,9 +978,11 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
     ): Promise<string | null> {
         const configFileName = 'kodus-config.yml';
         // Garante que o diretório termine com / para construir o caminho correto
-        const normalizedPath = directoryPath.endsWith('/') ? directoryPath : `${directoryPath}/`;
+        const normalizedPath = directoryPath.endsWith('/')
+            ? directoryPath
+            : `${directoryPath}/`;
         const fullPath = `${normalizedPath}${configFileName}`;
-        
+
         const response =
             await this.codeManagementService.getRepositoryContentFile({
                 organizationAndTeamData,
@@ -1246,32 +1249,35 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             let kodusConfigFile: Omit<KodusConfigFile, 'version'> | null = null;
             let validationErrors = [];
             let isDeprecated = false;
-            
+
             try {
-                const directoryConfigResult = await this.getDirectoryKodusConfigFile(
-                    organizationAndTeamData,
-                    repository,
-                    directoryConfig.path,
-                    defaultBranch,
-                );
+                const directoryConfigResult =
+                    await this.getDirectoryKodusConfigFile(
+                        organizationAndTeamData,
+                        repository,
+                        directoryConfig.path,
+                        defaultBranch,
+                    );
                 kodusConfigFile = directoryConfigResult.kodusConfigFile;
                 validationErrors = directoryConfigResult.validationErrors;
                 isDeprecated = directoryConfigResult.isDeprecated ?? false;
 
                 if (kodusConfigFile) {
                     this.logger.log({
-                        message: 'Using directory-specific kodus-config.yml file',
+                        message:
+                            'Using directory-specific kodus-config.yml file',
                         context: CodeBaseConfigService.name,
-                        metadata: { 
+                        metadata: {
                             directoryPath: directoryConfig.path,
                             repository: repository.name,
-                            isDeprecated 
+                            isDeprecated,
                         },
                     });
                 }
             } catch (error) {
                 this.logger.warn({
-                    message: 'Error loading directory configuration file, falling back to database config',
+                    message:
+                        'Error loading directory configuration file, falling back to database config',
                     context: CodeBaseConfigService.name,
                     error,
                     metadata: { directoryPath: directoryConfig.path },
@@ -1305,32 +1311,31 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 baseBranches: configSource.baseBranches?.length
                     ? configSource.baseBranches
                     : [defaultBranch],
-                reviewOptions: kodusConfigFile 
+                reviewOptions: kodusConfigFile
                     ? this.mergeReviewOptions(
-                        {
-                            kodusConfig: kodusConfigFile.reviewOptions,
-                            validationErrors: validationErrors,
-                        },
-                        undefined, // repo
-                        undefined, // global
-                        codeReviewVersion,
-                    )
+                          {
+                              kodusConfig: kodusConfigFile.reviewOptions,
+                              validationErrors: validationErrors,
+                          },
+                          undefined, // repo
+                          undefined, // global
+                          codeReviewVersion,
+                      )
                     : this.mergeReviewOptions(
-                        {
-                            kodusConfig: undefined,
-                            validationErrors: [],
-                        },
-                        directoryConfig.reviewOptions,
-                        undefined, // global
-                        codeReviewVersion,
-                    ),
+                          {
+                              kodusConfig: undefined,
+                              validationErrors: [],
+                          },
+                          directoryConfig.reviewOptions,
+                          undefined, // global
+                          codeReviewVersion,
+                      ),
                 summary: configSource.summary || this.DEFAULT_CONFIG.summary,
                 suggestionControl:
                     configSource.suggestionControl ||
                     this.DEFAULT_CONFIG.suggestionControl,
                 kodyRules: kodyRules,
-                ignoredTitleKeywords:
-                    configSource.ignoredTitleKeywords || [],
+                ignoredTitleKeywords: configSource.ignoredTitleKeywords || [],
                 automatedReviewActive:
                     configSource.automatedReviewActive ??
                     this.DEFAULT_CONFIG.automatedReviewActive,
@@ -1348,7 +1353,8 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 kodusConfigFileOverridesWebPreferences: kodusConfigFile
                     ? true // Se veio do arquivo yml, sempre override
                     : (directoryConfig.kodusConfigFileOverridesWebPreferences ??
-                        this.DEFAULT_CONFIG.kodusConfigFileOverridesWebPreferences),
+                      this.DEFAULT_CONFIG
+                          .kodusConfigFileOverridesWebPreferences),
                 isRequestChangesActive:
                     configSource.isRequestChangesActive ??
                     this.DEFAULT_CONFIG.isRequestChangesActive,

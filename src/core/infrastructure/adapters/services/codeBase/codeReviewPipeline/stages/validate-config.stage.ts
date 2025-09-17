@@ -1,6 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { BasePipelineStage } from '../../../pipeline/base-stage.abstract';
 import {
+    processExpression,
+    shouldReviewBranches,
+    mergeBaseBranches,
+} from '../../branchReview.service';
+import {
     AUTOMATION_EXECUTION_SERVICE_TOKEN,
     IAutomationExecutionService,
 } from '@/core/domain/automation/contracts/automation-execution.service';
@@ -17,7 +22,11 @@ import {
 } from '@/core/domain/automation/enums/automation-status';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
-import { IOrganizationParametersService, ORGANIZATION_PARAMETERS_SERVICE_TOKEN } from '@/core/domain/organizationParameters/contracts/organizationParameters.service.contract';
+import {
+    IOrganizationParametersService,
+    ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
+} from '@/core/domain/organizationParameters/contracts/organizationParameters.service.contract';
+import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 
 @Injectable()
 export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -56,10 +65,11 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 });
             }
 
-            const byokConfig = await this.organizationParametersService.findByKey(
-                OrganizationParametersKey.BYOK_CONFIG,
-                context.organizationAndTeamData,
-            );
+            const byokConfig =
+                await this.organizationParametersService.findByKey(
+                    OrganizationParametersKey.BYOK_CONFIG,
+                    context.organizationAndTeamData,
+                );
 
             context = this.updateContext(context, (draft) => {
                 draft.codeReviewConfig.byokConfig = byokConfig?.configValue;
@@ -133,12 +143,15 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         const config = context.codeReviewConfig!;
 
         // Validações básicas primeiro
-        const basicValidation = this.shouldProcessPR(
+        const basicValidation = this.shouldExecuteReview(
             context.pullRequest.title,
-            context.pullRequest.base.ref,
+            context.pullRequest.base.ref, // TARGET (base branch - para onde vai o PR)
+            context.pullRequest.head.ref, // SOURCE (head branch - de onde vem o PR)
             context.pullRequest.isDraft,
             config,
             context.origin || '',
+            context.organizationAndTeamData,
+            config.baseBranchDefault, // API base branch from repository
         );
 
         if (!basicValidation) {
@@ -435,12 +448,15 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         }
     }
 
-    private shouldProcessPR(
+    private shouldExecuteReview(
         title: string,
-        baseBranch: string,
+        targetBranch: string, // TARGET (base branch - para onde vai o PR)
+        sourceBranch: string, // SOURCE (head branch - de onde vem o PR)
         isDraft: boolean,
         config: any,
         origin: string,
+        organizationAndTeamData: OrganizationAndTeamData,
+        apiBaseBranch?: string,
     ): boolean {
         if (origin === 'command') {
             return true;
@@ -458,7 +474,41 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             return false;
         }
 
-        if (!config.baseBranches?.includes(baseBranch)) {
+        if (config?.baseBranches && Array.isArray(config.baseBranches)) {
+            const mergedBranches = mergeBaseBranches(
+                config.baseBranches,
+                apiBaseBranch || targetBranch,
+            );
+            const expression = mergedBranches.join(', ');
+            const reviewConfig = processExpression(expression);
+
+            const resultValidation = shouldReviewBranches(
+                sourceBranch,
+                targetBranch,
+                reviewConfig,
+            );
+
+            // Log das configurações usadas para gerar o resultValidation
+            this.logger.log({
+                message: '🔍 Branch Review Validation',
+                context: 'ValidateConfigStage',
+                metadata: {
+                    originalConfig: config.baseBranches,
+                    apiBaseBranch,
+                    mergedBranches,
+                    expression,
+                    sourceBranch,
+                    targetBranch,
+                    reviewConfig,
+                    result: resultValidation ? 'REVIEW' : 'NO_REVIEW',
+                    organizationAndTeamData,
+                },
+            });
+
+            return resultValidation;
+        }
+
+        if (!config.baseBranches?.includes(targetBranch)) {
             return false;
         }
 
