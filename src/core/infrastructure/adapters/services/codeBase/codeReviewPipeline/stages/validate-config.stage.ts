@@ -3,6 +3,7 @@ import { BasePipelineStage } from '../../../pipeline/base-stage.abstract';
 import {
     processExpression,
     shouldReviewBranches,
+    mergeBaseBranches,
 } from '../../branchReview.service';
 import {
     AUTOMATION_EXECUTION_SERVICE_TOKEN,
@@ -126,11 +127,12 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         // Validações básicas primeiro
         const basicValidation = this.shouldExecuteReview(
             context.pullRequest.title,
-            context.pullRequest.base.ref,
-            context.pullRequest.head.ref,
+            context.pullRequest.base.ref, // TARGET (base branch - para onde vai o PR)
+            context.pullRequest.head.ref, // SOURCE (head branch - de onde vem o PR)
             context.pullRequest.isDraft,
             config,
             context.origin || '',
+            config.baseBranchDefault, // API base branch from repository
         );
 
         if (!basicValidation) {
@@ -429,11 +431,12 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
 
     private shouldExecuteReview(
         title: string,
-        baseBranch: string,
-        targetBranch: string,
+        targetBranch: string, // TARGET (base branch - para onde vai o PR)
+        sourceBranch: string, // SOURCE (head branch - de onde vem o PR)
         isDraft: boolean,
         config: any,
         origin: string,
+        apiBaseBranch?: string,
     ): boolean {
         if (origin === 'command') {
             return true;
@@ -451,20 +454,44 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             return false;
         }
 
-        if (isDraft && !config?.runOnDraft) {
+        if (config?.baseBranches && Array.isArray(config.baseBranches)) {
+            const mergedBranches = mergeBaseBranches(
+                config.baseBranches,
+                apiBaseBranch || targetBranch,
+            );
+            const expression = mergedBranches.join(', ');
+            const reviewConfig = processExpression(expression);
+
+            const resultValidation = shouldReviewBranches(
+                sourceBranch,
+                targetBranch,
+                reviewConfig,
+            );
+
+            // Log das configurações usadas para gerar o resultValidation
+            this.logger.log({
+                message: '🔍 Branch Review Validation',
+                context: 'ValidateConfigStage',
+                metadata: {
+                    originalConfig: config.baseBranches,
+                    apiBaseBranch,
+                    mergedBranches,
+                    expression,
+                    sourceBranch,
+                    targetBranch,
+                    reviewConfig,
+                    result: resultValidation ? 'REVIEW' : 'NO_REVIEW',
+                },
+            });
+
+            return resultValidation;
+        }
+
+        if (!config.baseBranches?.includes(targetBranch)) {
             return false;
         }
 
-        // Use the new branch review logic if baseBranches array is provided
-        if (config?.baseBranches && Array.isArray(config.baseBranches)) {
-            // Convert array to expression string
-            const expression = config.baseBranches.join(', ');
-            const reviewConfig = processExpression(expression);
-            return shouldReviewBranches(baseBranch, targetBranch, reviewConfig);
-        }
-
-        // Fallback to old logic for backward compatibility
-        if (!config.baseBranches?.includes(baseBranch)) {
+        if (isDraft && !config?.runOnDraft) {
             return false;
         }
 

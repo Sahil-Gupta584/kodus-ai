@@ -13,7 +13,9 @@ describe('Branch Review Functions', () => {
 
             expect(config).toEqual({
                 reviewRules: {
-                    '*': { 'feature/aggregation': true },
+                    '*': {
+                        'feature/aggregation': true,
+                    },
                 },
             });
         });
@@ -38,8 +40,10 @@ describe('Branch Review Functions', () => {
 
             expect(config).toEqual({
                 reviewRules: {
-                    'feature/*': { '*': true },
-                    '!release/*': { '*': false },
+                    '*': {
+                        '!release/*': false,
+                        'feature/*': true,
+                    },
                 },
             });
         });
@@ -78,11 +82,11 @@ describe('Branch Review Functions', () => {
             expect(config).toEqual({
                 reviewRules: {
                     '*': {
-                        'feature/aggregation': true,
                         '!develop': false,
                         '!main': false,
+                        '!release/*': false,
+                        'feature/aggregation': true,
                     },
-                    '!release/*': { '*': false },
                 },
             });
         });
@@ -99,9 +103,9 @@ describe('Branch Review Functions', () => {
             expect(config).toEqual({
                 reviewRules: {
                     '*': {
-                        'feature/aggregation': true,
                         '!develop': false,
                         '!main': false,
+                        'feature/aggregation': true,
                     },
                 },
             });
@@ -195,12 +199,12 @@ describe('Branch Review Functions', () => {
         it('should convert simple config back to expression', () => {
             const config = {
                 reviewRules: {
-                    '*': { 'feature/aggregation': true },
+                    'feature/aggregation': { '*': true },
                 },
             };
 
             const expression = convertConfigToExpression(config);
-            expect(expression).toBe('=feature/aggregation');
+            expect(expression).toBe('feature/aggregation');
         });
 
         it('should convert exclusion config back to expression', () => {
@@ -220,8 +224,8 @@ describe('Branch Review Functions', () => {
         it('should convert complex config back to expression', () => {
             const config = {
                 reviewRules: {
+                    'feature/aggregation': { '*': true },
                     '*': {
-                        'feature/aggregation': true,
                         '!develop': false,
                         '!main': false,
                     },
@@ -231,7 +235,7 @@ describe('Branch Review Functions', () => {
 
             const expression = convertConfigToExpression(config);
             expect(expression).toBe(
-                '=feature/aggregation, !develop, !main, !release/*',
+                'feature/aggregation, !develop, !main, !release/*',
             );
         });
 
@@ -250,7 +254,7 @@ describe('Branch Review Functions', () => {
                 const config = processExpression(expression);
 
                 // Test cases
-                // feature/xyz → feature/aggregation should be true (matches * → feature/aggregation)
+                // feature/xyz → feature/aggregation should be true (any branch can go to feature/aggregation)
                 expect(
                     shouldReviewBranches(
                         'feature/xyz',
@@ -289,14 +293,15 @@ describe('Branch Review Functions', () => {
                 const expression = 'feature/*, hotfix/*';
                 const config = processExpression(expression);
 
+                // feature/* and hotfix/* are target patterns - any branch can go to them
                 expect(
-                    shouldReviewBranches('feature/xyz', 'develop', config),
+                    shouldReviewBranches('develop', 'feature/xyz', config),
                 ).toBe(true);
-                expect(shouldReviewBranches('hotfix/xyz', 'main', config)).toBe(
+                expect(shouldReviewBranches('main', 'hotfix/xyz', config)).toBe(
                     true,
                 );
                 expect(
-                    shouldReviewBranches('feature/xyz', 'main', config),
+                    shouldReviewBranches('main', 'feature/xyz', config),
                 ).toBe(true);
             });
 
@@ -304,11 +309,12 @@ describe('Branch Review Functions', () => {
                 const expression = 'feature/*, hotfix/*, !main';
                 const config = processExpression(expression);
 
+                // feature/* and hotfix/* are target patterns, but !main excludes main
+                expect(shouldReviewBranches('develop', 'main', config)).toBe(
+                    false,
+                );
                 expect(
-                    shouldReviewBranches('feature/xyz', 'main', config),
-                ).toBe(false);
-                expect(
-                    shouldReviewBranches('feature/xyz', 'develop', config),
+                    shouldReviewBranches('develop', 'feature/xyz', config),
                 ).toBe(true);
             });
         });
@@ -348,6 +354,51 @@ describe('Branch Review Functions', () => {
         });
 
         describe('Complex Scenarios', () => {
+            it('should handle advanced regex patterns', () => {
+                const advancedConfig = {
+                    reviewRules: {
+                        'feature/*': { '*': true },
+                        'release/*': { '*': true },
+                        '!hotfix-*': { '*': false },
+                        'contains:demo': { '*': true },
+                    },
+                };
+
+                // Test wildcards with special characters - feature/* means any branch matching can go anywhere
+                expect(
+                    shouldReviewBranches(
+                        'feature/v1.0',
+                        'develop',
+                        advancedConfig,
+                    ),
+                ).toBe(true);
+                expect(
+                    shouldReviewBranches(
+                        'release/v2.0',
+                        'main',
+                        advancedConfig,
+                    ),
+                ).toBe(true);
+
+                // Test exclusion with wildcards - !hotfix-* means any branch matching cannot go anywhere
+                expect(
+                    shouldReviewBranches(
+                        'hotfix-urgent',
+                        'main',
+                        advancedConfig,
+                    ),
+                ).toBe(false);
+
+                // Test contains - contains:demo means any branch containing "demo" can go anywhere
+                expect(
+                    shouldReviewBranches(
+                        'feature/demo-xyz',
+                        'develop',
+                        advancedConfig,
+                    ),
+                ).toBe(true);
+            });
+
             it('should handle multiple wildcard rules', () => {
                 const wildcardConfig = {
                     reviewRules: {
@@ -370,10 +421,15 @@ describe('Branch Review Functions', () => {
                     ),
                 ).toBe(true);
 
-                // Should NOT match wildcard exclusion (* → !main)
+                // Should NOT match because * → !main has higher priority than feature/* → *
                 expect(
                     shouldReviewBranches('feature/xyz', 'main', wildcardConfig),
                 ).toBe(false);
+
+                // Test with a branch that matches * but not feature/*
+                expect(
+                    shouldReviewBranches('hotfix/xyz', 'main', wildcardConfig),
+                ).toBe(false); // Should be false because * → !main has higher specificity
             });
 
             it('should prioritize specific rules over wildcard rules', () => {
@@ -383,7 +439,7 @@ describe('Branch Review Functions', () => {
                             '*': true, // Default: allow everything
                         },
                         'feature/*': {
-                            main: false, // Specific: deny feature/* → main
+                            '*': true, // Feature branches can go anywhere
                         },
                     },
                 };
@@ -397,6 +453,118 @@ describe('Branch Review Functions', () => {
                 ).toBe(true);
                 expect(
                     shouldReviewBranches('feature/xyz', 'main', priorityConfig),
+                ).toBe(true);
+            });
+
+            it('should handle granular control by source and target branches', () => {
+                // Configuration: features-A1 allowed, features-A2 denied, main excluded
+                const expression =
+                    'features-A1, features-A1*, !features-A2, !features-A2*, !main';
+                const config = processExpression(expression);
+
+                // features-A1 (ALLOWED)
+                expect(
+                    shouldReviewBranches(
+                        'features-A1-abc',
+                        'features-A1',
+                        config,
+                    ),
+                ).toBe(true);
+                expect(
+                    shouldReviewBranches(
+                        'features-A1-xyz',
+                        'features-A1',
+                        config,
+                    ),
+                ).toBe(true);
+
+                // features-A2 (DENIED)
+                expect(
+                    shouldReviewBranches(
+                        'features-A2-abc',
+                        'features-A2',
+                        config,
+                    ),
+                ).toBe(false);
+                expect(
+                    shouldReviewBranches(
+                        'features-A2-xyz',
+                        'features-A2',
+                        config,
+                    ),
+                ).toBe(false);
+
+                // main excluded (should not review)
+                expect(
+                    shouldReviewBranches('features-A1-abc', 'main', config),
+                ).toBe(false);
+                expect(
+                    shouldReviewBranches('features-A2-abc', 'main', config),
+                ).toBe(false);
+
+                // develop not explicitly configured (should NOT review because develop is not in allowed targets)
+                expect(
+                    shouldReviewBranches('features-A1', 'develop', config),
+                ).toBe(false);
+                expect(
+                    shouldReviewBranches('features-A2', 'develop', config),
+                ).toBe(false);
+            });
+
+            it('should handle specific source-to-target rules', () => {
+                // Configuration with specific source-to-target rules
+                const specificConfig = {
+                    reviewRules: {
+                        'features-A1': {
+                            '*': true, // features-A1 can go anywhere
+                        },
+                        'features-A1*': {
+                            '*': true, // features-A1* can go anywhere
+                        },
+                        '!features-A2': {
+                            '*': false, // features-A2 cannot go anywhere
+                        },
+                        '!features-A2*': {
+                            '*': false, // features-A2* cannot go anywhere
+                        },
+                    },
+                };
+
+                // features-A1 specific rules
+                expect(
+                    shouldReviewBranches(
+                        'features-A1',
+                        'develop',
+                        specificConfig,
+                    ),
+                ).toBe(true);
+                expect(
+                    shouldReviewBranches('features-A1', 'main', specificConfig),
+                ).toBe(true);
+
+                // features-A1* rules
+                expect(
+                    shouldReviewBranches(
+                        'features-A1-abc',
+                        'features-A1',
+                        specificConfig,
+                    ),
+                ).toBe(true);
+
+                // features-A2 denied
+                expect(
+                    shouldReviewBranches(
+                        'features-A2',
+                        'develop',
+                        specificConfig,
+                    ),
+                ).toBe(false);
+                expect(
+                    shouldReviewBranches(
+                        'features-A2-abc',
+                        'features-A2',
+                        specificConfig,
+                    ),
                 ).toBe(false);
             });
         });

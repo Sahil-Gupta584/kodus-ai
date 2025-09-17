@@ -23,12 +23,8 @@ export function processExpression(expression: string): ReviewConfig {
     rules.forEach((rule) => {
         if (rule.startsWith('!')) {
             const pattern = rule.slice(1);
-            if (pattern.includes('*')) {
-                reviewRules[`!${pattern}`] = { '*': false };
-            } else {
-                reviewRules['*'] = reviewRules['*'] || {};
-                reviewRules['*'][`!${pattern}`] = false;
-            }
+            reviewRules['*'] = reviewRules['*'] || {};
+            reviewRules['*'][`!${pattern}`] = false;
         } else if (rule.startsWith('=')) {
             const pattern = rule.slice(1);
             reviewRules['*'] = reviewRules['*'] || {};
@@ -41,12 +37,10 @@ export function processExpression(expression: string): ReviewConfig {
             const pattern = rule;
             reviewRules[pattern] = { '*': true };
         } else {
-            // Check if it's a wildcard pattern (source pattern) or specific branch (target pattern)
             if (rule.includes('*')) {
-                // This is a source pattern like "feature/*"
-                reviewRules[rule] = { '*': true };
+                reviewRules['*'] = reviewRules['*'] || {};
+                reviewRules['*'][rule] = true;
             } else {
-                // This is a specific target branch like "feature/aggregation"
                 reviewRules['*'] = reviewRules['*'] || {};
                 reviewRules['*'][rule] = true;
             }
@@ -255,20 +249,20 @@ function calculateSpecificity(
     if (sourcePattern === '*') {
         score += 1; // Lowest priority
     } else if (sourcePattern.startsWith('!')) {
-        score += 10; // Exclusions have high priority
+        score += 15; // Exclusions have very high priority
     } else if (sourcePattern.startsWith('contains:')) {
         score += 5; // Contains patterns have medium priority
     } else if (sourcePattern.includes('*')) {
-        score += 3; // Wildcards have medium-low priority
+        score += 8; // Wildcards have high priority
     } else {
-        score += 8; // Exact matches have high priority
+        score += 10; // Exact matches have high priority
     }
 
-    // Target pattern specificity
-    if (targetPattern === '*') {
+    // Target pattern specificity - exclusions have MAXIMUM priority
+    if (targetPattern.startsWith('!')) {
+        score += 100; // Exclusions have MAXIMUM priority to override everything
+    } else if (targetPattern === '*') {
         score += 1; // Lowest priority
-    } else if (targetPattern.startsWith('!')) {
-        score += 10; // Exclusions have high priority
     } else if (targetPattern.includes('*')) {
         score += 3; // Wildcards have medium-low priority
     } else {
@@ -278,11 +272,42 @@ function calculateSpecificity(
     return score;
 }
 
-// Backward compatibility - export as class for existing code
-export class BranchReviewService {
-    processExpression = processExpression;
-    validateExpression = validateExpression;
-    convertConfigToExpression = convertConfigToExpression;
-    shouldProcessPR = shouldReviewBranches; // Alias for backward compatibility
-    shouldReviewBranches = shouldReviewBranches;
+export function mergeBaseBranches(
+    configuredBranches: string[],
+    apiBaseBranch: string,
+): string[] {
+    const merged = new Set<string>();
+    const exclusions = new Set<string>();
+    const inclusions = new Set<string>();
+
+    for (const branch of configuredBranches) {
+        if (branch.startsWith('!')) {
+            exclusions.add(branch);
+        } else {
+            inclusions.add(branch);
+        }
+    }
+
+    if (
+        !inclusions.has(apiBaseBranch) &&
+        !exclusions.has(`!${apiBaseBranch}`)
+    ) {
+        inclusions.add(apiBaseBranch);
+    }
+
+    for (const inclusion of inclusions) {
+        const exclusion = `!${inclusion}`;
+        if (!exclusions.has(exclusion)) {
+            merged.add(inclusion);
+        }
+    }
+
+    for (const exclusion of exclusions) {
+        const inclusion = exclusion.slice(1); // Remove !
+        if (!inclusions.has(inclusion)) {
+            merged.add(exclusion);
+        }
+    }
+
+    return Array.from(merged);
 }

@@ -193,6 +193,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     globalConfig.baseBranches,
                     defaultBranch,
                 ),
+                baseBranchDefault: defaultBranch,
                 reviewOptions: this.mergeReviewOptions(
                     {
                         kodusConfig: kodusConfigFile?.reviewOptions,
