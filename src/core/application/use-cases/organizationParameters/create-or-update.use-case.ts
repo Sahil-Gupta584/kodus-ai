@@ -25,14 +25,16 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<OrganizationParametersEntity | boolean> {
         try {
-            // Processa a criptografia da apiKey se for BYOK_CONFIG
             let processedConfigValue = configValue;
             if (
                 organizationParametersKey ===
                 OrganizationParametersKey.BYOK_CONFIG
             ) {
-                processedConfigValue =
-                    this.encryptByokConfigApiKey(configValue);
+                return await this.saveByokConfig(
+                    organizationParametersKey,
+                    configValue,
+                    organizationAndTeamData,
+                );
             }
 
             return await this.organizationParametersService.createOrUpdateConfig(
@@ -57,6 +59,24 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
         }
     }
 
+    private async saveByokConfig(
+        organizationParametersKey: OrganizationParametersKey,
+        configValue: any,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<boolean> {
+        let processedConfigValue = configValue;
+        processedConfigValue = this.encryptByokConfigApiKey(configValue);
+
+        const result =
+            await this.organizationParametersService.createOrUpdateConfig(
+                organizationParametersKey,
+                processedConfigValue,
+                organizationAndTeamData,
+            );
+
+        return !!result;
+    }
+
     private encryptByokConfigApiKey(configValue: any): BYOKConfig {
         if (!configValue || typeof configValue !== 'object') {
             throw new Error('Invalid BYOK config value');
@@ -75,8 +95,10 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
                 apiKey: encrypt(byokConfig.main.apiKey),
             },
             fallback: {
-                ...byokConfig.fallback,
-                apiKey: encrypt(byokConfig.fallback.apiKey),
+                ...byokConfig?.fallback,
+                apiKey: byokConfig?.fallback?.apiKey
+                    ? encrypt(byokConfig?.fallback?.apiKey)
+                    : undefined,
             },
         };
     }
