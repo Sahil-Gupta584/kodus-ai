@@ -21,6 +21,7 @@ import {
     AutomationStatus,
 } from '@/core/domain/automation/enums/automation-status';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
+import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 
 @Injectable()
 export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -132,6 +133,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             context.pullRequest.isDraft,
             config,
             context.origin || '',
+            context.organizationAndTeamData,
             config.baseBranchDefault, // API base branch from repository
         );
 
@@ -436,6 +438,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         isDraft: boolean,
         config: any,
         origin: string,
+        organizationAndTeamData: OrganizationAndTeamData,
         apiBaseBranch?: string,
     ): boolean {
         if (origin === 'command') {
@@ -481,6 +484,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                     targetBranch,
                     reviewConfig,
                     result: resultValidation ? 'REVIEW' : 'NO_REVIEW',
+                    organizationAndTeamData,
                 },
             });
 
