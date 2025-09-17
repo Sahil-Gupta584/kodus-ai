@@ -24,11 +24,8 @@ import {
     PolicyGuard,
 } from '../../adapters/services/permissions/policy.guard';
 import { subject } from '@casl/ability';
-import {
-    ResourceGitSettings,
-    ResourceUserSettings,
-} from '@/core/domain/permissions/types/permissions.types';
 import { AssignReposUseCase } from '@/core/application/use-cases/permissions/assign-repos.use-case';
+import { checkPermissions } from '../../adapters/services/permissions/policy.handlers';
 
 @Controller('permissions')
 export class PermissionsController {
@@ -93,9 +90,7 @@ export class PermissionsController {
 
     @Post('assign-repos')
     @UseGuards(PolicyGuard)
-    @CheckPolicies((ability) =>
-        ability.can(Action.Update, ResourceUserSettings),
-    )
+    @CheckPolicies(checkPermissions(Action.Update, ResourceType.UserSettings))
     async assignRepos(
         @Body() body: { repositoryIds: string[]; userId: string },
     ) {

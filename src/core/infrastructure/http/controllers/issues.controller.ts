@@ -38,36 +38,26 @@ export class IssuesController {
     ) {}
 
     @Get()
-    @UseGuards(PolicyGuard)
-    @CheckPolicies(checkPermissions(Action.Read, ResourceType.Issues))
     async getIssues(@Query() query: GetIssuesByFiltersDto) {
         return this.getIssuesUseCase.execute(query);
     }
 
     @Get('filters')
-    @UseGuards(PolicyGuard)
-    @CheckPolicies(checkPermissions(Action.Read, ResourceType.Issues))
     async getIssuesByFilters(@Query() query: GetIssuesByFiltersDto) {
         return this.getIssuesByFiltersUseCase.execute(query);
     }
 
     @Get('count')
-    @UseGuards(PolicyGuard)
-    @CheckPolicies(checkPermissions(Action.Read, ResourceType.Issues))
     async countIssues(@Query() query: GetIssuesByFiltersDto) {
         return await this.getTotalIssuesUseCase.execute(query);
     }
 
     @Get(':id')
-    @UseGuards(PolicyGuard)
-    @CheckPolicies(checkPermissions(Action.Read, ResourceType.Issues))
     async getIssueById(@Param('id') id: string) {
         return await this.getIssueByIdUseCase.execute(id);
     }
 
     @Patch(':id')
-    @UseGuards(PolicyGuard)
-    @CheckPolicies(checkPermissions(Action.Update, ResourceType.Issues))
     async updateIssueProperty(
         @Param('id') id: string,
         @Body() body: { field: 'severity' | 'label' | 'status'; value: string },

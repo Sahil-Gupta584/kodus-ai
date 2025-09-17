@@ -79,40 +79,61 @@ export class CodeManagementController {
         return this.getRepositoriesUseCase.execute(query);
     }
 
+    // TODO: remove, unused
     @Get('/verify')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async verifyConnection(@Query() query: TeamQueryDto) {
         return this.verifyConnectionUseCase.execute(query.teamId);
     }
 
     @Post('/auth-integration')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.GitSettings))
     public async authIntegrationToken(@Body() body: any) {
         return this.createIntegrationUseCase.execute(body);
     }
 
+    // TODO: remove, unused
     // METHOD USED ONLY AZURE REPOS
     @Post('/create-auth-integration')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.GitSettings))
     public async createIntegrationToken(@Body() body: any) {
         return this.createIntegrationUseCase.execute(body);
     }
 
     @Post('/repositories')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Create, ResourceType.CodeReviewSettings),
+    )
     public async createRepositories(
         @Body() body: { repositories: Repository[]; teamId: string },
     ) {
         return this.createRepositoriesUseCase.execute(body);
     }
 
+    // TODO: remove, unused
     @Get('/list-members')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.UserSettings))
     public async getListMembers() {
         return this.getCodeManagementMemberListUseCase.execute();
     }
 
+    // TODO: remove, unused
     @Get('/organizations')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async getOrganizations() {
         return this.getOrganizationUseCase.execute();
     }
 
+    // TODO: remove, unused
     @Post('config')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.GitSettings))
     public async saveSetupConfig(
         @Body()
         body: {
@@ -123,7 +144,10 @@ export class CodeManagementController {
         await this.saveCodeConfigUseCase.execute(body);
     }
 
+    // TODO: remove, unused
     @Post('/save-personal-token')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async savePersonalToken(
         @Body()
         body: {
@@ -137,12 +161,18 @@ export class CodeManagementController {
         });
     }
 
+    // TODO: remove, unused
     @Get('/get-personal-token')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async getPatToken(@Query() query: { teamId: string }) {
         return this.getPatTokenUseCase.execute({ teamId: query.teamId });
     }
 
+    // TODO: remove, unused
     @Get('/get-workflows')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async getWorkflows(@Query() query: { teamId: string }) {
         return this.getWorkflowsUseCase.execute({ teamId: query.teamId });
     }
@@ -167,14 +197,24 @@ export class CodeManagementController {
         });
     }
 
+    // TODO: remove, unused
     @Get('/get-code-review-started')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.PullRequests))
     public async GetCodeReviewStarted(@Query() query: { teamId: string }) {
         return await this.getCodeReviewStartedUseCase.execute({
             teamId: query.teamId,
         });
     }
 
+    // TODO: remove, unused
     @Post('/review-pr')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkRepoPermissions(Action.Create, ResourceType.PullRequests, {
+            body: 'payload.id',
+        }),
+    )
     public async reviewPR(
         @Body()
         body: {
@@ -190,6 +230,12 @@ export class CodeManagementController {
     }
 
     @Post('/finish-onboarding')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkRepoPermissions(Action.Create, ResourceType.CodeReviewSettings, {
+            body: 'repositoryId',
+        }),
+    )
     public async onboardingReviewPR(
         @Body()
         body: FinishOnboardingDTO,
@@ -221,7 +267,7 @@ export class CodeManagementController {
     @UseGuards(PolicyGuard)
     @CheckPolicies(
         checkRepoPermissions(Action.Read, ResourceType.CodeReviewSettings, {
-            query: GetRepositoryTreeDto.prototype.repositoryId,
+            query: 'repositoryId',
         }),
     )
     public async getRepositoryTree(
