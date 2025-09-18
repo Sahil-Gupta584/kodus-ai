@@ -10,6 +10,12 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
 import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
 import { KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/KodyIssuesManagement.contract';
 import { CacheService } from '@/shared/utils/cache/cache.service';
+import { REQUEST } from '@nestjs/core';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 @Injectable()
 export class GetIssuesByFiltersUseCase implements IUseCase {
@@ -23,6 +29,16 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
         private readonly kodyIssuesManagementService: KodyIssuesManagementService,
 
         private readonly cacheService: CacheService,
+
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: {
+                uuid: string;
+                organization: { uuid: string };
+            };
+        },
+
+        private readonly authorizationService: AuthorizationService,
     ) {}
 
     async execute(filters: GetIssuesByFiltersDto): Promise<IIssue[]> {
@@ -122,6 +138,19 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
                         (suggestion) =>
                             suggestion.prNumber === filters.prNumber,
                     ),
+                );
+            }
+
+            const assignedRepositoryIds =
+                await this.authorizationService.getRepositoryScope(
+                    this.request.user,
+                    Action.Read,
+                    ResourceType.Issues,
+                );
+
+            if (assignedRepositoryIds !== null) {
+                filteredIssues = filteredIssues.filter((issue) =>
+                    assignedRepositoryIds.includes(issue.repository.id),
                 );
             }
 

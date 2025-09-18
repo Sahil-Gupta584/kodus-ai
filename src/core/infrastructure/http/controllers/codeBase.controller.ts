@@ -3,18 +3,28 @@ import {
     IASTAnalysisService,
 } from '@/core/domain/codeBase/contracts/ASTAnalysisService.contract';
 import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
+import {
     Controller,
     Post,
     Body,
     StreamableFile,
     Res,
     Inject,
+    UseGuards,
 } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import { Response } from 'express';
 import { writeFileSync, createReadStream, unlink } from 'fs';
 import { join } from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import {
+    PolicyGuard,
+    CheckPolicies,
+} from '../../adapters/services/permissions/policy.guard';
+import { checkPermissions } from '../../adapters/services/permissions/policy.handlers';
 
 function replacer(key: any, value: any) {
     if (value instanceof Map) {
@@ -36,6 +46,10 @@ export class CodeBaseController {
     ) {}
 
     @Post('analyze-dependencies')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Manage, ResourceType.CodeReviewSettings),
+    )
     async analyzeDependencies(
         @Body()
         body: {
@@ -113,6 +127,10 @@ export class CodeBaseController {
     }
 
     @Post('content-from-diff')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Manage, ResourceType.CodeReviewSettings),
+    )
     async getRelatedContentFromDiff(
         @Body()
         body: {

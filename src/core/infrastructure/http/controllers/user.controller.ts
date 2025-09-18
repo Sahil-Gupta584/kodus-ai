@@ -7,6 +7,7 @@ import {
     Patch,
     Post,
     Query,
+    UseGuards,
 } from '@nestjs/common';
 import { GetUserUseCase } from '@/core/application/use-cases/user/get-user.use-case';
 import { InviteDataUserUseCase } from '@/core/application/use-cases/user/invite-data.use-case';
@@ -23,6 +24,15 @@ import { REQUEST } from '@nestjs/core';
 import { GetUsersAwaitingApprovalUseCase } from '@/core/application/use-cases/user/get-awaiting-approval.use-case';
 import { UpdateAnotherUserDto } from '../dtos/update-another-user.dto';
 import { UpdateAnotherUserUseCase } from '@/core/application/use-cases/user/update-another.use-case';
+import {
+    CheckPolicies,
+    PolicyGuard,
+} from '../../adapters/services/permissions/policy.guard';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
+import { checkPermissions } from '../../adapters/services/permissions/policy.handlers';
 
 @Controller('user')
 export class UsersController {
@@ -69,11 +79,15 @@ export class UsersController {
     }
 
     @Post('/join-organization')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.UserSettings))
     public async joinOrganization(@Body() body: JoinOrganizationDto) {
         return await this.joinOrganizationUseCase.execute(body);
     }
 
     @Patch('/')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Update, ResourceType.UserSettings))
     public async update(@Body() body: UpdateUserDto) {
         const userId = this.request.user?.uuid;
 
@@ -85,6 +99,8 @@ export class UsersController {
     }
 
     @Get('/awaiting-approval')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.UserSettings))
     public async getUsersAwaitingApproval(
         @Query('teamId') teamId: string,
     ): Promise<IUser[]> {
@@ -109,6 +125,8 @@ export class UsersController {
     }
 
     @Patch('/:targetUserId')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Update, ResourceType.UserSettings))
     public async updateAnother(
         @Body() body: UpdateAnotherUserDto,
         @Param('targetUserId') targetUserId: string,

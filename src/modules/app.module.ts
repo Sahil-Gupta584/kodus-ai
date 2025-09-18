@@ -68,6 +68,7 @@ import { PullRequestMessagesModule } from './pullRequestMessages.module';
 import { LLMModule } from '@kodus/kodus-common/llm';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { CodeReviewExecutionModule } from './codeReviewExecution.module';
+import { PermissionsModule } from './permissions.module';
 
 @Module({
     imports: [
@@ -140,6 +141,10 @@ import { CodeReviewExecutionModule } from './codeReviewExecution.module';
             global: true,
         }),
         CodeReviewExecutionModule,
+        {
+            module: PermissionsModule,
+            global: true,
+        },
     ],
     providers: [
         {

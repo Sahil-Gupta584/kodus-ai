@@ -15,6 +15,11 @@ import {
 import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
 
 import { v4 as uuidv4 } from 'uuid';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 @Injectable()
 export class CopyCodeReviewParameterUseCase {
@@ -35,15 +40,36 @@ export class CopyCodeReviewParameterUseCase {
                 email: string;
             };
         },
+
+        private readonly authorizationService: AuthorizationService,
     ) {}
 
     async execute(body: CopyCodeReviewParameterDTO) {
-        const { targetDirectoryPath, teamId } = body;
+        const {
+            targetDirectoryPath,
+            teamId,
+            targetRepositoryId,
+            sourceRepositoryId,
+        } = body;
 
         try {
             if (!this.request.user.organization.uuid) {
                 throw new Error('Organization ID not found');
             }
+
+            await this.authorizationService.ensure({
+                user: this.request.user,
+                action: Action.Read,
+                resource: ResourceType.CodeReviewSettings,
+                repoIds: [sourceRepositoryId],
+            });
+
+            await this.authorizationService.ensure({
+                user: this.request.user,
+                action: Action.Create,
+                resource: ResourceType.CodeReviewSettings,
+                repoIds: [targetRepositoryId],
+            });
 
             const organizationAndTeamData: OrganizationAndTeamData = {
                 organizationId: this.request.user.organization.uuid,
@@ -129,11 +155,18 @@ export class CopyCodeReviewParameterUseCase {
         let updatedTargetRepository;
 
         // Check if the repository is already configured
-        const repositoryAlreadyConfigured = targetRepository.isSelected === true;
+        const repositoryAlreadyConfigured =
+            targetRepository.isSelected === true;
 
         if (!repositoryAlreadyConfigured) {
             // If the repository is not configured, copy the configuration from the source to the repository
-            const { id, name, isSelected, directories, ...repositoryConfigFromSource } = sourceRepository;
+            const {
+                id,
+                name,
+                isSelected,
+                directories,
+                ...repositoryConfigFromSource
+            } = sourceRepository;
 
             updatedTargetRepository = {
                 ...targetRepository,
@@ -332,7 +365,7 @@ export class CopyCodeReviewParameterUseCase {
                               name: sourceRepository.name,
                           },
                 targetDirectory: {
-                    id: "",
+                    id: '',
                     path: body.targetDirectoryPath,
                 },
             });

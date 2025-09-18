@@ -8,7 +8,7 @@ import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import { CreateProfileUseCase } from '../profile/create.use-case';
 import { CreateTeamUseCase } from '../team/create.use-case';
 import { STATUS } from '@/config/types/database/status.type';
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 import { DuplicateRecordException } from '@/shared/infrastructure/filters/duplicate-record.exception';
 
 @Injectable()

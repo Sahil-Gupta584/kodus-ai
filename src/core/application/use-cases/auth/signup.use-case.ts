@@ -8,7 +8,7 @@ import {
     USER_SERVICE_TOKEN,
     IUsersService,
 } from '@/core/domain/user/contracts/user.service.contract';
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { SignUpDTO } from '@/core/infrastructure/http/dtos/create-user-organization.dto';
@@ -64,7 +64,7 @@ export class SignUpUseCase implements IUseCase {
             const user: Omit<IUser, 'uuid'> = {
                 email,
                 password,
-                role: [UserRole.USER],
+                role: Role.CONTRIBUTOR,
                 status: STATUS.PENDING,
                 organization: {
                     name: generateRandomOrgName(name),
@@ -86,7 +86,7 @@ export class SignUpUseCase implements IUseCase {
                     );
                 }
 
-                user.role = [UserRole.OWNER];
+                user.role = Role.OWNER;
                 user.status = STATUS.ACTIVE;
                 user.organization =
                     await this.organizationService.createOrganizationWithTenant(
@@ -110,7 +110,7 @@ export class SignUpUseCase implements IUseCase {
             });
 
             let team: ITeam;
-            const isOwner = user.role.includes(UserRole.OWNER);
+            const isOwner = user.role === Role.OWNER;
             if (isOwner) {
                 team = await this.createTeamUseCase.execute({
                     teamName: `${name} - team`,
