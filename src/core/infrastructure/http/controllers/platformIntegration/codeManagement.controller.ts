@@ -21,6 +21,8 @@ import { DeleteIntegrationAndRepositoriesUseCase } from '@/core/application/use-
 import { GetRepositoryTreeUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/get-repository-tree.use-case';
 import { RepositoryTreeType } from '@/shared/utils/enums/repositoryTree.enum';
 import { GetRepositoryTreeDto } from '../../dtos/get-repository-tree.dto';
+import { GetWebhookStatusUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/get-webhook-status.use-case';
+import { WebhookStatusQueryDto } from '../../dtos/webhook-status-query.dto';
 
 @Controller('code-management')
 export class CodeManagementController {
@@ -42,6 +44,7 @@ export class CodeManagementController {
         private readonly deleteIntegrationUseCase: DeleteIntegrationUseCase,
         private readonly deleteIntegrationAndRepositoriesUseCase: DeleteIntegrationAndRepositoriesUseCase,
         private readonly getRepositoryTreeUseCase: GetRepositoryTreeUseCase,
+        private readonly getWebhookStatusUseCase: GetWebhookStatusUseCase,
     ) {}
 
     @Get('/repositories/org')
@@ -194,5 +197,18 @@ export class CodeManagementController {
         query: GetRepositoryTreeDto,
     ): Promise<any> {
         return await this.getRepositoryTreeUseCase.execute(query);
+    }
+
+    @Get('/webhook-status')
+    public async getWebhookStatus(
+        @Query() query: WebhookStatusQueryDto,
+    ): Promise<{ active: boolean }> {
+        return this.getWebhookStatusUseCase.execute({
+            organizationAndTeamData: {
+                organizationId: query.organizationId,
+                teamId: query.teamId,
+            },
+            repositoryId: query.repositoryId,
+        });
     }
 }

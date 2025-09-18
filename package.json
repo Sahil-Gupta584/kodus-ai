@@ -47,6 +47,7 @@
         "docker:down:complete": "docker compose -f docker-compose.dev.yml down",
         "docker:start": "yarn docker:down && yarn docker:up",
         "docker:start:complete": "yarn docker:down:complete && yarn docker:up:complete",
+        "docker:start:env": "bash ./scripts/docker-start-env.sh",
         "docker:clean": "docker compose -f docker-compose.dev.small.yml down && docker volume rm kodus-ai_yalc_store kodus-ai_node_modules_cache || true",
         "docker:up:watch": "docker compose -f docker-compose.dev.small.yml up --watch",
         "docker:watch": "yarn docker:down && yarn docker:up -d",

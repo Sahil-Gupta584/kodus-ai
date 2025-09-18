@@ -189,6 +189,11 @@ export interface ICodeManagementService
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<void>;
 
+    isWebhookActive(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+    }): Promise<boolean>;
+
     formatReviewCommentBody(params: {
         suggestion: any;
         repository: { name: string; language: string };

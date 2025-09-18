@@ -19,6 +19,8 @@ import { CreateOrUpdateOrganizationParametersUseCase } from '@/core/application/
 import { FindByKeyOrganizationParametersUseCase } from '@/core/application/use-cases/organizationParameters/find-by-key.use-case';
 import { GetModelsByProviderUseCase } from '@/core/application/use-cases/organizationParameters/get-models-by-provider.use-case';
 import { ProviderService } from '@/core/infrastructure/adapters/services/providers/provider.service';
+import { LicenseModule } from '@/ee/license/license.module';
+import { ActivityLogModule } from '@/ee/activityLog/activity-log.module';
 
 @Module({
     imports: [
@@ -28,6 +30,8 @@ import { ProviderService } from '@/core/infrastructure/adapters/services/provide
         forwardRef(() => IntegrationConfigModule),
         forwardRef(() => TeamsModule),
         forwardRef(() => ParametersModule),
+        forwardRef(() => LicenseModule),
+        ActivityLogModule,
     ],
     providers: [
         SaveCategoryWorkItemsTypesUseCase,

@@ -10,6 +10,14 @@ import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { encrypt } from '@/shared/utils/crypto';
 import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { Inject, Injectable } from '@nestjs/common';
+import {
+    ACTIVITY_LOG_SERVICE_TOKEN,
+    IActivityLogService,
+} from '@/ee/activityLog/domain/contracts/activity-log.service.contract';
+import {
+    ILicenseService,
+    LICENSE_SERVICE_TOKEN,
+} from '@/ee/license/interfaces/license.interface';
 
 @Injectable()
 export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
@@ -17,6 +25,10 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
         @Inject(ORGANIZATION_PARAMETERS_SERVICE_TOKEN)
         private readonly organizationParametersService: IOrganizationParametersService,
         private readonly logger: PinoLoggerService,
+        @Inject(LICENSE_SERVICE_TOKEN)
+        private readonly licenseService: ILicenseService,
+        @Inject(ACTIVITY_LOG_SERVICE_TOKEN)
+        private readonly activityLogService: IActivityLogService,
     ) {}
 
     async execute(
@@ -74,6 +86,10 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
                 organizationAndTeamData,
             );
 
+        if (result) {
+            await this.registerByokActivityLog(configValue, organizationAndTeamData);
+        }
+
         return !!result;
     }
 
@@ -101,5 +117,54 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
                     : undefined,
             },
         };
+    }
+
+    private async registerByokActivityLog(
+        configValue: BYOKConfig,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ) {
+        if (!organizationAndTeamData?.organizationId) {
+            return;
+        }
+
+        try {
+            const validation =
+                await this.licenseService.validateOrganizationLicense(
+                    organizationAndTeamData,
+                );
+
+            if (!this.isEnterprisePlan(validation?.planType)) {
+                return;
+            }
+
+            await this.activityLogService.record({
+                organizationId: organizationAndTeamData.organizationId,
+                teamId: organizationAndTeamData.teamId,
+                planType: validation.planType,
+                feature: 'BYOK',
+                action: 'BYOK_UPDATED',
+                metadata: {
+                    provider: configValue?.main?.provider,
+                    fallbackProvider: configValue?.fallback?.provider,
+                },
+            });
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to record BYOK activity log',
+                context: CreateOrUpdateOrganizationParametersUseCase.name,
+                error: error,
+                metadata: {
+                    organizationAndTeamData,
+                },
+            });
+        }
+    }
+
+    private isEnterprisePlan(planType?: string): boolean {
+        if (!planType) {
+            return false;
+        }
+
+        return planType.toLowerCase().includes('enterprise');
     }
 }

@@ -59,6 +59,7 @@ import { KodyFineTuningContextModule } from '@/ee/kodyFineTuning/fineTuningConte
 import { KodyASTAnalyzeContextModule } from '@/ee/kodyASTAnalyze/kodyAstAnalyzeContext.module';
 import { GlobalParametersModule } from './global-parameters.module';
 import { LicenseModule } from '@/ee/license/license.module';
+import { ActivityLogModule } from '@/ee/activityLog/activity-log.module';
 import { RuleLikeModule } from './ruleLike.module';
 import { IssuesModule } from './issues.module';
 import { KodyASTModule } from '@/ee/kodyAST/kodyAST.module';
@@ -131,6 +132,7 @@ import { CodeReviewExecutionModule } from './codeReviewExecution.module';
         KodyASTAnalyzeContextModule,
         GlobalParametersModule,
         LicenseModule,
+        ActivityLogModule,
         RuleLikeModule,
         IssuesModule,
         TokenChunkingModule,

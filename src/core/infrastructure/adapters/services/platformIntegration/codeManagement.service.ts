@@ -1077,6 +1077,24 @@ export class CodeManagementService implements ICodeManagementService {
         return codeManagementService.deleteWebhook(params);
     }
 
+    async isWebhookActive(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+    }): Promise<boolean> {
+        const type = await this.getTypeIntegration(
+            params.organizationAndTeamData,
+        );
+
+        if (!type) {
+            return false;
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.isWebhookActive(params);
+    }
+
     async formatReviewCommentBody(params: {
         suggestion: any;
         repository: { name: string; language: string };
