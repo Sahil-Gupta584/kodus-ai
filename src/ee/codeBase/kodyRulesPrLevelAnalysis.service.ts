@@ -310,9 +310,10 @@ export class KodyRulesPrLevelAnalysisService
                 });
                 return null;
             }
-
-            const parsedResponse = this.processLLMResponse(response);
-
+            
+            const parse = this.processLLMResponse(response);
+            const parsedResponse = Array.isArray(parse)?parse:[parse];
+            
             if (!parsedResponse) {
                 this.logger.warn({
                     message:
@@ -932,7 +933,7 @@ export class KodyRulesPrLevelAnalysisService
         };
 
         const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
-
+        
         try {
             const analysis = await this.promptRunnerService
                 .builder()
