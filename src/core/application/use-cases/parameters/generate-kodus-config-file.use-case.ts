@@ -18,6 +18,11 @@ import {
     CODE_BASE_CONFIG_SERVICE_TOKEN,
     ICodeBaseConfigService,
 } from '@/core/domain/codeBase/contracts/CodeBaseConfigService.contract';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 interface ICodeRepository extends Partial<KodusConfigFile> {
     id: string;
@@ -42,6 +47,8 @@ export class GenerateKodusConfigFileUseCase {
         },
 
         private readonly logger: PinoLoggerService,
+
+        private readonly authorizationService: AuthorizationService,
     ) {}
 
     async execute(
@@ -54,6 +61,15 @@ export class GenerateKodusConfigFileUseCase {
                 organizationId: organizationId,
                 teamId,
             };
+
+            if (repositoryId && repositoryId !== 'global') {
+                await this.authorizationService.ensure({
+                    user: this.request.user,
+                    action: Action.Read,
+                    resource: ResourceType.CodeReviewSettings,
+                    repoIds: [repositoryId],
+                });
+            }
 
             if (!repositoryId || repositoryId === 'global') {
                 return this.getKodyConfigFile();

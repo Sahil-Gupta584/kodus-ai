@@ -31,6 +31,10 @@ export interface IIssueDetails {
         thumbsDown: number;
     };
     gitOrganizationName: string;
+    repository: {
+        id: string;
+        name: string;
+    };
 }
 
 export interface IContributingSuggestion {

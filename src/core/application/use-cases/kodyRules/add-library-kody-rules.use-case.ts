@@ -8,6 +8,11 @@ import {
     IKodyRule,
     KodyRulesOrigin,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 @Injectable()
 export class AddLibraryKodyRulesUseCase {
@@ -20,6 +25,8 @@ export class AddLibraryKodyRulesUseCase {
         private readonly createOrUpdateKodyRulesUseCase: CreateOrUpdateKodyRulesUseCase,
 
         private readonly logger: PinoLoggerService,
+
+        private readonly authorizationService: AuthorizationService,
     ) {}
 
     async execute(libraryKodyRules: AddLibraryKodyRulesDto) {
@@ -27,6 +34,16 @@ export class AddLibraryKodyRulesUseCase {
             if (!this.request.user.organization.uuid) {
                 throw new Error('Organization ID not found');
             }
+
+            await this.authorizationService.ensure({
+                user: this.request.user,
+                action: Action.Create,
+                resource: ResourceType.KodyRules,
+                repoIds:
+                    libraryKodyRules.repositoriesIds.length > 0
+                        ? libraryKodyRules.repositoriesIds
+                        : undefined,
+            });
 
             let results: Partial<IKodyRule>[] = [];
 
@@ -54,7 +71,10 @@ export class AddLibraryKodyRulesUseCase {
             }
 
             // Processar diretórios se existirem
-            if (libraryKodyRules?.directoriesInfo && libraryKodyRules?.directoriesInfo?.length > 0) {
+            if (
+                libraryKodyRules?.directoriesInfo &&
+                libraryKodyRules?.directoriesInfo?.length > 0
+            ) {
                 for await (const directoryInfo of libraryKodyRules.directoriesInfo) {
                     const kodyRule: CreateKodyRuleDto = {
                         title: libraryKodyRules.title,
@@ -74,7 +94,9 @@ export class AddLibraryKodyRulesUseCase {
                         );
 
                     if (!result) {
-                        throw new Error('Failed to add library Kody rule for directory');
+                        throw new Error(
+                            'Failed to add library Kody rule for directory',
+                        );
                     }
                     results.push(result);
                 }

@@ -4,10 +4,27 @@ import {
     GetModelsByProviderUseCase,
     ModelResponse,
 } from '@/core/application/use-cases/organizationParameters/get-models-by-provider.use-case';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
 import { ProviderService } from '@/core/infrastructure/adapters/services/providers/provider.service';
 
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import {
+    Body,
+    Controller,
+    Get,
+    Post,
+    Put,
+    Query,
+    UseGuards,
+} from '@nestjs/common';
+import {
+    PolicyGuard,
+    CheckPolicies,
+} from '../../adapters/services/permissions/policy.guard';
+import { checkPermissions } from '../../adapters/services/permissions/policy.handlers';
 
 @Controller('organization-parameters')
 export class OrgnizationParametersController {
@@ -19,6 +36,10 @@ export class OrgnizationParametersController {
     ) {}
 
     @Post('/create-or-update')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Create, ResourceType.OrganizationSettings),
+    )
     public async createOrUpdate(
         @Body()
         body: {
@@ -35,6 +56,10 @@ export class OrgnizationParametersController {
     }
 
     @Get('/find-by-key')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Read, ResourceType.OrganizationSettings),
+    )
     public async findByKey(
         @Query('key') key: OrganizationParametersKey,
         @Query('organizationId') organizationId: string,

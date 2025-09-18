@@ -12,7 +12,8 @@ import { ProfileModel } from './profile.model';
 import { AuthModel } from './auth.model';
 import { TeamMemberModel } from './teamMember.model';
 import { STATUS } from '@/config/types/database/status.type';
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
+import { PermissionsModel } from './permissions.model';
 
 @Entity('users')
 export class UserModel extends CoreModel {
@@ -22,8 +23,8 @@ export class UserModel extends CoreModel {
     @Column({ name: 'password', nullable: false })
     password: string;
 
-    @Column({ type: 'enum', enum: UserRole, default: UserRole.OWNER })
-    role: UserRole[];
+    @Column({ type: 'enum', enum: Role, default: Role.OWNER })
+    role: Role;
 
     @Column({ type: 'enum', enum: STATUS, default: STATUS.PENDING })
     status: STATUS;
@@ -40,4 +41,7 @@ export class UserModel extends CoreModel {
 
     @OneToMany(() => TeamMemberModel, (teamMember) => teamMember.user)
     teamMember: TeamMemberModel[];
+
+    @OneToOne(() => PermissionsModel, (permissions) => permissions.user)
+    permissions: PermissionsModel;
 }

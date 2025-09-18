@@ -7,6 +7,11 @@ import {
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import { CodeReviewSettingsLogEntity } from '@/core/domain/codeReviewSettingsLog/entities/codeReviewSettingsLog.entity';
 import { CodeReviewSettingsLogFiltersDto } from '@/core/infrastructure/http/dtos/code-review-settings-log-filters.dto';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 export interface FindCodeReviewSettingsLogsResponse {
     logs: CodeReviewSettingsLogEntity[];
@@ -23,8 +28,9 @@ export class FindCodeReviewSettingsLogsUseCase {
         private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: { organization: { uuid: string } };
+            user: { uuid: string; organization: { uuid: string } };
         },
+        private readonly authorizationService: AuthorizationService,
     ) {}
 
     async execute(
@@ -57,6 +63,13 @@ export class FindCodeReviewSettingsLogsUseCase {
         }
 
         if (filterParams.repositoryId) {
+            await this.authorizationService.ensure({
+                user: this.request.user,
+                action: Action.Read,
+                resource: ResourceType.CodeReviewSettings,
+                repoIds: [filterParams.repositoryId],
+            });
+
             filter['repository.id'] = filterParams.repositoryId;
         }
 
@@ -75,7 +88,21 @@ export class FindCodeReviewSettingsLogsUseCase {
 
         const logs = await this.codeReviewSettingsLogService.find(filter);
 
-        const filteredLogs = logs;
+        const assignedRepositoryIds =
+            await this.authorizationService.getRepositoryScope(
+                this.request.user,
+                Action.Read,
+                ResourceType.Logs,
+            );
+
+        let filteredLogs = logs;
+        if (assignedRepositoryIds !== null) {
+            filteredLogs = logs.filter(
+                (log) =>
+                    log.repository?.id &&
+                    assignedRepositoryIds.includes(log.repository.id),
+            );
+        }
 
         const total = filteredLogs.length;
         const totalPages = Math.ceil(total / limit);

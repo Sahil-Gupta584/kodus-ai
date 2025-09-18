@@ -1,5 +1,5 @@
 import { IsEnum, IsOptional } from 'class-validator';
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 import { STATUS } from '@/config/types/database/status.type';
 
 export class UpdateAnotherUserDto {
@@ -8,6 +8,6 @@ export class UpdateAnotherUserDto {
     status?: STATUS;
 
     @IsOptional()
-    @IsEnum(UserRole)
-    role?: UserRole;
+    @IsEnum(Role)
+    role?: Role;
 }
