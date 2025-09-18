@@ -9,12 +9,12 @@ import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { REQUEST } from '@nestjs/core';
-import { GetAssignedReposUseCase } from '../permissions/get-assigned-repos.use-case';
 import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
 import {
     Action,
     ResourceType,
 } from '@/core/domain/permissions/enums/permissions.enum';
+import { UserRequest } from '@/config/types/http/user-request.type';
 
 @Injectable()
 export class GetIssuesUseCase implements IUseCase {
@@ -25,14 +25,7 @@ export class GetIssuesUseCase implements IUseCase {
         private readonly logger: PinoLoggerService,
 
         @Inject(REQUEST)
-        private readonly request: Request & {
-            user: {
-                uuid: string;
-                organization: { uuid: string };
-            };
-        },
-
-        private readonly getAssignedReposUseCase: GetAssignedReposUseCase,
+        private readonly request: UserRequest,
 
         private readonly cacheService: CacheService,
 
@@ -41,18 +34,6 @@ export class GetIssuesUseCase implements IUseCase {
 
     async execute(filters: GetIssuesByFiltersDto): Promise<IIssue[]> {
         try {
-            const assignedRepositoryIds =
-                await this.getAssignedReposUseCase.execute({
-                    userId: this.request.user.uuid,
-                });
-
-            await this.authorizationService.ensure({
-                user: this.request.user,
-                action: Action.Read,
-                resource: ResourceType.Issues,
-                repoIds: assignedRepositoryIds,
-            });
-
             if (!filters?.organizationId) {
                 filters.organizationId = this.request.user.organization.uuid;
             }
@@ -94,7 +75,14 @@ export class GetIssuesUseCase implements IUseCase {
                 return [];
             }
 
-            if (assignedRepositoryIds.length > 0) {
+            const assignedRepositoryIds =
+                await this.authorizationService.getRepositoryScope(
+                    this.request.user,
+                    Action.Read,
+                    ResourceType.Issues,
+                );
+
+            if (assignedRepositoryIds !== null) {
                 allIssues = allIssues.filter((issue) =>
                     assignedRepositoryIds.includes(issue.repository.id),
                 );

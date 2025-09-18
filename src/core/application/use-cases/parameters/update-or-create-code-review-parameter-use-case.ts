@@ -37,6 +37,11 @@ import {
     ICodeReviewParameter,
     IFilteredCodeRepository,
 } from '@/config/types/general/codeReviewConfig.type';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 interface CodeReviewParameterBody {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -67,6 +72,8 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         },
 
         private readonly logger: PinoLoggerService,
+
+        private readonly authorizationService: AuthorizationService,
     ) {}
 
     async execute(
@@ -84,6 +91,13 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 organizationAndTeamData.organizationId =
                     this.request.user.organization.uuid;
             }
+
+            await this.authorizationService.ensure({
+                user: this.request.user,
+                action: Action.Create,
+                resource: ResourceType.CodeReviewSettings,
+                repoIds: [repositoryId],
+            });
 
             if (configValue?.codeReviewVersion === CodeReviewVersion.v2) {
                 configValue.reviewOptions.kody_rules = true;

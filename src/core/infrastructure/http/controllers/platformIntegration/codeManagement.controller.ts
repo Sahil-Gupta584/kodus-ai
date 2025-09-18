@@ -212,7 +212,7 @@ export class CodeManagementController {
     @UseGuards(PolicyGuard)
     @CheckPolicies(
         checkRepoPermissions(Action.Create, ResourceType.PullRequests, {
-            body: 'payload.id',
+            key: { body: 'payload.id' },
         }),
     )
     public async reviewPR(
@@ -232,9 +232,7 @@ export class CodeManagementController {
     @Post('/finish-onboarding')
     @UseGuards(PolicyGuard)
     @CheckPolicies(
-        checkRepoPermissions(Action.Create, ResourceType.CodeReviewSettings, {
-            body: 'repositoryId',
-        }),
+        checkPermissions(Action.Create, ResourceType.CodeReviewSettings),
     )
     public async onboardingReviewPR(
         @Body()
@@ -267,7 +265,7 @@ export class CodeManagementController {
     @UseGuards(PolicyGuard)
     @CheckPolicies(
         checkRepoPermissions(Action.Read, ResourceType.CodeReviewSettings, {
-            query: 'repositoryId',
+            key: { query: 'repositoryId' },
         }),
     )
     public async getRepositoryTree(

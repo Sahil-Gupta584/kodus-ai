@@ -125,13 +125,13 @@ export class PermissionsRepository implements IPermissionsRepository {
     private getFilterConditions(
         filter: Partial<IPermissions>,
     ): FindOptionsWhere<PermissionsModel> {
-        const { user, assignedRepositoryIds, ...restFilter } = filter || {};
+        const { user, permissions, ...restFilter } = filter || {};
 
         const userConditions = createNestedConditions('user', user);
 
         const assignedRepoConditions = createNestedConditions(
-            'assignedRepositoryIds',
-            assignedRepositoryIds,
+            'permissions',
+            permissions,
         );
 
         return {

@@ -81,30 +81,23 @@ export class AssignReposUseCase implements IUseCase {
 
                 await this.permissionsService.create({
                     user: { uuid: userId },
-                    assignedRepositoryIds: validRepoIds,
+                    permissions: { assignedRepositoryIds: validRepoIds },
                 });
 
                 return validRepoIds;
             }
 
-            const updatedRepoIds = Array.from(
-                new Set([
-                    ...(permissions.assignedRepositoryIds || []),
-                    ...validRepoIds,
-                ]),
-            );
-
             await this.permissionsService.update(permissions.uuid, {
-                assignedRepositoryIds: updatedRepoIds,
+                permissions: { assignedRepositoryIds: validRepoIds },
             });
 
             this.logger.log({
                 message: `Assigned repositories to user with UUID: ${userId}`,
                 context: AssignReposUseCase.name,
-                metadata: { assignedRepositoryIds: updatedRepoIds },
+                metadata: { assignedRepositoryIds: validRepoIds },
             });
 
-            return updatedRepoIds;
+            return validRepoIds;
         } catch (error) {
             this.logger.error({
                 message: 'Error assigning repositories to user',

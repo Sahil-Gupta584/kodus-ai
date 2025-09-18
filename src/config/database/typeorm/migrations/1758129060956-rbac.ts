@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class Rbac1757956159087 implements MigrationInterface {
-    name = 'Rbac1757956159087'
+export class Rbac1758129060956 implements MigrationInterface {
+    name = 'Rbac1758129060956'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`
@@ -9,7 +9,7 @@ export class Rbac1757956159087 implements MigrationInterface {
                 "uuid" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "createdAt" TIMESTAMP NOT NULL DEFAULT ('now'::text)::timestamp(6) with time zone,
                 "updatedAt" TIMESTAMP NOT NULL DEFAULT ('now'::text)::timestamp(6) with time zone,
-                "assignedRepositoryIds" text array NOT NULL DEFAULT '{}',
+                "permissions" jsonb NOT NULL,
                 "user_id" uuid,
                 CONSTRAINT "REL_03f05d2567b1421a6f294d69f4" UNIQUE ("user_id"),
                 CONSTRAINT "PK_82c4b329177eba3db6338f732c5" PRIMARY KEY ("uuid")

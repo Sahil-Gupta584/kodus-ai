@@ -79,11 +79,15 @@ export class UsersController {
     }
 
     @Post('/join-organization')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.UserSettings))
     public async joinOrganization(@Body() body: JoinOrganizationDto) {
         return await this.joinOrganizationUseCase.execute(body);
     }
 
     @Patch('/')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Update, ResourceType.UserSettings))
     public async update(@Body() body: UpdateUserDto) {
         const userId = this.request.user?.uuid;
 
@@ -95,6 +99,8 @@ export class UsersController {
     }
 
     @Get('/awaiting-approval')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.UserSettings))
     public async getUsersAwaitingApproval(
         @Query('teamId') teamId: string,
     ): Promise<IUser[]> {

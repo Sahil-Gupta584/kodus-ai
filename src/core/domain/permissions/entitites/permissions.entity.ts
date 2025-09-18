@@ -3,12 +3,14 @@ import { IPermissions } from '../types/permissions.types';
 
 export class PermissionsEntity implements Entity<IPermissions> {
     private _uuid: string;
-    private _assignedRepositoryIds: string[];
+    private _permissions: IPermissions['permissions'];
     private _user: Partial<IPermissions['user']>;
 
     private constructor(permissions: IPermissions | Partial<IPermissions>) {
         this._uuid = permissions.uuid;
-        this._assignedRepositoryIds = permissions.assignedRepositoryIds || [];
+        this._permissions = permissions.permissions || {
+            assignedRepositoryIds: [],
+        };
         this._user = permissions.user || {};
     }
 
@@ -21,7 +23,7 @@ export class PermissionsEntity implements Entity<IPermissions> {
     public toObject(): IPermissions {
         return {
             uuid: this.uuid,
-            assignedRepositoryIds: this.assignedRepositoryIds,
+            permissions: this.permissions,
             user: this.user,
         };
     }
@@ -34,8 +36,8 @@ export class PermissionsEntity implements Entity<IPermissions> {
         return this._uuid;
     }
 
-    public get assignedRepositoryIds() {
-        return [...this._assignedRepositoryIds];
+    public get permissions() {
+        return { ...this._permissions };
     }
 
     public get user() {

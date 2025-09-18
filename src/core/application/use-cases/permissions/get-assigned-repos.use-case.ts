@@ -21,7 +21,7 @@ export class GetAssignedReposUseCase implements IUseCase {
 
         if (!userId) {
             this.logger.warn({
-                message: 'User UUID is missing in the user object',
+                message: 'User UUID is missing',
                 metadata: { params },
                 context: GetAssignedReposUseCase.name,
             });
@@ -42,7 +42,7 @@ export class GetAssignedReposUseCase implements IUseCase {
                 return [];
             }
 
-            return permissions.assignedRepositoryIds || [];
+            return permissions.permissions?.assignedRepositoryIds || [];
         } catch (error) {
             this.logger.error({
                 message: 'Error getting assigned repositories',

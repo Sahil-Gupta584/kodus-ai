@@ -17,7 +17,6 @@ import {
 import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
 import { KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/KodyIssuesManagement.contract';
 import { REQUEST } from '@nestjs/core';
-import { GetAssignedReposUseCase } from '../permissions/get-assigned-repos.use-case';
 import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
 import {
     Action,
@@ -117,6 +116,10 @@ export class GetIssueByIdUseCase implements IUseCase {
             language: issue.language,
             reactions,
             gitOrganizationName: issue.repository.full_name.split('/')[0],
+            repository: {
+                id: issue.repository.id,
+                name: issue.repository.name,
+            },
         };
     }
 

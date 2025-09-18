@@ -11,7 +11,6 @@ import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/k
 import { KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/KodyIssuesManagement.contract';
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { REQUEST } from '@nestjs/core';
-import { GetAssignedReposUseCase } from '../permissions/get-assigned-repos.use-case';
 import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
 import {
     Action,
@@ -39,25 +38,11 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
             };
         },
 
-        private readonly getAssignedReposUseCase: GetAssignedReposUseCase,
-
         private readonly authorizationService: AuthorizationService,
     ) {}
 
     async execute(filters: GetIssuesByFiltersDto): Promise<IIssue[]> {
         try {
-            const assignedRepositoryIds =
-                await this.getAssignedReposUseCase.execute({
-                    userId: this.request.user.uuid,
-                });
-
-            await this.authorizationService.ensure({
-                user: this.request.user,
-                action: Action.Read,
-                resource: ResourceType.Issues,
-                repoIds: assignedRepositoryIds,
-            });
-
             const cacheKey = `issues_${filters.organizationId}`;
 
             let allIssues =
@@ -156,7 +141,14 @@ export class GetIssuesByFiltersUseCase implements IUseCase {
                 );
             }
 
-            if (assignedRepositoryIds.length > 0) {
+            const assignedRepositoryIds =
+                await this.authorizationService.getRepositoryScope(
+                    this.request.user,
+                    Action.Read,
+                    ResourceType.Issues,
+                );
+
+            if (assignedRepositoryIds !== null) {
                 filteredIssues = filteredIssues.filter((issue) =>
                     assignedRepositoryIds.includes(issue.repository.id),
                 );

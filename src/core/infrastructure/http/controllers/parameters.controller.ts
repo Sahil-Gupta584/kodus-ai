@@ -5,7 +5,15 @@ import { UpdateCodeReviewParameterRepositoriesUseCase } from '@/core/application
 import { UpdateOrCreateCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/update-or-create-code-review-parameter-use-case';
 
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
-import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common';
+import {
+    Body,
+    Controller,
+    Get,
+    Post,
+    Query,
+    Res,
+    UseGuards,
+} from '@nestjs/common';
 import { Response } from 'express';
 
 import { CreateOrUpdateCodeReviewParameterDto } from '../dtos/create-or-update-code-review-parameter.dto';
@@ -19,6 +27,18 @@ import { DeleteRepositoryCodeReviewParameterUseCase } from '@/core/application/u
 import { PreviewPrSummaryDto } from '../dtos/preview-pr-summary.dto';
 import { PreviewPrSummaryUseCase } from '@/core/application/use-cases/parameters/preview-pr-summary.use-case';
 import { CodeReviewVersion } from '@/config/types/general/codeReview.type';
+import {
+    CheckPolicies,
+    PolicyGuard,
+} from '../../adapters/services/permissions/policy.guard';
+import {
+    checkPermissions,
+    checkRepoPermissions,
+} from '../../adapters/services/permissions/policy.handlers';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 @Controller('parameters')
 export class ParametersController {
     constructor(
@@ -32,10 +52,14 @@ export class ParametersController {
         private readonly generateCodeReviewParameterUseCase: GenerateCodeReviewParameterUseCase,
         private readonly deleteRepositoryCodeReviewParameterUseCase: DeleteRepositoryCodeReviewParameterUseCase,
         private readonly previewPrSummaryUseCase: PreviewPrSummaryUseCase,
-    ) { }
+    ) {}
 
     //#region Parameters
     @Post('/create-or-update')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Create, ResourceType.CodeReviewSettings),
+    )
     public async createOrUpdate(
         @Body()
         body: {
@@ -52,6 +76,10 @@ export class ParametersController {
     }
 
     @Get('/find-by-key')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Read, ResourceType.CodeReviewSettings),
+    )
     public async findByKey(
         @Query('key') key: ParametersKey,
         @Query('teamId') teamId: string,
@@ -60,17 +88,33 @@ export class ParametersController {
     }
 
     @Get('/list-all')
-    public async listAll() { }
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Read, ResourceType.CodeReviewSettings),
+    )
+    public async listAll() {}
+
     //endregion
     //#region Code review routes
+
     @Get('/list-code-review-automation-labels')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Read, ResourceType.CodeReviewSettings),
+    )
     public async listCodeReviewAutomationLabels(
         @Query('codeReviewVersion') codeReviewVersion?: CodeReviewVersion,
     ) {
-        return this.listCodeReviewAutomationLabelsUseCase.execute(codeReviewVersion);
+        return this.listCodeReviewAutomationLabelsUseCase.execute(
+            codeReviewVersion,
+        );
     }
 
     @Post('/create-or-update-code-review')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Create, ResourceType.CodeReviewSettings),
+    )
     public async updateOrCreateCodeReviewParameter(
         @Body()
         body: CreateOrUpdateCodeReviewParameterDto,
@@ -81,6 +125,10 @@ export class ParametersController {
     }
 
     @Post('/update-code-review-parameter-repositories')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Create, ResourceType.CodeReviewSettings),
+    )
     public async UpdateCodeReviewParameterRepositories(
         @Body()
         body: {
@@ -93,6 +141,10 @@ export class ParametersController {
     }
 
     @Get('/generate-kodus-config-file')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Read, ResourceType.CodeReviewSettings),
+    )
     public async GenerateKodusConfigFile(
         @Res() response: Response,
         @Query('teamId') teamId: string,
@@ -113,6 +165,19 @@ export class ParametersController {
     }
 
     @Post('/copy-code-review-parameter')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkRepoPermissions(Action.Read, ResourceType.CodeReviewSettings, {
+            key: {
+                body: 'sourceRepositoryId',
+            },
+        }),
+        checkRepoPermissions(Action.Create, ResourceType.CodeReviewSettings, {
+            key: {
+                body: 'targetRepositoryId',
+            },
+        }),
+    )
     public async copyCodeReviewParameter(
         @Body()
         body: CopyCodeReviewParameterDTO,
@@ -121,6 +186,10 @@ export class ParametersController {
     }
 
     @Post('/generate-code-review-parameter')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Create, ResourceType.CodeReviewSettings),
+    )
     public async generateCodeReviewParameter(
         @Body()
         body: GenerateCodeReviewParameterDTO,
@@ -129,6 +198,14 @@ export class ParametersController {
     }
 
     @Post('/delete-repository-code-review-parameter')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkRepoPermissions(Action.Delete, ResourceType.CodeReviewSettings, {
+            key: {
+                body: 'repositoryId',
+            },
+        }),
+    )
     public async deleteRepositoryCodeReviewParameter(
         @Body()
         body: DeleteRepositoryCodeReviewParameterDto,
@@ -138,6 +215,14 @@ export class ParametersController {
     //#endregion
 
     @Post('/preview-pr-summary')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkRepoPermissions(Action.Read, ResourceType.CodeReviewSettings, {
+            key: {
+                body: 'repository.id',
+            },
+        }),
+    )
     public async previewPrSummary(
         @Body()
         body: PreviewPrSummaryDto,

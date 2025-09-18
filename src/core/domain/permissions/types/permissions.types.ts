@@ -8,6 +8,8 @@ export type AppAbility = MongoAbility<[Action, Subject]>; // has nothing to do w
 
 export type IPermissions = {
     uuid: string;
-    assignedRepositoryIds: string[];
+    permissions: {
+        assignedRepositoryIds: string[]; // list of repository IDs assigned to the user
+    };
     user: Partial<IUser>;
 };

@@ -19,16 +19,25 @@ export class PermissionsAbilityFactory {
         private readonly permissionsService: IPermissionsService,
     ) {}
 
-    async createForUser(user: IUser): Promise<AppAbility> {
+    async createForUser(
+        user: IUser,
+        repositoryIds?: string[],
+    ): Promise<AppAbility> {
         const { can, cannot, build } = new AbilityBuilder(createMongoAbility);
 
         const userRole = user.role;
         const userOrganizationId = user.organization?.uuid;
-        const permissionsEntity = await this.permissionsService.findOne({
-            user: { uuid: user.uuid },
-        });
-        const assignedRepoUuids =
-            permissionsEntity?.assignedRepositoryIds || [];
+
+        let assignedRepoUuids: string[] = [];
+        if (repositoryIds) {
+            assignedRepoUuids = repositoryIds;
+        } else {
+            const permissionsEntity = await this.permissionsService.findOne({
+                user: { uuid: user.uuid },
+            });
+            assignedRepoUuids =
+                permissionsEntity?.permissions?.assignedRepositoryIds || [];
+        }
 
         const canInOrg = <S extends Subject, C>(
             action: Action,
@@ -46,8 +55,10 @@ export class PermissionsAbilityFactory {
             action: Action,
             subject: S,
             conditions?: C,
+            global?: boolean,
         ) => {
-            const repos = [...assignedRepoUuids, 'global'];
+            const repos = [...assignedRepoUuids];
+            if (global) repos.push('global');
 
             const finalConditions = {
                 ...conditions,
@@ -62,21 +73,31 @@ export class PermissionsAbilityFactory {
 
         switch (userRole) {
             case Role.OWNER:
-                canInOrg(Action.Manage, 'all');
+                canInOrg(Action.Manage, ResourceType.All);
                 break;
 
             case Role.REPO_ADMIN:
-                canInRepo(Action.Read, ResourceType.CodeReviewSettings);
+                canInRepo(
+                    Action.Read,
+                    ResourceType.CodeReviewSettings,
+                    {},
+                    true,
+                );
                 canInRepo(Action.Update, ResourceType.CodeReviewSettings);
                 canInRepo(Action.Create, ResourceType.CodeReviewSettings);
 
+                canInRepo(Action.Read, ResourceType.KodyRules, {}, true);
+                canInRepo(Action.Update, ResourceType.KodyRules);
+                canInRepo(Action.Create, ResourceType.KodyRules);
+                canInRepo(Action.Delete, ResourceType.KodyRules);
+
                 canInRepo(Action.Read, ResourceType.Cockpit);
 
-                canInRepo(Action.Read, ResourceType.Issues);
+                canInOrg(Action.Read, ResourceType.Issues);
                 canInRepo(Action.Update, ResourceType.Issues);
                 canInRepo(Action.Create, ResourceType.Issues);
 
-                canInRepo(Action.Read, ResourceType.Logs);
+                canInRepo(Action.Read, ResourceType.Logs, {}, true);
 
                 canInRepo(Action.Read, ResourceType.PullRequests);
 
@@ -86,7 +107,8 @@ export class PermissionsAbilityFactory {
                 break;
 
             case Role.BILLING_MANAGER:
-                canInRepo(Action.Read, ResourceType.CodeReviewSettings);
+                canInOrg(Action.Read, ResourceType.CodeReviewSettings);
+                canInOrg(Action.Read, ResourceType.KodyRules);
 
                 canInOrg(Action.Manage, ResourceType.Billing);
 
@@ -94,17 +116,26 @@ export class PermissionsAbilityFactory {
 
                 canInOrg(Action.Read, ResourceType.PluginSettings);
 
+                canInOrg(Action.Read, ResourceType.UserSettings);
+
                 canInOrg(Action.Read, ResourceType.Logs);
                 break;
 
             case Role.CONTRIBUTOR:
-                canInRepo(Action.Read, ResourceType.CodeReviewSettings);
+                canInRepo(
+                    Action.Read,
+                    ResourceType.CodeReviewSettings,
+                    {},
+                    true,
+                );
+
+                canInRepo(Action.Read, ResourceType.KodyRules, {}, true);
 
                 canInRepo(Action.Read, ResourceType.Issues);
                 break;
 
             default:
-                cannot(Action.Manage, 'all');
+                cannot(Action.Manage, ResourceType.All);
                 break;
         }
 

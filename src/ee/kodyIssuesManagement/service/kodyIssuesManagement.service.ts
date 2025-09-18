@@ -491,7 +491,7 @@ export class KodyIssuesManagementService
             };
         }
 
-        if (filters.repositoryIds && filters.repositoryIds.length > 0) {
+        if (filters.repositoryIds && filters.repositoryIds) {
             filter['repository.id'] = { $in: filters.repositoryIds };
         }
 

@@ -42,16 +42,26 @@ export class PolicyGuard implements CanActivate {
 
         const ability = await this.abilityFactory.createForUser(user);
 
-        return policyHandlers.every((handler) =>
-            this.executeHandler(handler, ability, request),
-        );
+        for (const handler of policyHandlers) {
+            if (!handler) {
+                throw new Error(
+                    `One of the policy handlers is undefined. Please check the @CheckPolicies decorator.`,
+                );
+            }
+
+            if (!(await this.executeHandler(handler, ability, request))) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
-    private executeHandler(
+    private async executeHandler(
         handler: PolicyHandler,
         ability: any,
         request: any,
-    ): boolean {
+    ): Promise<boolean> {
         // Check if the handler is a class constructor (an injectable handler)
         if (typeof handler === 'function' && 'prototype' in handler) {
             const instance = this.moduleRef.get(
@@ -65,15 +75,15 @@ export class PolicyGuard implements CanActivate {
                 );
             }
 
-            return instance.handle(ability, request);
+            return await instance.handle(ability, request);
         }
 
         // Check if it's an inline function
         if (typeof handler === 'function') {
-            return (handler as PolicyHandlerCallback)(ability, request);
+            return await (handler as PolicyHandlerCallback)(ability, request);
         }
 
         // It's an instance that implements the interface
-        return handler.handle(ability, request);
+        return await handler.handle(ability, request);
     }
 }

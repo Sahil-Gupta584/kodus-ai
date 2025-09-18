@@ -26,6 +26,15 @@ import { GetEpicsUseCase } from '@/core/application/use-cases/platformIntegratio
 import { GetEffortTeamUseCase } from '@/core/application/use-cases/platformIntegration/projectManagement/get-team-effort.use-case';
 import { GetWorkitemTypesUseCase } from '@/core/application/use-cases/platformIntegration/projectManagement/get-workitem-types.use-case';
 import { CreateOrUpdateColumnsBoardUseCase } from '@/core/application/use-cases/platformIntegration/projectManagement/create-or-update-board-columns.use-case';
+import {
+    CheckPolicies,
+    PolicyGuard,
+} from '@/core/infrastructure/adapters/services/permissions/policy.guard';
+import { checkPermissions } from '@/core/infrastructure/adapters/services/permissions/policy.handlers';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 @Controller('project-management')
 export class ProjectManagementController {
@@ -51,32 +60,43 @@ export class ProjectManagementController {
     ) {}
 
     @Post('/auth-integration')
-    @UseGuards(JwtAuthGuard)
+    @UseGuards(JwtAuthGuard, PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.GitSettings))
     public async createIntegration(@Body() body: any) {
         return this.createIntegrationUseCase.execute(body);
     }
 
     @Get('/auth-url/:type')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async getAuthUrl(@Param('type') type: string) {
         return this.getAuthUrlUseCase.execute(type);
     }
 
     @Post('/create-auth-integration')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.GitSettings))
     public async createAuthIntegration(@Body() config: any) {
         return this.createAuthIntegrationUseCase.execute(config);
     }
 
     @Post('/update-auth-integration')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Update, ResourceType.GitSettings))
     public async updateAuthIntegration(@Body() config: any) {
         return this.updateAuthIntegrationUseCase.execute(config);
     }
 
     @Post('/create-or-update-integration-config')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.GitSettings))
     public async createOrUpdateIntegrationConfig(@Body() config: any) {
         return this.createOrUpdateIntegrationConfigUseCase.execute(config);
     }
 
     @Get('/domains')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async getDomainsList(@Query() queryParams: any) {
         const { teamId } = queryParams;
 
@@ -84,6 +104,8 @@ export class ProjectManagementController {
     }
 
     @Get('/projects')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async getProjectsList(@Query() queryParams: any) {
         const { teamId, domainSelected } = queryParams;
 
@@ -91,6 +113,8 @@ export class ProjectManagementController {
     }
 
     @Get('/teams')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async getTeamsList(
         @Query('domainSelected') domainSelected: string,
         @Query('projectSelected') projectSelected: string,
@@ -99,6 +123,8 @@ export class ProjectManagementController {
     }
 
     @Get('boards')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async getBoards(@Query() queryParams: any) {
         const { domainSelected, projectSelected, teamSelected, teamId } =
             queryParams;
@@ -112,6 +138,8 @@ export class ProjectManagementController {
     }
 
     @Post('config')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.GitSettings))
     public async saveSetupConfig(
         @Body()
         body: {
@@ -126,11 +154,15 @@ export class ProjectManagementController {
     }
 
     @Get('/columns')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async getColumns(@Query() query: TeamQueryDto) {
         return await this.getColumnsBoardUseCase.execute(query.teamId);
     }
 
     @Post('/columns')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.GitSettings))
     public async createOrUpdateColumns(
         @Body() body: { columns: ColumnsConfigKey[]; teamId: string },
     ) {
@@ -141,21 +173,29 @@ export class ProjectManagementController {
     }
 
     @Get('/list-members')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async getListMembers() {
         return this.getProjectManagementMemberListUseCase.execute();
     }
 
     @Get('/epics')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async getEpic(@Query('teamId') teamId?: string) {
         return this.getEpicsUseCase.execute(teamId ?? null);
     }
 
     @Get('/team-effort')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async getTeamEffort(@Query('teamId') teamId?: string) {
         return this.getTeamEffortUseCase.execute(teamId ?? null);
     }
 
     @Get('/work-item-types')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async getWorkItemTypes(@Query('teamId') teamId?: string) {
         return this.getWorkItemTypesUseCase.execute(teamId ?? null);
     }

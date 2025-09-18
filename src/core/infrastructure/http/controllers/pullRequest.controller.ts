@@ -30,7 +30,7 @@ export class PullRequestController {
 
     @Get('/get-pull-request-authors')
     @UseGuards(PolicyGuard)
-    @CheckPolicies(checkPermissions(Action.Read, ResourceType.PullRequests))
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.Billing))
     public async getPullRequestAuthors(
         @Query() query: { organizationId: string },
     ) {
@@ -53,11 +53,7 @@ export class PullRequestController {
     @UseInterceptors(CacheInterceptor)
     @CacheTTL(300000) // 5 minutos em milliseconds
     @UseGuards(PolicyGuard)
-    @CheckPolicies(
-        checkRepoPermissions(Action.Read, ResourceType.PullRequests, {
-            query: EnrichedPullRequestsQueryDto.prototype.repositoryId,
-        }),
-    )
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.PullRequests))
     public async getPullRequestExecutions(
         @Query() query: EnrichedPullRequestsQueryDto,
     ): Promise<PaginatedEnrichedPullRequestsResponse> {
