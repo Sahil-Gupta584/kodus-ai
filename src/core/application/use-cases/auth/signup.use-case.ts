@@ -110,7 +110,7 @@ export class SignUpUseCase implements IUseCase {
             });
 
             let team: ITeam;
-            const isOwner = user.role.includes(Role.OWNER);
+            const isOwner = user.role === Role.OWNER;
             if (isOwner) {
                 team = await this.createTeamUseCase.execute({
                     teamName: `${name} - team`,

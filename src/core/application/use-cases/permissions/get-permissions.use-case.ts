@@ -29,10 +29,8 @@ export class GetPermissionsUseCase implements IUseCase {
             [A in Action]?: string | string[];
         };
     }> {
-        const {
-            uuid: userUuid,
-            organization: { uuid: organizationUuid } = {},
-        } = params.user;
+        const { uuid: userUuid, organization } = params.user;
+        const organizationUuid = organization?.uuid;
 
         if (!userUuid || !organizationUuid) {
             this.logger.warn({

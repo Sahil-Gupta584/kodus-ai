@@ -395,7 +395,7 @@ export class TeamMemberService implements ITeamMemberService {
             user = await this.usersService.register({
                 email: member.email,
                 password: this.generateTemporaryPassword(),
-                role: Role.OWNER,
+                role: Role.CONTRIBUTOR,
                 status: STATUS.PENDING,
                 organization: {
                     uuid: organizationAndTeamData.organizationId,

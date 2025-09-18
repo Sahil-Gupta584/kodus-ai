@@ -28,6 +28,12 @@ export class PermissionsAbilityFactory {
         const userRole = user.role;
         const userOrganizationId = user.organization?.uuid;
 
+        if (!userRole || !userOrganizationId) {
+            cannot(Action.Manage, ResourceType.All);
+
+            return build() as AppAbility;
+        }
+
         let assignedRepoUuids: string[] = [];
         if (repositoryIds) {
             assignedRepoUuids = repositoryIds;
