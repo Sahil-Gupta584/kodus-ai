@@ -1,7 +1,7 @@
-import { MigrationInterface, QueryRunner } from "typeorm";
+import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class Rbac1758129060956 implements MigrationInterface {
-    name = 'Rbac1758129060956'
+    name = 'Rbac1758129060956';
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`
@@ -19,6 +19,7 @@ export class Rbac1758129060956 implements MigrationInterface {
             ALTER TYPE "public"."users_role_enum"
             RENAME TO "users_role_enum_old"
         `);
+
         await queryRunner.query(`
             CREATE TYPE "public"."users_role_enum" AS ENUM(
                 'owner',
@@ -27,19 +28,36 @@ export class Rbac1758129060956 implements MigrationInterface {
                 'contributor'
             )
         `);
+
         await queryRunner.query(`
             ALTER TABLE "users"
             ALTER COLUMN "role" DROP DEFAULT
         `);
+
         await queryRunner.query(`
             ALTER TABLE "users"
-            ALTER COLUMN "role" TYPE "public"."users_role_enum" USING "role"::"text"::"public"."users_role_enum"
+            ALTER COLUMN "role" TYPE text
+            USING "role"::text
         `);
+
+        await queryRunner.query(`
+            UPDATE "users"
+            SET "role" = 'contributor'
+            WHERE "role" = 'user'
+        `);
+
+        await queryRunner.query(`
+            ALTER TABLE "users"
+            ALTER COLUMN "role" TYPE "public"."users_role_enum"
+            USING "role"::"public"."users_role_enum"
+        `);
+
         await queryRunner.query(`
             ALTER TABLE "users"
             ALTER COLUMN "role"
             SET DEFAULT 'owner'
         `);
+
         await queryRunner.query(`
             DROP TYPE "public"."users_role_enum_old"
         `);
@@ -80,5 +98,4 @@ export class Rbac1758129060956 implements MigrationInterface {
             DROP TABLE "permissions"
         `);
     }
-
 }
