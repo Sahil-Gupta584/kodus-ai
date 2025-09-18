@@ -1,5 +1,6 @@
 import { LLMAdapter } from '../../core/types/allTypes.js';
 import { createLogger, getObservability } from '../../observability/index.js';
+import { SPAN_NAMES } from '../../observability/semantic-conventions.js';
 import { BaseExecutionStrategy } from './strategy-interface.js';
 import { SharedStrategyMethods } from './shared-methods.js';
 import type {
@@ -10,6 +11,7 @@ import type {
 import { StrategyPromptFactory } from './prompts/index.js';
 import { ContextService } from '../../core/contextNew/index.js';
 import { EnhancedJSONParser } from '../../utils/json-parser.js';
+import { isEnhancedError } from '../../core/error-unified.js';
 
 /**
  * Plan-Execute Strategy - Planejamento + Execução Sequencial
@@ -32,6 +34,13 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
         maxToolCalls: number;
         maxExecutionTime: number;
         enablePlanningValidation: boolean;
+    };
+    private readonly llmDefaults?: {
+        model?: string;
+        temperature?: number;
+        maxTokens?: number;
+        maxReasoningTokens?: number;
+        stop?: string[];
     };
 
     constructor(
@@ -59,7 +68,8 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
             enablePlanningValidation: true,
         };
 
-        this.config = { ...defaultConfig, ...options };
+        this.config = { ...defaultConfig, ...options } as any;
+        this.llmDefaults = (options as any)?.llmDefaults;
 
         this.logger.info('🗓️ Plan-Execute Strategy initialized', {
             config: this.config,
@@ -173,13 +183,25 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
         // // Usar nova arquitetura de prompts
         const prompts = this.promptFactory.createPlanExecutePrompt(context);
 
-        const response = await this.llmAdapter.createPlan(
-            context.input,
-            'plan-execute',
+        const response = await getObservability().trace(
+            SPAN_NAMES.AGENT_PLAN,
+            async () =>
+                this.llmAdapter.createPlan!(context.input, 'plan-execute', {
+                    systemPrompt: prompts.systemPrompt,
+                    userPrompt: prompts.userPrompt,
+                    tools: this.getAvailableToolsFormatted(context),
+                    model: this.llmDefaults?.model,
+                    temperature: this.llmDefaults?.temperature,
+                    maxTokens: this.llmDefaults?.maxTokens,
+                    maxReasoningTokens: this.llmDefaults?.maxReasoningTokens,
+                    stop: this.llmDefaults?.stop,
+                    signal: context.agentContext?.signal,
+                }),
             {
-                systemPrompt: prompts.systemPrompt,
-                userPrompt: prompts.userPrompt,
-                tools: this.getAvailableToolsFormatted(context),
+                attributes: {
+                    planner: 'plan-execute',
+                    agent: context.agentContext.agentName,
+                },
             },
         );
 
@@ -218,7 +240,41 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
                 break;
             }
 
-            const stepResult = await this.executePlanStep(step, context, i);
+            const stepResult = await getObservability().trace(
+                SPAN_NAMES.AGENT_ACT,
+                async () => this.executePlanStep(step, context, i),
+                {
+                    attributes: {
+                        stepIndex: i,
+                        stepType: String(step.type || 'unknown'),
+                        agent: context.agentContext.agentName,
+                    } as any,
+                },
+            );
+            // Update session execution (completed step)
+            try {
+                const threadId = context.agentContext.thread?.id;
+                if (threadId && stepResult?.id) {
+                    await ContextService.updateExecution(threadId, {
+                        completedSteps: [stepResult.id as string],
+                        status: 'in_progress',
+                        currentStep: {
+                            id: stepResult.id as string,
+                            status: 'completed',
+                        },
+                        stepsJournalAppend: {
+                            stepId: stepResult.id as string,
+                            type: String(step.type || 'execute'),
+                            status: 'completed',
+                            endedAt: Date.now(),
+                            startedAt: (stepResult as any).timestamp,
+                            durationMs: (stepResult as any).duration,
+                        },
+                        correlationId:
+                            getObservability().getContext()?.correlationId,
+                    });
+                }
+            } catch {}
             executedSteps.push(stepResult);
 
             if (
@@ -266,6 +322,30 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
         } catch (error) {
             step.status = 'failed';
             step.error = error instanceof Error ? error.message : String(error);
+
+            // Register failure in steps journal
+            try {
+                const threadId = context.agentContext.thread?.id;
+                if (threadId) {
+                    const subcode = isEnhancedError(error as any)
+                        ? (error as any).context?.subcode
+                        : undefined;
+                    await ContextService.updateExecution(threadId, {
+                        status: 'error',
+                        stepsJournalAppend: {
+                            stepId: step.id,
+                            type: String(planStep.type || 'execute'),
+                            status: 'failed',
+                            endedAt: Date.now(),
+                            errorSubcode:
+                                subcode ||
+                                (error instanceof Error ? error.name : 'Error'),
+                        },
+                        correlationId:
+                            getObservability().getContext()?.correlationId,
+                    });
+                }
+            } catch {}
 
             if (step.metadata) {
                 step.metadata.success = false;
@@ -325,7 +405,30 @@ export class PlanExecuteStrategy extends BaseExecutionStrategy {
         };
 
         // Usar SharedStrategyMethods para execução consistente
+        const startedAt = Date.now();
         const result = await SharedStrategyMethods.executeTool(action, context);
+
+        // Track tool usage in session
+        try {
+            const threadId = context.agentContext.thread?.id;
+            if (threadId) {
+                await ContextService.updateExecution(threadId, {
+                    currentTool: planStep.toolName,
+                    status: 'in_progress',
+                    stepsJournalAppend: {
+                        stepId: `plan-exec-tool-${Date.now()}`,
+                        type: 'tool_call',
+                        toolName: planStep.toolName,
+                        status: 'completed',
+                        endedAt: Date.now(),
+                        startedAt,
+                        durationMs: Date.now() - startedAt,
+                    },
+                    correlationId:
+                        getObservability().getContext()?.correlationId,
+                });
+            }
+        } catch {}
 
         return {
             type: 'tool_result',

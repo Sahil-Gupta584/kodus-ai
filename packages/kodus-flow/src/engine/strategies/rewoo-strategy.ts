@@ -9,8 +9,10 @@ import type {
     ExecutionStep,
 } from './types.js';
 import { StrategyPromptFactory } from './prompts/index.js';
+import { SPAN_NAMES } from '../../observability/semantic-conventions.js';
 import { ContextService } from '../../core/contextNew/index.js';
 import { EnhancedJSONParser } from '../../utils/json-parser.js';
+import { isEnhancedError } from '../../core/error-unified.js';
 
 function safeJsonParse<T = any>(text: string): T | null {
     try {
@@ -31,6 +33,13 @@ export class ReWooStrategy extends BaseExecutionStrategy {
         maxToolCalls: 25,
         maxExecutionTime: 300000, // 5 minutos
         enablePlanValidation: true,
+    };
+    private readonly llmDefaults?: {
+        model?: string;
+        temperature?: number;
+        maxTokens?: number;
+        maxReasoningTokens?: number;
+        stop?: string[];
     };
 
     constructor(
@@ -57,7 +66,8 @@ export class ReWooStrategy extends BaseExecutionStrategy {
             enablePlanValidation: true,
         };
 
-        this.config = { ...defaultConfig, ...options };
+        this.config = { ...defaultConfig, ...options } as any;
+        this.llmDefaults = (options as any)?.llmDefaults;
 
         this.logger.info('🏗️ ReWoo Strategy initialized', {
             config: this.config,
@@ -248,14 +258,21 @@ export class ReWooStrategy extends BaseExecutionStrategy {
         context.mode = 'planner';
         const prompts = this.promptFactory.createReWooPrompt(context);
 
-        const res = await this.llmAdapter.createPlan(
-            context.input,
-            'plan-execute',
-            {
-                systemPrompt: prompts.systemPrompt,
-                userPrompt: prompts.userPrompt,
-                tools: this.getAvailableToolsFormatted(context),
-            },
+        const res = await getObservability().trace(
+            SPAN_NAMES.AGENT_PLAN,
+            async () =>
+                this.llmAdapter.createPlan!(context.input, 'plan-execute', {
+                    systemPrompt: prompts.systemPrompt,
+                    userPrompt: prompts.userPrompt,
+                    tools: this.getAvailableToolsFormatted(context),
+                    model: this.llmDefaults?.model,
+                    temperature: this.llmDefaults?.temperature,
+                    maxTokens: this.llmDefaults?.maxTokens,
+                    maxReasoningTokens: this.llmDefaults?.maxReasoningTokens,
+                    stop: this.llmDefaults?.stop,
+                    signal: context.agentContext?.signal,
+                }),
+            { attributes: { phase: 'sketch' } },
         );
         const parsed = safeJsonParse<{ sketches: Array<any> }>(
             (res as any)?.content,
@@ -331,8 +348,55 @@ export class ReWooStrategy extends BaseExecutionStrategy {
                 };
 
                 output = await SharedStrategyMethods.executeTool(action, ctx);
+                // Track tool usage in session
+                try {
+                    const threadId = ctx.agentContext.thread?.id;
+                    if (threadId) {
+                        await ContextService.updateExecution(threadId, {
+                            currentTool: tool.name,
+                            status: 'in_progress',
+                            stepsJournalAppend: {
+                                stepId: `rewoo-work-${evId}`,
+                                type: 'tool_call',
+                                toolName: tool.name,
+                                status: 'completed',
+                                endedAt: Date.now(),
+                                startedAt: began,
+                                durationMs: Date.now() - began,
+                            },
+                            correlationId:
+                                getObservability().getContext()?.correlationId,
+                        });
+                    }
+                } catch {}
             } catch (e) {
                 error = e instanceof Error ? e.message : String(e);
+                // Track failure in session journal
+                try {
+                    const threadId = ctx.agentContext.thread?.id;
+                    if (threadId) {
+                        const subcode = isEnhancedError(e as any)
+                            ? (e as any).context?.subcode
+                            : undefined;
+                        await ContextService.updateExecution(threadId, {
+                            status: 'error',
+                            stepsJournalAppend: {
+                                stepId: `rewoo-work-${evId}`,
+                                type: 'tool_call',
+                                toolName: tool.name,
+                                status: 'failed',
+                                endedAt: Date.now(),
+                                startedAt: began,
+                                durationMs: Date.now() - began,
+                                errorSubcode:
+                                    subcode ||
+                                    (e instanceof Error ? e.name : 'Error'),
+                            },
+                            correlationId:
+                                getObservability().getContext()?.correlationId,
+                        });
+                    }
+                } catch {}
             }
             evidences.push({
                 id: evId,
@@ -382,14 +446,21 @@ export class ReWooStrategy extends BaseExecutionStrategy {
 
         const prompts = this.promptFactory.createReWooPrompt(context);
 
-        const res = await this.llmAdapter.createPlan(
-            context.input,
-            'plan-execute',
-            {
-                systemPrompt: prompts.systemPrompt,
-                userPrompt: prompts.userPrompt,
-                tools: [], // Organizer não usa tools
-            },
+        const res = await getObservability().trace(
+            SPAN_NAMES.AGENT_OBSERVE,
+            async () =>
+                this.llmAdapter.createPlan!(context.input, 'plan-execute', {
+                    systemPrompt: prompts.systemPrompt,
+                    userPrompt: prompts.userPrompt,
+                    tools: [], // Organizer não usa tools
+                    model: this.llmDefaults?.model,
+                    temperature: this.llmDefaults?.temperature,
+                    maxTokens: this.llmDefaults?.maxTokens,
+                    maxReasoningTokens: this.llmDefaults?.maxReasoningTokens,
+                    stop: this.llmDefaults?.stop,
+                    signal: context.agentContext?.signal,
+                }),
+            { attributes: { phase: 'organize' } },
         );
         const parsed =
             safeJsonParse<{

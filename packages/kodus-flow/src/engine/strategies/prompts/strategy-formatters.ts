@@ -315,12 +315,8 @@ export class ContextFormatter {
             this.formatContextFields(userCtx, sections, formatValue);
         }
 
-        // Handle agent identity
-        if (agentContext.agentIdentity) {
-            const identity = agentContext.agentIdentity;
-            sections.push('### 🤖 AGENT IDENTITY');
-            this.formatContextFields(identity, sections, formatValue);
-        }
+        // Agent identity agora é tratado separadamente antes das tools
+        // Método formatAgentIdentity está disponível publicamente para uso externo
 
         // Handle session context
         // if (agentContext.sessionContext) {
@@ -341,6 +337,93 @@ export class ContextFormatter {
         //     sections.push('### ⚙️ RUNTIME CONTEXT');
         //     this.formatContextFields(runtime, sections, formatValue);
         // }
+
+        return sections.join('\n');
+    }
+
+    /**
+     * Formatar agent identity de forma específica
+     */
+    formatAgentIdentity(identity: Record<string, unknown>): string {
+        const sections: string[] = [];
+
+        const formatValue = (value: unknown): string => {
+            if (typeof value === 'string') {
+                return value;
+            }
+            if (typeof value === 'object') {
+                try {
+                    return JSON.stringify(value, null, 2);
+                } catch (error) {
+                    return `[OBJECT - CANNOT SERIALIZE: ${String(error)}]`;
+                }
+            }
+            return String(value);
+        };
+
+        sections.push('### 🤖 AGENT IDENTITY');
+
+        // Campos específicos do identity com formatação especial
+        if (identity.name) {
+            sections.push(`**Name:** ${formatValue(identity.name)}`);
+        }
+
+        if (identity.description) {
+            sections.push(
+                `**Description:** ${formatValue(identity.description)}`,
+            );
+        }
+
+        if (identity.role) {
+            sections.push(`**Role:** ${formatValue(identity.role)}`);
+        }
+
+        if (identity.capabilities) {
+            sections.push(
+                `**Capabilities:** ${formatValue(identity.capabilities)}`,
+            );
+        }
+
+        if (identity.personality) {
+            sections.push(
+                `**Personality:** ${formatValue(identity.personality)}`,
+            );
+        }
+
+        if (identity.language) {
+            sections.push(
+                `**🌐 Language Preference:** ${formatValue(identity.language)}`,
+            );
+        }
+
+        if (identity.languageInstructions) {
+            sections.push(
+                `**📝 Language Instructions:** ${formatValue(identity.languageInstructions)}`,
+            );
+        }
+
+        // Campos adicionais usando formatação genérica
+        const additionalFields = Object.keys(identity).filter(
+            (key) =>
+                ![
+                    'name',
+                    'description',
+                    'role',
+                    'capabilities',
+                    'personality',
+                    'language', // 🔥 Excluído para não duplicar
+                    'languageInstructions', // 🔥 Excluído para não duplicar
+                ].includes(key),
+        );
+
+        additionalFields.forEach((key) => {
+            const value = identity[key];
+            if (value !== undefined && value !== null) {
+                sections.push(
+                    `**${this.formatFieldName(key)}:** ${formatValue(value)}`,
+                );
+            }
+        });
 
         return sections.join('\n');
     }

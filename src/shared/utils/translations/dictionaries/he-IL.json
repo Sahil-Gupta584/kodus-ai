@@ -30,6 +30,8 @@
         "interactingTitle": "אינטראקציה עם Kody",
         "requestReview": "בקש סקירה",
         "requestReviewDesc": "בקש מ-Kody לסקור את ה-PR שלך ידנית על ידי הוספת תגובה עם הפקודה `@kody start-review` בשורש ה-PR שלך.",
+        "validateBusinessLogic": "אמת לוגיקה עסקית",
+        "validateBusinessLogicDesc": "בקש מ-Kody לאמת את הקוד שלך נגד כללי עסק על ידי הוספת תגובה עם הפקודה `@kody -v business-logic`.",
         "provideFeedback": "ספק משוב",
         "provideFeedbackDesc": "עזור ל-Kody ללמוד ולהשתפר על ידי תגובה להערותיו עם 👍 להצעות מועילות או 👎 אם נדרשות שיפורים.",
         "configurationTitle": "הגדרות Kody נוכחיות",

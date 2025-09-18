@@ -10,11 +10,22 @@ import {
 } from '../../core/types/allTypes.js';
 import { createLogger } from '../../observability/index.js';
 import { isErrorResult } from '../../core/utils/tool-result-parser.js';
+import { getObservability } from '../../observability/index.js';
+import { SPAN_NAMES } from '../../observability/semantic-conventions.js';
 
 export class ResponseSynthesizer {
     private logger = createLogger('response-synthesizer');
 
-    constructor(private llmAdapter: LLMAdapter) {
+    constructor(
+        private llmAdapter: LLMAdapter,
+        private llmDefaults?: {
+            model?: string;
+            temperature?: number;
+            maxTokens?: number;
+            maxReasoningTokens?: number;
+            stop?: string[];
+        },
+    ) {
         this.logger.info('Response Synthesizer initialized', {
             llmProvider: llmAdapter.getProvider?.()?.name || 'unknown',
             supportsStructured:
@@ -36,41 +47,64 @@ export class ResponseSynthesizer {
             stepsExecuted: context.metadata.completedSteps,
         });
 
-        try {
-            const analysis = this.analyzeExecutionResults(context);
-            const synthesizedContent = await this.applySynthesisStrategy(
-                strategy,
-                context,
-                analysis,
-            );
+        const observability = getObservability();
+        return await observability.trace(
+            SPAN_NAMES.AGENT_SYNTHESIZE,
+            async () => {
+                try {
+                    const analysis = this.analyzeExecutionResults(context);
+                    const synthesizedContent =
+                        await this.applySynthesisStrategy(
+                            strategy,
+                            context,
+                            analysis,
+                        );
 
-            const response: SynthesizedResponse = {
-                content: synthesizedContent,
-                needsClarification: analysis.hasAmbiguousResults,
-                includesError: analysis.hasErrors,
-                metadata: {
-                    synthesisStrategy: strategy,
-                    discoveryCount: analysis.rawResults.length,
-                    primaryFindings: analysis.rawResults
-                        .slice(0, 3)
-                        .map((r) =>
-                            typeof r === 'string'
-                                ? r
-                                : JSON.stringify(r).substring(0, 100),
-                        ),
-                    synthesisTime: Date.now() - startTime,
+                    const response: SynthesizedResponse = {
+                        content: synthesizedContent,
+                        needsClarification: analysis.hasAmbiguousResults,
+                        includesError: analysis.hasErrors,
+                        metadata: {
+                            synthesisStrategy: strategy,
+                            discoveryCount: analysis.rawResults.length,
+                            primaryFindings: analysis.rawResults
+                                .slice(0, 3)
+                                .map((r) =>
+                                    typeof r === 'string'
+                                        ? r
+                                        : JSON.stringify(r).substring(0, 100),
+                                ),
+                            synthesisTime: Date.now() - startTime,
+                        },
+                    };
+
+                    return response;
+                } catch (error) {
+                    this.logger.error(
+                        'Response synthesis failed',
+                        error as Error,
+                        {
+                            originalQuery: context.originalQuery.substring(
+                                0,
+                                100,
+                            ),
+                            strategy,
+                        },
+                    );
+
+                    return this.createFallbackResponse(context, error as Error);
+                }
+            },
+            {
+                attributes: {
+                    plannerType: context.plannerType,
+                    stepsExecuted: context.metadata.completedSteps,
+                    totalSteps: context.metadata.totalSteps,
+                    correlationId:
+                        getObservability().getContext()?.correlationId || '',
                 },
-            };
-
-            return response;
-        } catch (error) {
-            this.logger.error('Response synthesis failed', error as Error, {
-                originalQuery: context.originalQuery.substring(0, 100),
-                strategy,
-            });
-
-            return this.createFallbackResponse(context, error as Error);
-        }
+            },
+        );
     }
 
     private analyzeExecutionResults(context: ResponseSynthesisContext) {
@@ -312,6 +346,12 @@ ${this.composeStructuredExecutionTrace(context, analysis)}
         try {
             const response = await this.llmAdapter.call({
                 messages: [{ role: AgentInputEnum.USER, content: prompt }],
+                model: this.llmDefaults?.model,
+                temperature: this.llmDefaults?.temperature,
+                maxTokens: this.llmDefaults?.maxTokens,
+                maxReasoningTokens: this.llmDefaults?.maxReasoningTokens,
+                stop: this.llmDefaults?.stop,
+                signal: context.signal,
             });
 
             return (
@@ -357,6 +397,12 @@ Response:`;
         try {
             const response = await this.llmAdapter.call({
                 messages: [{ role: AgentInputEnum.USER, content: prompt }],
+                model: this.llmDefaults?.model,
+                temperature: this.llmDefaults?.temperature,
+                maxTokens: this.llmDefaults?.maxTokens,
+                maxReasoningTokens: this.llmDefaults?.maxReasoningTokens,
+                stop: this.llmDefaults?.stop,
+                signal: context.signal,
             });
             return (
                 response.content || this.createBasicResponse(context, analysis)
@@ -401,6 +447,7 @@ Response:`;
         try {
             const response = await this.llmAdapter.call({
                 messages: [{ role: AgentInputEnum.USER, content: prompt }],
+                signal: context.signal,
             });
             return (
                 response.content || this.createBasicResponse(context, analysis)
@@ -459,6 +506,7 @@ Response:`;
         try {
             const response = await this.llmAdapter.call({
                 messages: [{ role: AgentInputEnum.USER, content: prompt }],
+                signal: context.signal,
             });
             return (
                 response.content || this.createBasicResponse(context, analysis)
@@ -521,6 +569,13 @@ Response:`;
 
 export function createResponseSynthesizer(
     llmAdapter: LLMAdapter,
+    llmDefaults?: {
+        model?: string;
+        temperature?: number;
+        maxTokens?: number;
+        maxReasoningTokens?: number;
+        stop?: string[];
+    },
 ): ResponseSynthesizer {
-    return new ResponseSynthesizer(llmAdapter);
+    return new ResponseSynthesizer(llmAdapter, llmDefaults);
 }

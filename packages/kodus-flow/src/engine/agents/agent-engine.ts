@@ -23,6 +23,7 @@ import {
     AgentThought,
 } from '../../core/types/allTypes.js';
 import { ToolEngine } from '../tools/tool-engine.js';
+import { ContextService } from '../../core/contextNew/context-service.js';
 
 /**
  * Engine para execução direta de agentes
@@ -187,8 +188,34 @@ export class AgentEngine<
                 );
             }
 
+            // 🆕 Coerência de fase na sessão: marcar como 'completed'
+            try {
+                const threadId = agentExecutionOptions.thread?.id;
+                if (threadId) {
+                    await ContextService.updateExecution(threadId, {
+                        status: 'success',
+                        phase: 'completed',
+                        // limpar indicador de tool em execução, se houver
+                        currentTool: undefined,
+                        correlationId,
+                    } as any);
+                }
+            } catch {}
+
             return result as AgentExecutionResult;
         } catch (error) {
+            // 🆕 Atualizar sessão em caso de erro: phase='error' e limpar currentTool
+            try {
+                const threadId = agentExecutionOptions.thread?.id;
+                if (threadId) {
+                    await ContextService.updateExecution(threadId, {
+                        status: 'error',
+                        phase: 'error',
+                        currentTool: undefined,
+                        correlationId,
+                    } as any);
+                }
+            } catch {}
             // Fail execution tracking on error
             if (this.executionTrackingId) {
                 addExecutionStep(

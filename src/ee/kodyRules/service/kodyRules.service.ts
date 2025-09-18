@@ -28,7 +28,11 @@ import {
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
     ICodeReviewSettingsLogService,
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
-import { ActionType, ConfigLevel, UserInfo } from '@/config/types/general/codeReviewSettingsLog.type';
+import {
+    ActionType,
+    ConfigLevel,
+    UserInfo,
+} from '@/config/types/general/codeReviewSettingsLog.type';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import {
     IRuleLikeService,
@@ -49,7 +53,7 @@ export class KodyRulesService implements IKodyRulesService {
         private readonly ruleLikeService: IRuleLikeService,
 
         private readonly logger: PinoLoggerService,
-    ) { }
+    ) {}
 
     getNativeCollection() {
         throw new Error('Method not implemented.');
@@ -105,11 +109,14 @@ export class KodyRulesService implements IKodyRulesService {
             return [];
         }
 
-        return entity.toObject().rules.filter(rule =>
-            rule.repositoryId === repositoryId &&
-            rule.directoryId === directoryId &&
-            rule.status === KodyRulesStatus.ACTIVE
-        );
+        return entity
+            .toObject()
+            .rules.filter(
+                (rule) =>
+                    rule.repositoryId === repositoryId &&
+                    rule.directoryId === directoryId &&
+                    rule.status === KodyRulesStatus.ACTIVE,
+            );
     }
 
     async update(
@@ -163,6 +170,7 @@ export class KodyRulesService implements IKodyRulesService {
                 sourcePath: kodyRule?.sourcePath,
                 sourceAnchor: kodyRule?.sourceAnchor,
                 repositoryId: kodyRule?.repositoryId,
+                directoryId: kodyRule?.directoryId,
                 examples: kodyRule?.examples,
                 origin: kodyRule?.origin ?? KodyRulesOrigin.USER,
                 scope: kodyRule?.scope ?? KodyRulesScope.FILE,
@@ -287,7 +295,10 @@ export class KodyRulesService implements IKodyRulesService {
         try {
             this.codeReviewSettingsLogService.registerKodyRulesLog({
                 organizationAndTeamData,
-                userInfo: userInfo || { userId: 'kody-system', userEmail: 'kody@kodus.io' },
+                userInfo: userInfo || {
+                    userId: 'kody-system',
+                    userEmail: 'kody@kodus.io',
+                },
                 actionType: ActionType.EDIT,
                 repository: { id: updatedRule.repositoryId },
                 directory: { id: updatedRule.directoryId },
@@ -317,6 +328,75 @@ export class KodyRulesService implements IKodyRulesService {
         );
     }
 
+    async updateRuleWithLogging(
+        organizationAndTeamData: OrganizationAndTeamData,
+        kodyRule: CreateKodyRuleDto,
+        userInfo?: UserInfo,
+    ): Promise<Partial<IKodyRule> | IKodyRule | null> {
+        const existing = await this.findByOrganizationId(
+            organizationAndTeamData.organizationId,
+        );
+
+        if (!existing) {
+            throw new NotFoundException('Organization rules not found');
+        }
+
+        const existingRule = existing.rules.find(
+            (rule) => rule.uuid === kodyRule.uuid,
+        );
+
+        if (!existingRule) {
+            throw new NotFoundException('Rule not found');
+        }
+
+        const updatedRule = {
+            ...existingRule,
+            ...kodyRule,
+            updatedAt: new Date(),
+        };
+
+        const updatedKodyRules = await this.updateRule(
+            existing.uuid,
+            kodyRule.uuid,
+            updatedRule,
+        );
+
+        try {
+            this.codeReviewSettingsLogService.registerKodyRulesLog({
+                organizationAndTeamData,
+                userInfo: userInfo || {
+                    userId: 'kody-system',
+                    userEmail: 'kody@kodus.io',
+                },
+                actionType: ActionType.EDIT,
+                repository: { id: updatedRule.repositoryId },
+                directory: { id: updatedRule.directoryId },
+                oldRule: existingRule,
+                newRule: updatedRule,
+                ruleTitle: updatedRule.title,
+            });
+        } catch (error) {
+            this.logger.error({
+                message: 'Error in registerKodyRulesLog',
+                error: error,
+                context: KodyRulesService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    repositoryId: updatedRule.repositoryId,
+                    directoryId: updatedRule.directoryId,
+                },
+            });
+        }
+
+        if (!updatedKodyRules) {
+            throw new Error('Could not update rule');
+        }
+
+        return updatedKodyRules.rules.find(
+            (rule) => rule.uuid === kodyRule.uuid,
+        );
+    }
+
     async deleteRule(uuid: string, ruleId: string): Promise<Boolean> {
         return this.kodyRulesRepository.deleteRule(uuid, ruleId);
     }
@@ -328,12 +408,13 @@ export class KodyRulesService implements IKodyRulesService {
         newStatus: KodyRulesStatus = KodyRulesStatus.DELETED,
     ): Promise<KodyRulesEntity | null> {
         try {
-            const result = await this.kodyRulesRepository.updateRulesStatusByFilter(
-                organizationId,
-                repositoryId,
-                directoryId,
-                newStatus,
-            );
+            const result =
+                await this.kodyRulesRepository.updateRulesStatusByFilter(
+                    organizationId,
+                    repositoryId,
+                    directoryId,
+                    newStatus,
+                );
 
             if (result) {
                 this.logger.log({
@@ -370,6 +451,68 @@ export class KodyRulesService implements IKodyRulesService {
         ruleId: string,
     ): Promise<KodyRulesEntity | null> {
         return this.kodyRulesRepository.deleteRuleLogically(uuid, ruleId);
+    }
+
+    async deleteRuleWithLogging(
+        organizationAndTeamData: OrganizationAndTeamData,
+        ruleId: string,
+        userInfo: UserInfo,
+    ): Promise<boolean> {
+        try {
+            const existing = await this.findByOrganizationId(
+                organizationAndTeamData.organizationId,
+            );
+
+            if (!existing?.rules?.length) {
+                return false;
+            }
+
+            const deletedRule = existing.rules.find(
+                (rule) => rule.uuid === ruleId,
+            );
+            if (!deletedRule) {
+                return false;
+            }
+
+            const rule = await this.deleteRuleLogically(existing.uuid, ruleId);
+
+            try {
+                this.codeReviewSettingsLogService.registerKodyRulesLog({
+                    organizationAndTeamData,
+                    userInfo,
+                    actionType: ActionType.DELETE,
+                    repository: { id: deletedRule.repositoryId },
+                    oldRule: deletedRule,
+                    newRule: undefined,
+                    ruleTitle: deletedRule.title,
+                });
+            } catch (error) {
+                this.logger.error({
+                    message: 'Error saving code review settings log',
+                    error: error,
+                    context: KodyRulesService.name,
+                    metadata: {
+                        ...organizationAndTeamData,
+                        ruleId,
+                        userInfo,
+                    },
+                });
+            }
+
+            return !!rule;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error deleting rule with logging',
+                error: error,
+                context: KodyRulesService.name,
+                metadata: {
+                    ...organizationAndTeamData,
+                    ruleId,
+                    userInfo,
+                },
+            });
+            throw error;
+        }
     }
 
     private normalizeTags(tags: string | string[] | undefined): string[] {
@@ -478,8 +621,7 @@ export class KodyRulesService implements IKodyRulesService {
 
             const validRules = libraryKodyRules
                 .filter(
-                    (rule) =>
-                        rule && typeof rule === 'object' && rule.title,
+                    (rule) => rule && typeof rule === 'object' && rule.title,
                 )
                 .map((rule: any) => ({
                     ...rule,
@@ -492,20 +634,33 @@ export class KodyRulesService implements IKodyRulesService {
             if (filters) {
                 filteredRules = validRules.filter((rule) => {
                     // Filtro por título
-                    if (filters.title && !rule.title.toLowerCase().includes(filters.title.toLowerCase())) {
+                    if (
+                        filters.title &&
+                        !rule.title
+                            .toLowerCase()
+                            .includes(filters.title.toLowerCase())
+                    ) {
                         return false;
                     }
 
                     // Filtro por severidade
-                    if (filters.severity && rule.severity?.toLowerCase() !== filters.severity?.toLowerCase()) {
+                    if (
+                        filters.severity &&
+                        rule.severity?.toLowerCase() !==
+                            filters.severity?.toLowerCase()
+                    ) {
                         return false;
                     }
 
                     // Filtro por tags
                     if (filters.tags && filters.tags.length > 0) {
                         const ruleTags = rule.tags || [];
-                        const hasMatchingTag = filters.tags.some(filterTag =>
-                            ruleTags.some(ruleTag => ruleTag.toLowerCase().includes(filterTag.toLowerCase()))
+                        const hasMatchingTag = filters.tags.some((filterTag) =>
+                            ruleTags.some((ruleTag) =>
+                                ruleTag
+                                    .toLowerCase()
+                                    .includes(filterTag.toLowerCase()),
+                            ),
                         );
                         if (!hasMatchingTag) {
                             return false;
@@ -513,15 +668,21 @@ export class KodyRulesService implements IKodyRulesService {
                     }
 
                     // Filtro por linguagem
-                    if (filters.language && rule.language && rule.language !== filters.language) {
-                        return false;
+                    if (filters.language) {
+                        if (
+                            !rule.language ||
+                            rule.language !== filters.language
+                        ) {
+                            return false;
+                        }
                     }
 
                     // Filtro por buckets
                     if (filters.buckets && filters.buckets.length > 0) {
                         const ruleBuckets = rule.buckets || [];
-                        const hasMatchingBucket = filters.buckets.some(filterBucket =>
-                            ruleBuckets.includes(filterBucket)
+                        const hasMatchingBucket = filters.buckets.some(
+                            (filterBucket) =>
+                                ruleBuckets.includes(filterBucket),
                         );
                         if (!hasMatchingBucket) {
                             return false;
@@ -535,20 +696,25 @@ export class KodyRulesService implements IKodyRulesService {
             // Se deve incluir feedback, busca dados de feedback
             if (includeFeedback) {
                 try {
-                    const feedbackData = await this.ruleLikeService.getAllRulesWithFeedback(userId);
-                    
+                    const feedbackData =
+                        await this.ruleLikeService.getAllRulesWithFeedback(
+                            userId,
+                        );
+
                     const feedbackMap = new Map(
-                        feedbackData.map(f => [f.ruleId, f])
+                        feedbackData.map((f) => [f.ruleId, f]),
                     );
 
-                    return filteredRules.map(rule => {
+                    return filteredRules.map((rule) => {
                         const feedback = feedbackMap.get(rule.uuid);
                         return {
                             ...rule,
                             positiveCount: feedback?.positiveCount || 0,
                             negativeCount: feedback?.negativeCount || 0,
                             // Só inclui userFeedback se userId foi fornecido
-                            userFeedback: userId ? (feedback?.userFeedback || null) : null,
+                            userFeedback: userId
+                                ? feedback?.userFeedback || null
+                                : null,
                         };
                     });
                 } catch (error) {
@@ -589,14 +755,17 @@ export class KodyRulesService implements IKodyRulesService {
             }
 
             // Create a map of rule counts per bucket for better performance O(M+N)
-            const bucketRuleCounts = libraryKodyRules.reduce((acc, rule: LibraryKodyRule) => {
-                if (rule.buckets?.length) {
-                    rule.buckets.forEach((bucketSlug: string) => {
-                        acc.set(bucketSlug, (acc.get(bucketSlug) || 0) + 1);
-                    });
-                }
-                return acc;
-            }, new Map<string, number>());
+            const bucketRuleCounts = libraryKodyRules.reduce(
+                (acc, rule: LibraryKodyRule) => {
+                    if (rule.buckets?.length) {
+                        rule.buckets.forEach((bucketSlug: string) => {
+                            acc.set(bucketSlug, (acc.get(bucketSlug) || 0) + 1);
+                        });
+                    }
+                    return acc;
+                },
+                new Map<string, number>(),
+            );
 
             const bucketsWithCount = bucketsData.map((bucket: BucketInfo) => ({
                 slug: bucket.slug,

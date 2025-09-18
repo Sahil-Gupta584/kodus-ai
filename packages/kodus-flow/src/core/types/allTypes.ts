@@ -38,6 +38,9 @@ export type AgentIdentity = {
     style?: string;
 
     systemPrompt?: string;
+
+    language?: string;
+    languageInstructions?: string;
 };
 
 export const agentIdentitySchema = z.object({
@@ -48,6 +51,8 @@ export const agentIdentitySchema = z.object({
     personality: z.string().optional(),
     style: z.string().optional(),
     systemPrompt: z.string().optional(),
+    language: z.string().optional(),
+    languageInstructions: z.string().optional(),
 });
 
 export interface AgentAction<TContent = unknown> {
@@ -79,6 +84,7 @@ export type AgentConfig = {
     enableState?: boolean;
     enableMemory?: boolean;
     timeout?: number;
+    llmDefaults?: LLMDefaults;
     plannerOptions?: {
         type: PlannerType;
         replanPolicy?: Partial<ReplanPolicyConfig>;
@@ -264,6 +270,8 @@ export type AgentExecutionOptions = {
     maxIterations?: number;
 
     userContext?: Record<string, any>;
+    // Optional cancellation signal propagated across agent → LLM → tools
+    signal?: AbortSignal;
 };
 
 export interface AgentExecutionResult extends BaseExecutionResult {
@@ -1985,6 +1993,7 @@ export function createToolContext(
         correlationId?: string;
         parentId?: string;
         metadata?: Metadata;
+        signal?: AbortSignal;
     } = {},
 ): ToolContext {
     return {
@@ -1995,7 +2004,7 @@ export function createToolContext(
         toolName,
         callId,
         parameters,
-        signal: new AbortController().signal,
+        signal: options.signal || new AbortController().signal,
 
         cleanup: async () => {},
     };
@@ -2867,11 +2876,16 @@ export interface LLMRequest {
     model?: string;
     temperature?: number;
     maxTokens?: number;
+    maxReasoningTokens?: number;
+    stop?: string[];
     tools?: Array<{
         name: string;
         description: string;
         parameters: Record<string, unknown>;
     }>;
+    // Optional cancellation and timeout controls
+    signal?: AbortSignal;
+    timeoutMs?: number;
 }
 
 export interface LLMResponse {
@@ -2884,7 +2898,16 @@ export interface LLMResponse {
         promptTokens: number;
         completionTokens: number;
         totalTokens: number;
+        reasoningTokens?: number;
     };
+}
+
+export interface LLMDefaults {
+    model?: string;
+    temperature?: number;
+    maxTokens?: number;
+    maxReasoningTokens?: number;
+    stop?: string[];
 }
 
 export interface LLMConfig {
@@ -2924,8 +2947,21 @@ export interface LLMAdapter {
     createPlan?(
         goal: string,
         strategy: string,
-        context: unknown,
-    ): Promise<unknown>;
+        context: {
+            systemPrompt?: string;
+            userPrompt?: string;
+            tools?: ToolMetadataForLLM[];
+            previousPlans?: PlanningResult[];
+            constraints?: string[];
+            // Optional LLM overrides for planning
+            model?: string;
+            temperature?: number;
+            maxTokens?: number;
+            maxReasoningTokens?: number;
+            stop?: string[];
+            signal?: AbortSignal;
+        },
+    ): Promise<PlanningResult>;
 
     getProvider?(): { name: string };
     getAvailableTechniques?(): string[];
@@ -3252,6 +3288,8 @@ export interface ResponseSynthesisContext {
         iterationCount?: number;
         [key: string]: unknown;
     };
+    // Optional cancellation control for synthesis LLM calls
+    signal?: AbortSignal;
 }
 
 export interface SynthesizedResponse {
@@ -5319,6 +5357,7 @@ export interface AgentCoreConfig {
     tenantId: TenantId;
     agentName?: string;
     llmAdapter?: LLMAdapter;
+    llmDefaults?: LLMDefaults;
     maxThinkingIterations?: number;
     thinkingTimeout?: number;
 
@@ -5466,8 +5505,10 @@ export interface LangChainMessage {
 }
 
 export interface LangChainOptions {
+    model?: string;
     temperature?: number;
     maxTokens?: number;
+    maxReasoningTokens?: number;
     topP?: number;
     frequencyPenalty?: number;
     presencePenalty?: number;
@@ -5475,6 +5516,7 @@ export interface LangChainOptions {
     stream?: boolean;
     tools?: unknown[];
     toolChoice?: string;
+    signal?: AbortSignal;
 }
 
 export interface LangChainResponse {

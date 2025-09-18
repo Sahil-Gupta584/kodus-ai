@@ -345,6 +345,8 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         const updatedConfigValue = {
             global: {
                 ...configValue,
+                codeReviewVersion:
+                    configValue?.codeReviewVersion ?? CodeReviewVersion.v2,
                 summary: !configValue.summary
                     ? this.getDefaultPRSummaryConfig()
                     : {

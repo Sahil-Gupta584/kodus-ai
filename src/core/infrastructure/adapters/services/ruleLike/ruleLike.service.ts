@@ -60,4 +60,8 @@ export class RuleLikesService implements IRuleLikeService {
     ): Promise<{ ruleId: string; positiveCount: number; negativeCount: number; userFeedback: RuleFeedbackType | null }[]> {
         return this.likesRepo.getAllRulesWithFeedback(userId);
     }
+
+    async removeFeedback(ruleId: string, userId?: string): Promise<boolean> {
+        return this.likesRepo.unlike(ruleId, userId);
+    }
 }

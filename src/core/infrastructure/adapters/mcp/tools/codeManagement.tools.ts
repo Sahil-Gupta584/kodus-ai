@@ -4,9 +4,7 @@ import { CodeManagementService } from '../../services/platformIntegration/codeMa
 import { PinoLoggerService } from '../../services/logger/pino.service';
 import { wrapToolHandler } from '../utils/mcp-protocol.utils';
 import { BaseResponse, McpToolDefinition } from '../types/mcp-tool.interface';
-import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
-import { PullRequest } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
-import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
+import { PullRequestState } from '../../../../../shared/domain/enums/pullRequestState.enum';
 
 const RepositorySchema = z
     .object({
@@ -151,6 +149,24 @@ interface DiffForFileResponse {
 
 @Injectable()
 export class CodeManagementTools {
+    private static readonly ERROR_MESSAGES = {
+        ORGANIZATION_ID_REQUIRED: 'Organization ID is required',
+        TEAM_ID_REQUIRED: 'Team ID is required',
+        REPOSITORY_ID_REQUIRED: 'Repository ID is required',
+        VALID_PR_NUMBER_REQUIRED: 'Valid PR number is required',
+        NO_REPOSITORIES_FOUND: 'No repositories found for this organization',
+        REPOSITORY_NOT_FOUND: (id: string) =>
+            `Repository with ID ${id} not found`,
+        FAILED_FETCH_REPOSITORIES: 'Failed to fetch repository information',
+        FAILED_FETCH_PR_FILES: (prNumber: number) =>
+            `Failed to fetch files for PR #${prNumber}`,
+        NO_FILES_FOUND: (prNumber: number) =>
+            `No files found for PR #${prNumber}`,
+        NO_DIFFS_AVAILABLE: 'No file diffs available for this Pull Request',
+        UNEXPECTED_ERROR:
+            'An unexpected error occurred while retrieving Pull Request diff',
+    } as const;
+
     constructor(
         private readonly codeManagementService: CodeManagementService,
         private readonly logger: PinoLoggerService,
@@ -1045,6 +1061,266 @@ export class CodeManagementTools {
         };
     }
 
+    getPullRequestDiff(): McpToolDefinition {
+        const inputSchema = z.object({
+            organizationId: z
+                .string()
+                .describe(
+                    'Organization UUID - unique identifier for the organization in the system',
+                ),
+            teamId: z
+                .string()
+                .describe(
+                    'Team UUID - unique identifier for the team in the system',
+                ),
+            repositoryId: z
+                .string()
+                .describe('Repository unique identifier to get the diff from'),
+            repositoryName: z
+                .string()
+                .optional()
+                .describe(
+                    'Repository name (optional - will be fetched if not provided)',
+                ),
+            prNumber: z
+                .number()
+                .describe('Pull Request number to get the complete diff for'),
+        });
+
+        type InputType = z.infer<typeof inputSchema>;
+
+        return {
+            name: 'KODUS_GET_PULL_REQUEST_DIFF',
+            description:
+                'Get the complete diff/patch for an entire Pull Request showing all changes across all files. Use this to see the full context of what changed in the PR, including additions, deletions, and modifications across all modified files.',
+            inputSchema,
+            outputSchema: z.object({
+                success: z.boolean(),
+                data: z.string().optional(),
+                message: z.string().optional(),
+            }),
+            execute: wrapToolHandler(
+                async (
+                    args: InputType,
+                ): Promise<
+                    BaseResponse & { data?: string; message?: string }
+                > => {
+                    try {
+                        if (!args.organizationId) {
+                            return {
+                                success: false,
+                                message:
+                                    CodeManagementTools.ERROR_MESSAGES
+                                        .ORGANIZATION_ID_REQUIRED,
+                            };
+                        }
+
+                        if (!args.teamId) {
+                            return {
+                                success: false,
+                                message:
+                                    CodeManagementTools.ERROR_MESSAGES
+                                        .TEAM_ID_REQUIRED,
+                            };
+                        }
+
+                        if (!args.repositoryId) {
+                            return {
+                                success: false,
+                                message:
+                                    CodeManagementTools.ERROR_MESSAGES
+                                        .REPOSITORY_ID_REQUIRED,
+                            };
+                        }
+
+                        if (!args.prNumber || args.prNumber <= 0) {
+                            return {
+                                success: false,
+                                message:
+                                    CodeManagementTools.ERROR_MESSAGES
+                                        .VALID_PR_NUMBER_REQUIRED,
+                            };
+                        }
+
+                        const organizationAndTeamData = {
+                            organizationId: args.organizationId,
+                            teamId: args.teamId,
+                        };
+
+                        let repositoryName = args.repositoryName;
+
+                        if (!repositoryName) {
+                            try {
+                                const repositories =
+                                    await this.codeManagementService.getRepositories(
+                                        {
+                                            organizationAndTeamData,
+                                        },
+                                    );
+
+                                if (!repositories?.length) {
+                                    return {
+                                        success: false,
+                                        message:
+                                            CodeManagementTools.ERROR_MESSAGES
+                                                .NO_REPOSITORIES_FOUND,
+                                    };
+                                }
+
+                                const repositoryInfo = repositories.find(
+                                    (repo) => repo.id === args.repositoryId,
+                                );
+
+                                if (!repositoryInfo) {
+                                    return {
+                                        success: false,
+                                        message:
+                                            CodeManagementTools.ERROR_MESSAGES.REPOSITORY_NOT_FOUND(
+                                                args.repositoryId,
+                                            ),
+                                    };
+                                }
+
+                                repositoryName = repositoryInfo.name;
+                            } catch (error) {
+                                this.logger.error({
+                                    message: 'Failed to fetch repositories',
+                                    context: 'CodeManagementTools',
+                                    error,
+                                    metadata: {
+                                        organizationId: args.organizationId,
+                                    },
+                                });
+
+                                return {
+                                    success: false,
+                                    message:
+                                        CodeManagementTools.ERROR_MESSAGES
+                                            .FAILED_FETCH_REPOSITORIES,
+                                };
+                            }
+                        }
+
+                        const repository = {
+                            id: args.repositoryId,
+                            name: repositoryName,
+                        };
+
+                        const pullRequest = {
+                            number: args.prNumber,
+                        };
+
+                        let changedFiles;
+                        try {
+                            changedFiles =
+                                await this.codeManagementService.getFilesByPullRequestId(
+                                    {
+                                        organizationAndTeamData,
+                                        repository,
+                                        prNumber: pullRequest.number,
+                                    },
+                                );
+                        } catch (error) {
+                            this.logger.error({
+                                message: 'Failed to fetch PR files',
+                                context: 'CodeManagementTools',
+                                error,
+                                metadata: {
+                                    repository,
+                                    prNumber: args.prNumber,
+                                },
+                            });
+
+                            return {
+                                success: false,
+                                message:
+                                    CodeManagementTools.ERROR_MESSAGES.FAILED_FETCH_PR_FILES(
+                                        args.prNumber,
+                                    ),
+                            };
+                        }
+
+                        if (!changedFiles?.length) {
+                            return {
+                                success: false,
+                                message:
+                                    CodeManagementTools.ERROR_MESSAGES.NO_FILES_FOUND(
+                                        args.prNumber,
+                                    ),
+                            };
+                        }
+
+                        const filesWithPatches = changedFiles.filter(
+                            this.hasValidPatch.bind(this),
+                        );
+
+                        if (!filesWithPatches.length) {
+                            return {
+                                success: false,
+                                message:
+                                    CodeManagementTools.ERROR_MESSAGES
+                                        .NO_DIFFS_AVAILABLE,
+                            };
+                        }
+
+                        const completeDiff = filesWithPatches
+                            .map((file) => this.formatFileDiff(file))
+                            .join('\n\n');
+
+                        return {
+                            success: true,
+                            data: completeDiff,
+                            message: `Successfully retrieved ${filesWithPatches.length} file diffs from PR #${args.prNumber}`,
+                        };
+                    } catch (error) {
+                        this.logger.error({
+                            message: 'Unexpected error in getPullRequestDiff',
+                            context: 'CodeManagementTools',
+                            error,
+                            metadata: { args },
+                        });
+
+                        return {
+                            success: false,
+                            message:
+                                CodeManagementTools.ERROR_MESSAGES
+                                    .UNEXPECTED_ERROR,
+                        };
+                    }
+                },
+            ),
+        };
+    }
+
+    /**
+     * Formats a file diff with metadata
+     */
+    private formatFileDiff(file: any): string {
+        const {
+            filename,
+            status,
+            additions = 0,
+            deletions = 0,
+            changes = 0,
+            patch,
+        } = file;
+
+        return `=== FILE: ${filename} ===
+Status: ${status}
+Additions: ${additions}
+Deletions: ${deletions}
+Changes: ${changes}
+
+${patch}`;
+    }
+
+    /**
+     * Validates if a file has a valid patch
+     */
+    private hasValidPatch(file: any): boolean {
+        return file?.patch?.trim()?.length > 0;
+    }
+
     getAllTools(): McpToolDefinition[] {
         return [
             this.listRepositories(),
@@ -1053,10 +1329,9 @@ export class CodeManagementTools {
             this.getPullRequest(),
             this.getRepositoryFiles(),
             this.getRepositoryContent(),
-            //TODO: Uncomment this when we have a way to get the languages
-            //this.getRepositoryLanguages(),
             this.getPullRequestFileContent(),
             this.getDiffForFile(),
+            this.getPullRequestDiff(),
         ];
     }
 }

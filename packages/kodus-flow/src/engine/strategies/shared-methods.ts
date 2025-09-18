@@ -81,6 +81,7 @@ export class SharedStrategyMethods {
                     //threadId: context.agentContext?.thread?.id,
                     correlationId: context.metadata?.correlationId,
                     tenantId: context.agentContext?.tenantId,
+                    signal: context.agentContext?.signal,
                 },
             );
 

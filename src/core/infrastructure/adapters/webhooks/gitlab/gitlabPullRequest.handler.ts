@@ -261,9 +261,7 @@ export class GitLabMergeRequestHandler implements IWebhookEventHandler {
                 if (
                     !isStartCommand &&
                     !hasReviewMarker &&
-                    kodyMentionPattern.test(comment.body) &&
-                    payload?.object_attributes?.change_position &&
-                    payload?.object_attributes?.type
+                    kodyMentionPattern.test(comment.body)
                 ) {
                     this.chatWithKodyFromGitUseCase.execute(params);
                     return;

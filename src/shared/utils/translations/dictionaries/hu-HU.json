@@ -30,6 +30,8 @@
         "interactingTitle": "Interakció Kody-val",
         "requestReview": "Ellenőrzés kérése",
         "requestReviewDesc": "Kérd meg Kody-t, hogy manuálisan ellenőrizze a PR-edet, ha hozzáadsz egy megjegyzést a `@kody start-review` parancsával a PR gyökeréhez.",
+        "validateBusinessLogic": "Üzleti logika validálása",
+        "validateBusinessLogicDesc": "Kérd meg Kody-t, hogy validálja a kódodat az üzleti szabályokkal szemben, ha hozzáadsz egy megjegyzést a `@kody -v business-logic` parancsával.",
         "provideFeedback": "Visszajelzés adása",
         "provideFeedbackDesc": "Segíts Kody-nak tanulni és fejlődni azzal, hogy reagálsz a megjegyzéseire egy 👍 hasznos javaslatokért vagy egy 👎 ha javításokra van szükség.",
         "configurationTitle": "Jelenlegi Kody konfiguráció",

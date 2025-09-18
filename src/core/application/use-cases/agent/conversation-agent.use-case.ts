@@ -10,7 +10,7 @@ export class ConversationAgentUseCase implements IUseCase {
         private readonly conversationAgentProvider: ConversationAgentProvider,
     ) {}
 
-    async execute(request: {
+    async execute(context: {
         prompt: string;
         organizationAndTeamData?: OrganizationAndTeamData;
         thread?: Thread;
@@ -18,7 +18,7 @@ export class ConversationAgentUseCase implements IUseCase {
     }): Promise<any> {
         try {
             const { prompt, organizationAndTeamData, prepareContext, thread } =
-                request;
+                context;
 
             return await this.conversationAgentProvider.execute(prompt, {
                 organizationAndTeamData,

@@ -119,6 +119,28 @@ export class ContextService {
             currentTool?: string;
             lastError?: string;
             replanCount?: number;
+            phase?:
+                | 'planning'
+                | 'execution'
+                | 'completed'
+                | 'error'
+                | 'responded';
+            correlationId?: string;
+            stepsJournalAppend?: {
+                stepId: string;
+                type: string;
+                toolName?: string;
+                status:
+                    | 'pending'
+                    | 'executing'
+                    | 'completed'
+                    | 'failed'
+                    | 'skipped';
+                startedAt?: number;
+                endedAt?: number;
+                durationMs?: number;
+                errorSubcode?: string;
+            };
             currentStep?: {
                 id: string;
                 status:
@@ -143,7 +165,10 @@ export class ContextService {
             const builder = EnhancedContextBuilder.getInstance();
             const sessionManager = builder.getSessionManager();
 
-            await sessionManager.updateExecution(threadId, executionData);
+            await sessionManager.updateExecution(
+                threadId,
+                executionData as any,
+            );
 
             logger.debug('✅ Execution state updated successfully', {
                 threadId,

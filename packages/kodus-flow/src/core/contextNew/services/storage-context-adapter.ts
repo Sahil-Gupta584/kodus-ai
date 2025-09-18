@@ -41,6 +41,8 @@ export interface ContextSessionStorageItem {
         lastActivityAt: string; // ISO string
         createdAtTimestamp: number;
         lastActivityTimestamp: number;
+        lastCorrelationId?: string;
+        correlationIdHistory?: string[];
     };
 }
 
@@ -80,6 +82,10 @@ class ContextDateUtils {
         runtime: AgentRuntimeContext,
         createdAt: number,
         lastActivityAt: number,
+        extras?: {
+            lastCorrelationId?: string;
+            correlationIdHistory?: string[];
+        },
     ): ContextSessionStorageItem['sessionData'] {
         return {
             sessionId,
@@ -91,6 +97,12 @@ class ContextDateUtils {
             lastActivityAt: this.timestampToFormattedDate(lastActivityAt),
             createdAtTimestamp: createdAt,
             lastActivityTimestamp: lastActivityAt,
+            ...(extras?.lastCorrelationId && {
+                lastCorrelationId: extras.lastCorrelationId,
+            }),
+            ...(extras?.correlationIdHistory && {
+                correlationIdHistory: extras.correlationIdHistory,
+            }),
         };
     }
 
@@ -297,6 +309,11 @@ export class StorageContextSessionAdapter
         runtime: AgentRuntimeContext,
         createdAt: number,
         lastActivityAt: number,
+        extras?: {
+            lastCorrelationId?: string;
+            correlationIdHistory?: string[];
+            expectedVersion?: number;
+        },
     ): Promise<void> {
         const sessionData = ContextDateUtils.transformContextSessionForStorage(
             sessionId,
@@ -306,7 +323,68 @@ export class StorageContextSessionAdapter
             runtime,
             createdAt,
             lastActivityAt,
+            extras,
         );
+
+        const storageAny = this.storage as any;
+        if (
+            storageAny?.collection &&
+            typeof storageAny.collection.updateOne === 'function'
+        ) {
+            const filter: any = { id: sessionId };
+            if (typeof extras?.expectedVersion === 'number') {
+                filter['sessionData.version'] = extras.expectedVersion;
+            }
+            const setObj: Record<string, unknown> = {};
+            setObj['id'] = sessionId;
+            setObj['threadId'] = threadId;
+            setObj['timestamp'] = lastActivityAt;
+            setObj['sessionData.sessionId'] = sessionData.sessionId;
+            setObj['sessionData.threadId'] = sessionData.threadId;
+            setObj['sessionData.tenantId'] = sessionData.tenantId;
+            setObj['sessionData.status'] = sessionData.status;
+            setObj['sessionData.runtime'] = sessionData.runtime;
+            setObj['sessionData.createdAt'] = sessionData.createdAt;
+            setObj['sessionData.lastActivityAt'] = sessionData.lastActivityAt;
+            setObj['sessionData.createdAtTimestamp'] =
+                sessionData.createdAtTimestamp;
+            setObj['sessionData.lastActivityTimestamp'] =
+                sessionData.lastActivityTimestamp;
+            if (sessionData.lastCorrelationId) {
+                setObj['sessionData.lastCorrelationId'] =
+                    sessionData.lastCorrelationId;
+            }
+            if (sessionData.correlationIdHistory) {
+                setObj['sessionData.correlationIdHistory'] =
+                    sessionData.correlationIdHistory;
+            }
+            const incObj: Record<string, number> = {};
+            incObj['sessionData.version'] = 1;
+            const update: any = {
+                $set: setObj,
+                $inc: incObj,
+            };
+            const opts = { upsert: true };
+            const res = await storageAny.collection.updateOne(
+                filter,
+                update,
+                opts,
+            );
+            if (
+                typeof extras?.expectedVersion === 'number' &&
+                res.matchedCount === 0 &&
+                res.upsertedCount === 0
+            ) {
+                logger.warn(
+                    'Optimistic concurrency conflict on session store',
+                    {
+                        sessionId,
+                        expectedVersion: extras?.expectedVersion,
+                    },
+                );
+            }
+            return;
+        }
 
         const storageItem: ContextSessionStorageItem = {
             id: sessionId, // Use sessionId as unique document ID
@@ -325,9 +403,11 @@ export class StorageContextSessionAdapter
             return null;
         }
 
-        return ContextDateUtils.restoreContextSessionFromStorage(
+        const restored = ContextDateUtils.restoreContextSessionFromStorage(
             item.sessionData,
         );
+        (restored as any).version = (item as any).sessionData?.version;
+        return restored;
     }
 
     async retrieveContextSessionByThreadId(threadId: string) {
@@ -346,9 +426,12 @@ export class StorageContextSessionAdapter
                 const item = await storageAny.collection.findOne({ threadId });
                 if (!item) return null;
 
-                return ContextDateUtils.restoreContextSessionFromStorage(
-                    item.sessionData,
-                );
+                const restored =
+                    ContextDateUtils.restoreContextSessionFromStorage(
+                        item.sessionData,
+                    );
+                (restored as any).version = (item as any).sessionData?.version;
+                return restored;
             } catch (error) {
                 logger.warn(
                     'Direct MongoDB query failed, falling back to generic query',

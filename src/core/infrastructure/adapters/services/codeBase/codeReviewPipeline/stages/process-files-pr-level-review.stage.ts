@@ -43,7 +43,6 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
     protected async executeStage(
         context: CodeReviewPipelineContext,
     ): Promise<CodeReviewPipelineContext> {
-        // Validações fundamentais de segurança
         if (!context?.organizationAndTeamData) {
             this.logger.error({
                 message: 'Missing organizationAndTeamData in context',
@@ -75,7 +74,7 @@ export class ProcessFilesPrLevelReviewStage extends BasePipelineStage<CodeReview
             return context;
         }
 
-        if (!context.changedFiles || context.changedFiles.length === 0) {
+        if (!context?.changedFiles?.length) {
             this.logger.warn({
                 message: `No files to analyze for PR#${context.pullRequest.number}`,
                 context: this.stageName,

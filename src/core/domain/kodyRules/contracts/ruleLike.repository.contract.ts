@@ -37,4 +37,6 @@ export interface IRuleLikeRepository {
     getAllRulesWithFeedback(
         userId?: string,
     ): Promise<{ ruleId: string; positiveCount: number; negativeCount: number; userFeedback: RuleFeedbackType | null }[]>;
+
+    unlike(ruleId: string, userId?: string): Promise<boolean>;
 }

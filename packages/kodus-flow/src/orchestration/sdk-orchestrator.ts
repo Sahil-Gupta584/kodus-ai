@@ -147,6 +147,7 @@ const orchestrator = new SDKOrchestrator({
             tenantId: this.config.tenantId,
             agentName: config.name,
             llmAdapter: this.config.llmAdapter, // Pass LLM adapter
+            llmDefaults: config.llmDefaults,
             maxThinkingIterations:
                 config.maxIterations || this.config.defaultMaxIterations,
             enableKernelIntegration: true,
@@ -237,6 +238,10 @@ const orchestrator = new SDKOrchestrator({
             },
         });
 
+        // Setup cancellation controller and optional timeout based on agent config
+        const ac = new AbortController();
+        let timeoutHandle: NodeJS.Timeout | null = null;
+
         try {
             this.logger.debug('🔍 SDK ORCHESTRATOR - Looking up agent', {
                 agentName,
@@ -299,7 +304,18 @@ const orchestrator = new SDKOrchestrator({
                 agentName,
                 correlationId,
                 tenantId: this.config.tenantId,
+                signal: ac.signal,
             } as AgentExecutionOptions;
+
+            // Apply agent-level timeout if configured
+            const configuredTimeout =
+                (agentData.definition?.config?.timeout as number | undefined) ||
+                undefined;
+            if (configuredTimeout && configuredTimeout > 0) {
+                timeoutHandle = setTimeout(() => {
+                    ac.abort();
+                }, configuredTimeout);
+            }
 
             this.logger.info('⚡ SDK ORCHESTRATOR - Starting agent execution', {
                 agentName,
@@ -368,6 +384,7 @@ const orchestrator = new SDKOrchestrator({
                         [AGENT.NAME]: agentName,
                         [AGENT.EXECUTION_ID]: IdGenerator.executionId(),
                         [AGENT.TENANT_ID]: this.config.tenantId,
+                        correlationId,
                     },
                 },
             );
@@ -472,6 +489,7 @@ const orchestrator = new SDKOrchestrator({
                 },
             };
         } finally {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
             obs.clearContext();
         }
     }
@@ -511,6 +529,7 @@ const orchestrator = new SDKOrchestrator({
         options?: {
             correlationId?: string;
             tenantId?: string;
+            signal?: AbortSignal;
         },
     ): Promise<OrchestrationResult<unknown>> {
         const startTime = Date.now();
@@ -535,6 +554,7 @@ const orchestrator = new SDKOrchestrator({
                 {
                     correlationId,
                     tenantId: obsContext.tenantId,
+                    signal: options?.signal,
                 },
             );
             const duration = Date.now() - startTime;

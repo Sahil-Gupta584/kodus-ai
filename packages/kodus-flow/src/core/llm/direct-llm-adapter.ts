@@ -4,6 +4,12 @@ import {
     markSpanOk,
     applyErrorToSpan,
 } from '../../observability/index.js';
+import { normalizeLLMContent } from './normalizers.js';
+import {
+    SPAN_NAMES,
+    createLLMCallSpan,
+    GEN_AI_SYSTEM,
+} from '../../observability/semantic-conventions.js';
 import { EngineError } from '../errors.js';
 import {
     AgentInputEnum,
@@ -12,6 +18,8 @@ import {
     LangChainMessage,
     LangChainOptions,
     LLMAdapter,
+    LLMRequest,
+    LLMResponse,
     PlanningResult,
     ToolMetadataForLLM,
 } from '../types/allTypes.js';
@@ -57,11 +65,27 @@ export class DirectLLMAdapter implements LLMAdapter {
             tools?: ToolMetadataForLLM[];
             previousPlans?: PlanningResult[];
             constraints?: string[];
+            model?: string;
+            temperature?: number;
+            maxTokens?: number;
+            maxReasoningTokens?: number;
+            stop?: string[];
+            signal?: AbortSignal;
         },
     ): Promise<PlanningResult> {
         const options: LangChainOptions = {
             ...DEFAULT_LLM_SETTINGS,
-            maxTokens: 20000,
+            model: context?.model,
+            temperature:
+                typeof context?.temperature === 'number'
+                    ? context?.temperature
+                    : DEFAULT_LLM_SETTINGS.temperature,
+            maxTokens:
+                typeof context?.maxTokens === 'number'
+                    ? context?.maxTokens
+                    : 20000,
+            maxReasoningTokens: context?.maxReasoningTokens,
+            stop: context?.stop ?? DEFAULT_LLM_SETTINGS.stop,
         };
 
         if (context?.tools && context.tools.length > 0) {
@@ -90,23 +114,34 @@ export class DirectLLMAdapter implements LLMAdapter {
         ];
 
         try {
-            const span = getObservability().startSpan('llm.call', {
-                attributes: {
-                    model: this.llm.name || 'unknown',
-                    technique,
-                    ...(options.temperature && {
-                        temperature: options.temperature,
-                    }),
-                    ...(options.topP && { topP: options.topP }),
-                    ...(options.maxTokens && { maxTokens: options.maxTokens }),
+            const obs = getObservability();
+            // Prefer explicit model from context for observability naming
+            const resolvedModelName =
+                context?.model || this.llm.name || 'unknown';
+            const providerName = this.normalizeProviderName(resolvedModelName);
+            const spanOptions = createLLMCallSpan(
+                providerName,
+                resolvedModelName,
+                {
+                    operation: technique,
+                    temperature: options.temperature,
+                    maxTokens: options.maxTokens,
                 },
-            });
+            );
+            spanOptions.attributes = {
+                ...spanOptions.attributes,
+                correlationId: obs.getContext()?.correlationId || '',
+            };
+            const span = obs.startSpan(SPAN_NAMES.LLM_CHAT, spanOptions);
 
             const response = await getObservability().withSpan(
                 span,
                 async () => {
                     try {
-                        const res = await this.llm.call(messages, options);
+                        const res = await this.llm.call(messages, {
+                            ...options,
+                            signal: context?.signal,
+                        });
                         // Record usage if present
                         if (typeof res !== 'string' && res?.usage) {
                             const usage = res.usage;
@@ -241,12 +276,27 @@ export class DirectLLMAdapter implements LLMAdapter {
         return this.llm.name || 'unknown-llm';
     }
 
+    getProvider?(): { name: string } {
+        return { name: this.llm.name || 'unknown' };
+    }
+
+    private normalizeProviderName(name: string): string {
+        const n = (name || 'unknown').toLowerCase();
+        if (n.includes('openai') || n === 'gpt' || n.startsWith('gpt-'))
+            return GEN_AI_SYSTEM.OPENAI;
+        if (n.includes('anthropic') || n.includes('claude'))
+            return GEN_AI_SYSTEM.ANTHROPIC;
+        if (n.includes('google') || n.includes('gemini'))
+            return GEN_AI_SYSTEM.GOOGLE;
+        if (n.includes('groq')) return GEN_AI_SYSTEM.GROQ;
+        if (n.includes('together')) return GEN_AI_SYSTEM.TOGETHER;
+        if (n.includes('replicate')) return GEN_AI_SYSTEM.REPLICATE;
+        if (n.includes('hugging')) return GEN_AI_SYSTEM.HUGGINGFACE;
+        return n;
+    }
+
     // ✅ COMPATIBILITY: LLMAdapter interface compliance
-    async call(request: {
-        messages: Array<{ role: AgentInputEnum; content: string }>;
-        temperature?: number;
-        maxTokens?: number;
-    }): Promise<{ content: string }> {
+    async call(request: LLMRequest): Promise<LLMResponse> {
         const messages: LangChainMessage[] = request.messages.map((msg) => ({
             role: msg.role,
             content: msg.content,
@@ -254,53 +304,134 @@ export class DirectLLMAdapter implements LLMAdapter {
 
         const options: LangChainOptions = {
             ...DEFAULT_LLM_SETTINGS,
+            model: request.model,
             temperature:
                 request.temperature ?? DEFAULT_LLM_SETTINGS.temperature,
             maxTokens: request.maxTokens ?? DEFAULT_LLM_SETTINGS.maxTokens,
+            maxReasoningTokens: request.maxReasoningTokens,
+            stop: request.stop ?? DEFAULT_LLM_SETTINGS.stop,
+            signal: request.signal,
         };
 
         try {
-            const span = getObservability().startSpan('llm.call', {
-                attributes: {
-                    model: this.llm.name || 'unknown',
-                    ...(options.temperature && {
-                        temperature: options.temperature,
-                    }),
-                    ...(options.maxTokens && { maxTokens: options.maxTokens }),
+            const obs = getObservability();
+            // Prefer explicit model from request for observability naming
+            const resolvedModelName =
+                request.model || this.llm.name || 'unknown';
+            const providerName = this.normalizeProviderName(resolvedModelName);
+            const spanOptions = createLLMCallSpan(
+                providerName,
+                resolvedModelName,
+                {
+                    operation: 'chat',
+                    temperature: options.temperature,
+                    maxTokens: options.maxTokens,
                 },
-            });
+            );
+            spanOptions.attributes = {
+                ...spanOptions.attributes,
+                correlationId: obs.getContext()?.correlationId || '',
+            };
+            const span = obs.startSpan(SPAN_NAMES.LLM_CHAT, spanOptions);
             const response = await getObservability().withSpan(
                 span,
                 async () => {
                     const res = await this.llm.call(messages, options);
-                    if (typeof res !== 'string' && res?.usage) {
-                        const usage = res.usage;
-                        if (usage?.totalTokens !== undefined) {
-                            span.setAttribute(
-                                'gen_ai.usage.total_tokens',
-                                usage.totalTokens,
-                            );
+
+                    // Normalize usage (supports LangSmith usage_metadata string)
+                    if (typeof res !== 'string') {
+                        const usageRaw: any =
+                            (res as any).usage ||
+                            (res as any).usage_metadata ||
+                            (res as any).additionalKwargs?.usage ||
+                            (res as any).additionalKwargs?.usage_metadata;
+
+                        let usageObj: any | null = null;
+                        if (usageRaw) {
+                            if (typeof usageRaw === 'string') {
+                                try {
+                                    usageObj = JSON.parse(usageRaw);
+                                } catch {
+                                    usageObj = null;
+                                }
+                            } else if (typeof usageRaw === 'object') {
+                                usageObj = usageRaw;
+                            }
                         }
-                        if (usage?.promptTokens !== undefined) {
-                            span.setAttribute(
-                                'gen_ai.usage.input_tokens',
-                                usage.promptTokens,
-                            );
-                        }
-                        if (usage?.completionTokens !== undefined) {
-                            span.setAttribute(
-                                'gen_ai.usage.output_tokens',
-                                usage.completionTokens,
-                            );
+
+                        if (usageObj) {
+                            const promptTokens =
+                                usageObj.promptTokens ??
+                                usageObj.input_tokens ??
+                                usageObj.inputTokens ??
+                                usageObj.input_token_details?.text;
+                            const completionTokens =
+                                usageObj.completionTokens ??
+                                usageObj.output_tokens ??
+                                usageObj.outputTokens ??
+                                usageObj.output_token_details?.text;
+                            const reasoningTokens =
+                                usageObj.reasoningTokens ??
+                                usageObj.output_token_details?.reasoning;
+                            const totalTokens =
+                                usageObj.totalTokens ??
+                                usageObj.total_tokens ??
+                                (typeof promptTokens === 'number' &&
+                                typeof completionTokens === 'number'
+                                    ? promptTokens + completionTokens
+                                    : undefined);
+
+                            if (totalTokens !== undefined)
+                                span.setAttribute(
+                                    'gen_ai.usage.total_tokens',
+                                    totalTokens,
+                                );
+                            if (promptTokens !== undefined)
+                                span.setAttribute(
+                                    'gen_ai.usage.input_tokens',
+                                    promptTokens,
+                                );
+                            if (completionTokens !== undefined)
+                                span.setAttribute(
+                                    'gen_ai.usage.output_tokens',
+                                    completionTokens,
+                                );
+                            if (reasoningTokens !== undefined)
+                                span.setAttribute(
+                                    'gen_ai.usage.reasoning_tokens',
+                                    reasoningTokens,
+                                );
+
+                            (res as any).__normalized_usage = {
+                                promptTokens: promptTokens ?? 0,
+                                completionTokens: completionTokens ?? 0,
+                                totalTokens: totalTokens ?? 0,
+                                reasoningTokens: reasoningTokens ?? undefined,
+                            };
                         }
                     }
                     return res;
                 },
             );
-            const content =
-                typeof response === 'string' ? response : response.content;
+            const content = normalizeLLMContent(response as unknown);
 
-            return { content };
+            let usage: LLMResponse['usage'] | undefined = undefined;
+            if (typeof response !== 'string') {
+                const norm = (response as any).__normalized_usage;
+                if (norm) {
+                    usage = norm;
+                } else if ((response as any).usage) {
+                    const u = (response as any).usage;
+                    usage = {
+                        promptTokens: u.promptTokens ?? 0,
+                        completionTokens: u.completionTokens ?? 0,
+                        totalTokens: u.totalTokens ?? 0,
+                        reasoningTokens: (u as any).reasoningTokens,
+                    };
+                }
+            }
+
+            return { content, usage } as LLMResponse;
         } catch (error) {
             this.logger.error('Direct call failed', error as Error);
             throw error;

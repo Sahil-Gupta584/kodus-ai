@@ -50,8 +50,6 @@ export class PullRequestController {
     }
 
     @Get('/executions')
-    @UseInterceptors(CacheInterceptor)
-    @CacheTTL(300000) // 5 minutos em milliseconds
     @UseGuards(PolicyGuard)
     @CheckPolicies(checkPermissions(Action.Read, ResourceType.PullRequests))
     public async getPullRequestExecutions(

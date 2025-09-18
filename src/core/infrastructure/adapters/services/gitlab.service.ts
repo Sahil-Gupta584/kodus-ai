@@ -1897,7 +1897,12 @@ export class GitlabService
     }
 
     async createCommentInPullRequest(params: any): Promise<any | null> {
-        const { organizationAndTeamData, repository, prNumber, body } = params;
+        const {
+            organizationAndTeamData,
+            repository,
+            prNumber,
+            overallComment,
+        } = params;
 
         const gitlabAuthDetail = await this.getAuthDetails(
             organizationAndTeamData,
@@ -1905,16 +1910,17 @@ export class GitlabService
 
         const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
 
-        // const response = (await octokit.rest.pulls.createReview({
-        //     owner: gitlabAuthDetail?.org,
-        //     repo: repository.name,
-        //     pull_number: prNumber,
-        //     body: body,
-        //     event: 'COMMENT',
-        //     comments: lineComments,
-        // })) as any;
-
-        return null;
+        try {
+            const response = await gitlabAPI.MergeRequestNotes.create(
+                repository.id,
+                prNumber,
+                overallComment,
+            );
+            return response;
+        } catch (error) {
+            console.error('Error creating comment in GitLab:', error);
+            return null;
+        }
     }
 
     async getRepositoryContentFile(params: {

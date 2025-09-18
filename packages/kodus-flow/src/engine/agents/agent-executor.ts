@@ -25,6 +25,7 @@ import {
     AgentThought,
 } from '../../core/types/allTypes.js';
 import { ToolEngine } from '../tools/tool-engine.js';
+import { ContextService } from '../../core/contextNew/context-service.js';
 
 export class AgentExecutor<
     TInput = unknown,
@@ -163,7 +164,18 @@ export class AgentExecutor<
                 );
             }
 
-            // ✅ MELHORIA: Span automático gerenciado pelo traceAgent
+            // ✅ Atualizar sessão para coerência de fase no modo workflow
+            try {
+                const threadId = options.thread?.id;
+                if (threadId) {
+                    await ContextService.updateExecution(threadId, {
+                        status: 'success',
+                        phase: 'completed',
+                        currentTool: undefined,
+                        correlationId: options.correlationId,
+                    } as any);
+                }
+            } catch {}
 
             return result as AgentExecutionResult;
         } catch (error) {
@@ -182,7 +194,18 @@ export class AgentExecutor<
                 failExecutionTracking(this.executionTrackingId, error as Error);
             }
 
-            // ✅ MELHORIA: Span automático gerenciado pelo traceAgent
+            // ✅ Atualizar sessão em caso de erro
+            try {
+                const threadId = options.thread?.id;
+                if (threadId) {
+                    await ContextService.updateExecution(threadId, {
+                        status: 'error',
+                        phase: 'error',
+                        currentTool: undefined,
+                        correlationId: options.correlationId,
+                    } as any);
+                }
+            } catch {}
 
             this.logError(
                 'Agent workflow execution failed',
