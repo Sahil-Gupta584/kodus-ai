@@ -311,7 +311,8 @@ export class KodyRulesPrLevelAnalysisService
                 return null;
             }
 
-            const parsedResponse = this.processLLMResponse(response);
+            const parse = this.processLLMResponse(response);
+            const parsedResponse = Array.isArray(parse)?parse:[parse];
 
             if (!parsedResponse) {
                 this.logger.warn({
