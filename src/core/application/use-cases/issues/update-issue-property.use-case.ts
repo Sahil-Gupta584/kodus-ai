@@ -8,6 +8,12 @@ import { Injectable, Inject } from '@nestjs/common';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/KodyIssuesManagement.contract';
 import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
+import { REQUEST } from '@nestjs/core';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 @Injectable()
 export class UpdateIssuePropertyUseCase implements IUseCase {
@@ -17,6 +23,16 @@ export class UpdateIssuePropertyUseCase implements IUseCase {
 
         @Inject(KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN)
         private readonly kodyIssuesManagementService: KodyIssuesManagementService,
+
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: {
+                uuid: string;
+                organization: { uuid: string };
+            };
+        },
+
+        private readonly authorizationService: AuthorizationService,
     ) {}
 
     async execute(
@@ -26,9 +42,16 @@ export class UpdateIssuePropertyUseCase implements IUseCase {
     ): Promise<IssuesEntity | null> {
         const issue = await this.issuesService.findById(uuid);
 
-        if (!issue) {
+        if (!issue || !issue.repository?.id) {
             throw new Error('Issue not found');
         }
+
+        await this.authorizationService.ensure({
+            user: this.request.user,
+            action: Action.Update,
+            resource: ResourceType.Issues,
+            repoIds: [issue.repository.id],
+        });
 
         await this.kodyIssuesManagementService.clearIssuesCache(
             issue.organizationId,

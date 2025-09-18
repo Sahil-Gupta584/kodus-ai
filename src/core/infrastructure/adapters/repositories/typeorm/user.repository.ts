@@ -13,7 +13,7 @@ import { UserEntity } from '@/core/domain/user/entities/user.entity';
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import { mapSimpleModelToEntity } from '@/shared/infrastructure/repositories/mappers';
 import { UserModel } from './schema/user.model';
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 import { STATUS } from '@/config/types/database/status.type';
 
 @Injectable()
@@ -30,7 +30,7 @@ export class UserDatabaseRepository implements IUserRepository {
 
         const whereCondition: any = {
             ...otherFilterAttributes,
-            role: filter.role ? In(filter.role) : undefined,
+            role: filter.role ? filter.role : undefined,
             teamMember: filter.teamMember
                 ? (filter.teamMember as any)
                 : undefined,
@@ -66,6 +66,7 @@ export class UserDatabaseRepository implements IUserRepository {
                 'teamMember',
                 'teamMember.organization',
                 'teamMember.team',
+                'permissions',
             ],
         };
 
@@ -93,7 +94,7 @@ export class UserDatabaseRepository implements IUserRepository {
         }
 
         if (filter.role) {
-            whereCondition.role = In(filter.role);
+            whereCondition.role = filter.role;
         }
         if (filter.teamMember) {
             whereCondition.teamMember = filter.teamMember;
@@ -116,6 +117,7 @@ export class UserDatabaseRepository implements IUserRepository {
                 'teamMember',
                 'teamMember.organization',
                 'teamMember.team',
+                'permissions',
             ],
         };
 
@@ -145,17 +147,18 @@ export class UserDatabaseRepository implements IUserRepository {
 
     async count(filter: Partial<IUser>): Promise<number> {
         try {
-            const { organization, ...otherFilterAttributes } = filter;
+            const { organization, permissions, ...otherFilterAttributes } =
+                filter;
 
             const findOneOptions: FindOneOptions<UserModel> = {
                 where: {
                     ...otherFilterAttributes,
-                    role: filter.role ? In(filter.role) : undefined,
+                    role: filter.role ? filter.role : undefined,
                     teamMember: filter.teamMember
                         ? (filter.teamMember as any)
                         : undefined,
                 },
-                relations: ['organization', 'profile'],
+                relations: ['organization', 'profile', 'permissions'],
             };
 
             if (organization) {
@@ -164,6 +167,16 @@ export class UserDatabaseRepository implements IUserRepository {
                     ...findOneOptions.where,
                     organization: {
                         name: organization.name,
+                    },
+                };
+            }
+
+            if (permissions) {
+                // Add permissions filter criteria
+                findOneOptions.where = {
+                    ...findOneOptions.where,
+                    permissions: {
+                        uuid: permissions.uuid,
                     },
                 };
             }
@@ -294,7 +307,7 @@ export class UserDatabaseRepository implements IUserRepository {
 
     async findProfileIdsByOrganizationAndRole(
         organizationId: string,
-        role: UserRole,
+        role: Role,
     ): Promise<string[]> {
         try {
             const queryBuilder =

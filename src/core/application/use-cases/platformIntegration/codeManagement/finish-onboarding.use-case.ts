@@ -14,6 +14,7 @@ import {
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { SyncSelectedRepositoriesKodyRulesUseCase } from '../../kodyRules/sync-selected-repositories.use-case';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
 
 @Injectable()
 export class FinishOnboardingUseCase {
@@ -35,6 +36,8 @@ export class FinishOnboardingUseCase {
         },
 
         private readonly syncSelectedReposKodyRulesUseCase: SyncSelectedRepositoriesKodyRulesUseCase,
+
+        private readonly authorizationService: AuthorizationService,
     ) {}
 
     async execute(params: FinishOnboardingDTO) {

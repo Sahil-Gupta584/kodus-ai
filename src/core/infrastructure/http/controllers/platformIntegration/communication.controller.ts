@@ -1,5 +1,5 @@
 import { GetCommunicationMemberListUseCase } from '@/core/application/use-cases/platformIntegration/communication/get-communication-members-list.use-case';
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { CreateAuthIntegrationUseCase } from '@/core/application/use-cases/platformIntegration/communication/create-integration.use-case';
 import { UpdateAuthIntegrationUseCase } from '@/core/application/use-cases/platformIntegration/communication/update-integration.use-case';
 import { CreateOrUpdateIntegrationConfigUseCase } from '@/core/application/use-cases/platformIntegration/communication/create-or-update-configs.use-case';
@@ -12,6 +12,15 @@ import { KodyNotification } from '@/core/domain/platformIntegrations/types/commu
 import { SendKodyNotificationOnChannelUseCase } from '@/core/application/use-cases/platformIntegration/communication/sendNotification/send-kody-notification-on-channel.use-case';
 import { SendKodyNotificationOnDmUseCase } from '@/core/application/use-cases/platformIntegration/communication/sendNotification/send-kody-notification-on-dm.use-case';
 import { SendKodyNotificationToTeamMemberUseCase } from '@/core/application/use-cases/platformIntegration/communication/sendNotification/send-kody-notification-to-team-member.use-case';
+import {
+    CheckPolicies,
+    PolicyGuard,
+} from '@/core/infrastructure/adapters/services/permissions/policy.guard';
+import { checkPermissions } from '@/core/infrastructure/adapters/services/permissions/policy.handlers';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 @Controller('communication')
 export class CommunicationController {
@@ -29,41 +38,57 @@ export class CommunicationController {
     ) {}
 
     @Post('/create-auth-integration')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.GitSettings))
     public async createAuthIntegration(@Body() body: any) {
         return this.createAuthIntegrationUseCase.execute(body);
     }
 
     @Post('/update-auth-integration')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Update, ResourceType.GitSettings))
     public async updateAuthIntegration(@Body() body: any) {
         return this.updateAuthIntegrationUseCase.execute(body);
     }
 
     @Post('/create-or-update-integration-config')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.GitSettings))
     public async createOrUpdateIntegrationConfig(@Body() body: any) {
         return this.createOrUpdateIntegrationConfigUseCase.execute(body);
     }
 
     @Get('/list-members')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async getListMembers() {
         return this.getCommunicationMemberListUseCase.execute();
     }
 
     @Get('/verify-connection')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async verifyConnection() {
         return this.verifyConnectionCommunicationListUseCase.execute();
     }
 
     @Get('/channels')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async getChannels(@Query() query: TeamQueryDto) {
         return this.getChannelsUseCase.execute(query.teamId);
     }
 
     @Post('/save-channel')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.GitSettings))
     public async saveSelectedChannel(@Body() body: any) {
         return this.saveChannelSelectedUseCase.execute(body);
     }
 
     @Post('/send-notification-on-channel')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.GitSettings))
     public async sendNotificationOnChannel(
         @Body()
         body: {
@@ -84,6 +109,8 @@ export class CommunicationController {
     }
 
     @Post('/send-notification-on-dm')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.GitSettings))
     public async sendNotificationOnDm(
         @Body()
         body: {
@@ -104,6 +131,8 @@ export class CommunicationController {
     }
 
     @Post('/send-notification-to-team-members')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.GitSettings))
     public async sendNotificationToTeamMembers(
         @Body()
         body: {

@@ -2,9 +2,18 @@ import { GetOrganizationNameUseCase } from '@/core/application/use-cases/organiz
 import { GetOrganizationNameByTenantUseCase } from '@/core/application/use-cases/organization/get-organization-name-by-tenant';
 import { GetOrganizationTenantNameUseCase } from '@/core/application/use-cases/organization/get-organization-tenant-name';
 import { UpdateInfoOrganizationAndPhoneUseCase } from '@/core/application/use-cases/organization/update-infos.use-case';
-import { Body, Controller, Get, Patch, Query } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Query, UseGuards } from '@nestjs/common';
 import { UpdateInfoOrganizationAndPhoneDto } from '../dtos/updateInfoOrgAndPhone.dto';
 import { GetOrganizationsByDomainUseCase } from '@/core/application/use-cases/organization/get-organizations-domain.use-case';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
+import {
+    PolicyGuard,
+    CheckPolicies,
+} from '../../adapters/services/permissions/policy.guard';
+import { checkPermissions } from '../../adapters/services/permissions/policy.handlers';
 
 @Controller('organization')
 export class OrganizationController {
@@ -35,6 +44,10 @@ export class OrganizationController {
     }
 
     @Patch('/update-infos')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Update, ResourceType.OrganizationSettings),
+    )
     public async updateInfoOrganizationAndPhone(
         @Body() body: UpdateInfoOrganizationAndPhoneDto,
     ) {

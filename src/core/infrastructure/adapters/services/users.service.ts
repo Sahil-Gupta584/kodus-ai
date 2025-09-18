@@ -10,7 +10,7 @@ import {
     AUTH_SERVICE_TOKEN,
     IAuthService,
 } from '@/core/domain/auth/contracts/auth.service.contracts';
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 import { STATUS } from '@/config/types/database/status.type';
 import { IUsersService } from '@/core/domain/user/contracts/user.service.contract';
 
@@ -106,7 +106,7 @@ export class UsersService implements IUsersService {
 
     async findProfileIdsByOrganizationAndRole(
         organizationId: string,
-        role: UserRole,
+        role: Role,
     ): Promise<string[]> {
         return this.userRepository.findProfileIdsByOrganizationAndRole(
             organizationId,

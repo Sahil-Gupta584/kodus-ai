@@ -1,7 +1,7 @@
 import { STATUS } from '@/config/types/database/status.type';
 import { UserEntity } from '../entities/user.entity';
-import { UserRole } from '../enums/userRole.enum';
 import { IUser } from '../interfaces/user.interface';
+import { Role } from '../../permissions/enums/permissions.enum';
 
 export const USER_REPOSITORY_TOKEN = Symbol('UserRepository');
 
@@ -23,7 +23,7 @@ export interface IUserRepository {
 
     findProfileIdsByOrganizationAndRole(
         organizationId: string,
-        role: UserRole,
+        role: Role,
     ): Promise<string[]>;
     findUsersWithEmailsInDifferentOrganizations(
         emails: string[],

@@ -11,7 +11,7 @@ import {
     ORGANIZATION_SERVICE_TOKEN,
 } from '@/core/domain/organization/contracts/organization.service.contract';
 import { STATUS } from '@/config/types/database/status.type';
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 import { v4 as uuidv4 } from 'uuid';
 
 describe('SendKodyRulesNotification - Integration Test', () => {

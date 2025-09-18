@@ -25,6 +25,11 @@ import { Repositories } from '@/core/domain/platformIntegrations/types/codeManag
 import { KodyLearningStatus } from '@/core/domain/parameters/types/configValue.type';
 import { ParametersEntity } from '@/core/domain/parameters/entities/parameters.entity';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 @Injectable()
 export class GenerateCodeReviewParameterUseCase {
     constructor(
@@ -49,6 +54,8 @@ export class GenerateCodeReviewParameterUseCase {
         private readonly request: Request & {
             user: { organization: { uuid: string } };
         },
+
+        private readonly authorizationService: AuthorizationService,
     ) {}
 
     async execute(body: GenerateCodeReviewParameterDTO) {
@@ -71,6 +78,13 @@ export class GenerateCodeReviewParameterUseCase {
             const repositories = await this.getRepositoriesIntegration(
                 organizationAndTeamData,
             );
+
+            await this.authorizationService.ensure({
+                user: this.request.user,
+                action: Action.Create,
+                resource: ResourceType.CodeReviewSettings,
+                repoIds: repositories.map((repo) => repo.id),
+            });
 
             platformConfig = await this.parametersService.findByKey(
                 ParametersKey.PLATFORM_CONFIGS,

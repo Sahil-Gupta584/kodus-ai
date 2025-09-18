@@ -16,6 +16,12 @@ import {
 } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
 import { KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/KodyIssuesManagement.contract';
+import { REQUEST } from '@nestjs/core';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 @Injectable()
 export class GetIssueByIdUseCase implements IUseCase {
@@ -28,14 +34,31 @@ export class GetIssueByIdUseCase implements IUseCase {
 
         @Inject(KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN)
         private readonly kodyIssuesManagementService: KodyIssuesManagementService,
+
+        @Inject(REQUEST)
+        private readonly request: Request & {
+            user: {
+                uuid: string;
+                organization: { uuid: string };
+            };
+        },
+
+        private readonly authorizationService: AuthorizationService,
     ) {}
 
     async execute(id: string): Promise<IIssueDetails | null> {
         const issue = await this.issuesService.findById(id);
 
-        if (!issue) {
+        if (!issue || !issue.repository?.id) {
             return null;
         }
+
+        await this.authorizationService.ensure({
+            user: this.request.user,
+            action: Action.Read,
+            resource: ResourceType.Issues,
+            repoIds: [issue.repository.id],
+        });
 
         const codeReviewFeedback =
             await this.codeReviewFeedbackService.getByOrganizationId(
@@ -93,6 +116,10 @@ export class GetIssueByIdUseCase implements IUseCase {
             language: issue.language,
             reactions,
             gitOrganizationName: issue.repository.full_name.split('/')[0],
+            repository: {
+                id: issue.repository.id,
+                name: issue.repository.name,
+            },
         };
     }
 

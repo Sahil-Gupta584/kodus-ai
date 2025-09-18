@@ -1,10 +1,17 @@
+import { UserRequest } from '@/config/types/http/user-request.type';
 import {
     KODY_RULES_SERVICE_TOKEN,
     IKodyRulesService,
 } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
 import { Inject, Injectable } from '@nestjs/common';
+import { REQUEST } from '@nestjs/core';
 
 @Injectable()
 export class FindRulesInOrganizationByRuleFilterKodyRulesUseCase {
@@ -13,6 +20,11 @@ export class FindRulesInOrganizationByRuleFilterKodyRulesUseCase {
         private readonly kodyRulesService: IKodyRulesService,
 
         private readonly logger: PinoLoggerService,
+
+        @Inject(REQUEST)
+        private readonly request: UserRequest,
+
+        private readonly authorizationService: AuthorizationService,
     ) {}
 
     async execute(
@@ -22,6 +34,13 @@ export class FindRulesInOrganizationByRuleFilterKodyRulesUseCase {
         directoryId?: string,
     ) {
         try {
+            await this.authorizationService.ensure({
+                user: this.request.user,
+                action: Action.Read,
+                resource: ResourceType.KodyRules,
+                repoIds: [repositoryId],
+            });
+
             const existingRules = await this.kodyRulesService.find({
                 organizationId,
                 rules: [{ repositoryId, directoryId }],

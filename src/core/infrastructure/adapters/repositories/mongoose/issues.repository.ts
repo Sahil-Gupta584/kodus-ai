@@ -101,6 +101,7 @@ export class IssuesRepository implements IIssuesRepository {
                     'label': 1,
                     'severity': 1,
                     'status': 1,
+                    'repository.id': 1,
                     'repository.name': 1,
                     'contributingSuggestions': 1,
                     'createdAt': 1,

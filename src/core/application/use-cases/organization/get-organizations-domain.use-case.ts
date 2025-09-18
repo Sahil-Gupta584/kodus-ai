@@ -9,7 +9,7 @@ import {
     ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/organizationParameters/contracts/organizationParameters.service.contract';
 import { OrganizationParametersAutoJoinConfig } from '@/core/domain/organizationParameters/types/organizationParameters.types';
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
@@ -106,8 +106,7 @@ export class GetOrganizationsByDomainUseCase implements IUseCase {
             return organizations.map((org) => ({
                 uuid: org.uuid,
                 name: org.name,
-                owner: org.user.find((u) => u.role.includes(UserRole.OWNER))
-                    ?.email,
+                owner: org.user.find((u) => u.role === Role.OWNER)?.email,
             }));
         } catch (error) {
             this.logger.error({

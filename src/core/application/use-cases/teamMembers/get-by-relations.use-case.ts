@@ -11,6 +11,7 @@ import {
     ITeamMember,
 } from '@/core/domain/teamMembers/interfaces/team-members.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 
 export class GetTeamMemberByRelationsUseCase implements IUseCase {
     constructor(
@@ -53,6 +54,7 @@ export class GetTeamMemberByRelationsUseCase implements IUseCase {
                     projectManagement: member.projectManagement,
                     userId: member.user.uuid,
                     email: member.user.email,
+                    role: member?.user?.role || Role.CONTRIBUTOR,
                 })),
             };
         } catch (error) {

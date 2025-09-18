@@ -4,7 +4,10 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { EnrichedPullRequestsQueryDto } from '@/core/infrastructure/http/dtos/enriched-pull-requests-query.dto';
 import { EnrichedPullRequestResponse } from '@/core/infrastructure/http/dtos/enriched-pull-request-response.dto';
-import { PaginatedEnrichedPullRequestsResponse, PaginationMetadata } from '@/core/infrastructure/http/dtos/paginated-enriched-pull-requests.dto';
+import {
+    PaginatedEnrichedPullRequestsResponse,
+    PaginationMetadata,
+} from '@/core/infrastructure/http/dtos/paginated-enriched-pull-requests.dto';
 import {
     AUTOMATION_EXECUTION_SERVICE_TOKEN,
     IAutomationExecutionService,
@@ -17,6 +20,12 @@ import {
     CODE_REVIEW_EXECUTION_SERVICE,
     ICodeReviewExecutionService,
 } from '@/core/domain/codeReviewExecutions/contracts/codeReviewExecution.service.contract';
+import { UserRequest } from '@/config/types/http/user-request.type';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 @Injectable()
 export class GetEnrichedPullRequestsUseCase implements IUseCase {
@@ -33,9 +42,9 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
         private readonly codeReviewExecutionService: ICodeReviewExecutionService,
 
         @Inject(REQUEST)
-        private readonly request: Request & {
-            user: { organization: { uuid: string } };
-        },
+        private readonly request: UserRequest,
+
+        private readonly authorizationService: AuthorizationService,
     ) {}
 
     async execute(
@@ -49,6 +58,15 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                 context: GetEnrichedPullRequestsUseCase.name,
             });
             throw new Error('No organization found in request');
+        }
+
+        if (repositoryId) {
+            await this.authorizationService.ensure({
+                user: this.request.user,
+                action: Action.Read,
+                resource: ResourceType.PullRequests,
+                repoIds: [repositoryId],
+            });
         }
 
         const organizationId = this.request.user.organization.uuid;
@@ -155,7 +173,10 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                         });
 
                     // Filtrar apenas PRs que têm histórico de code review
-                    if (!codeReviewExecutions || codeReviewExecutions.length === 0) {
+                    if (
+                        !codeReviewExecutions ||
+                        codeReviewExecutions.length === 0
+                    ) {
                         this.logger.debug({
                             message: 'Skipping PR without code review history',
                             context: GetEnrichedPullRequestsUseCase.name,
@@ -240,18 +261,35 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                 }
             }
 
+            const assignedRepositoryIds =
+                await this.authorizationService.getRepositoryScope(
+                    this.request.user,
+                    Action.Read,
+                    ResourceType.PullRequests,
+                );
+
+            let filteredByAssignedRepos = enrichedPullRequests;
+            if (assignedRepositoryIds !== null) {
+                filteredByAssignedRepos = filteredByAssignedRepos.filter((pr) =>
+                    assignedRepositoryIds.includes(pr.repositoryId),
+                );
+            }
+
             // 5. Ordenar por data de criação (mais recentes primeiro)
-            enrichedPullRequests.sort(
+            filteredByAssignedRepos.sort(
                 (a, b) =>
                     new Date(b.automationExecution.createdAt).getTime() -
                     new Date(a.automationExecution.createdAt).getTime(),
             );
 
             // 6. Aplicar paginação
-            const totalItems = enrichedPullRequests.length;
+            const totalItems = filteredByAssignedRepos.length;
             const totalPages = Math.ceil(totalItems / limit);
             const offset = (page - 1) * limit;
-            const paginatedData = enrichedPullRequests.slice(offset, offset + limit);
+            const paginatedData = filteredByAssignedRepos.slice(
+                offset,
+                offset + limit,
+            );
 
             const paginationMetadata: PaginationMetadata = {
                 currentPage: page,
@@ -263,7 +301,8 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
             };
 
             this.logger.log({
-                message: 'Successfully retrieved enriched pull requests with code review history',
+                message:
+                    'Successfully retrieved enriched pull requests with code review history',
                 context: GetEnrichedPullRequestsUseCase.name,
                 metadata: {
                     organizationId,
