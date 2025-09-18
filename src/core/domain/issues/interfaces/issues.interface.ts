@@ -29,7 +29,7 @@ export interface IIssue {
     };
     reporter?: {
         id: string;
-        name: string;
+        name?: string;
         email: string;
     };
 }

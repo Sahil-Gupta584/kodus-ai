@@ -1,4 +1,4 @@
-import { SeverityLevel } from "@sentry/node";
+import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 
 export interface IssueCreationConfig {
     automaticCreationEnabled: boolean;

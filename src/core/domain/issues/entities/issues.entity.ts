@@ -26,7 +26,7 @@ export class IssuesEntity implements Entity<IIssue> {
     };
     public reporter?: {
         id: string;
-        name: string;
+        name?: string;
         email: string;
     };
 
@@ -44,6 +44,8 @@ export class IssuesEntity implements Entity<IIssue> {
         this.organizationId = issue.organizationId;
         this.createdAt = issue.createdAt;
         this.updatedAt = issue.updatedAt;
+        this.owner = issue.owner;
+        this.reporter = issue.reporter;
     }
 
     public static create(issue: IIssue): IssuesEntity {
@@ -65,6 +67,8 @@ export class IssuesEntity implements Entity<IIssue> {
             organizationId: this.organizationId,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
+            owner: this.owner,
+            reporter: this.reporter,
         };
     }
 
@@ -83,6 +87,8 @@ export class IssuesEntity implements Entity<IIssue> {
             organizationId: this.organizationId,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
+            owner: this.owner,
+            reporter: this.reporter,
         };
     }
 }

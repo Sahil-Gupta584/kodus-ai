@@ -27,6 +27,8 @@ import { ISuggestion } from '@/core/domain/pullRequests/interfaces/pullRequests.
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { CacheService } from '@/shared/utils/cache/cache.service';
+import { IssueCreationConfigService } from '@/core/infrastructure/adapters/services/issues/issue-creation-config.service';
+import { IssueCreationConfig } from '@/core/domain/issues/entities/issue-creation-config.entity';
 
 @Injectable()
 export class KodyIssuesManagementService
@@ -48,6 +50,7 @@ export class KodyIssuesManagementService
         private pullRequestHandlerService: IPullRequestManagerService,
 
         private readonly cacheService: CacheService,
+        private readonly issueCreationConfigService: IssueCreationConfigService,
     ) {}
 
     async processClosedPr(params: contextToGenerateIssues): Promise<void> {
@@ -203,14 +206,50 @@ export class KodyIssuesManagementService
         unmatchedSuggestions: Partial<CodeSuggestion>[],
     ): Promise<void> {
         try {
+            const cfg: IssueCreationConfig | null = await this.issueCreationConfigService.get(
+                context.organizationAndTeamData.organizationId,
+                context.organizationAndTeamData.teamId,
+            );
+
+            if (cfg && cfg.automaticCreationEnabled === false) {
+                this.logger.log({
+                    message: 'Automatic issue creation disabled by config',
+                    context: KodyIssuesManagementService.name,
+                    metadata: {
+                        organizationId: context.organizationAndTeamData.organizationId,
+                        teamId: context.organizationAndTeamData.teamId,
+                    },
+                });
+                return;
+            }
+
             const pullRequest =
                 await this.pullRequestsService.findByNumberAndRepositoryName(
                     context.pullRequest.number,
                     context.repository.name,
                     context.organizationAndTeamData,
                 );
+                
+            const filteredSuggestions = (unmatchedSuggestions || []).filter((suggestion) => {
+                if (!cfg) return true;
 
-            for (const suggestion of unmatchedSuggestions) {
+                const severity = suggestion?.severity as any;
+                if (cfg.severityFilters?.minimumSeverity) {
+                    const order = ['low', 'medium', 'high', 'critical'] as const;
+                    const idx = order.indexOf((severity || 'low') as any);
+                    const minIdx = order.indexOf(cfg.severityFilters.minimumSeverity as any);
+                    if (idx < minIdx) return false;
+                }
+                if (cfg.severityFilters?.allowedSeverities?.length) {
+                    if (!cfg.severityFilters.allowedSeverities.includes(severity)) return false;
+                }
+
+                if (!cfg.sourceFilters?.includeCodeReviewEngine && suggestion?.source === 'code_review_engine') return false
+                if (!cfg.sourceFilters?.includeKodyRules && suggestion?.source === 'kody_rules') return false
+                return true;
+            });
+
+            for (const suggestion of filteredSuggestions) {
                 await this.issuesService.create({
                     title: suggestion.oneSentenceSummary,
                     description: suggestion.suggestionContent,
@@ -413,7 +452,7 @@ export class KodyIssuesManagementService
         if (!mergeResult?.matches) {
             return;
         }
-
+        
         const unmatchedSuggestions: Partial<CodeSuggestion>[] = [];
 
         for (const match of mergeResult.matches) {

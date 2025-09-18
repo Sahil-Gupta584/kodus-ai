@@ -23,6 +23,10 @@ import { GenerateIssuesFromPrClosedUseCase } from "@/core/application/use-cases/
 import { CodebaseModule } from "./codeBase.module";
 import { GlobalCacheModule } from "./cache.module";
 import { GetIssuesUseCase } from "@/core/application/use-cases/issues/get-issues.use-case";
+import { CreateIssueManuallyUseCase } from "@/core/application/use-cases/issues/create-issue-manually.use-case";
+import { IssueCreationConfigService } from "@/core/infrastructure/adapters/services/issues/issue-creation-config.service";
+import { UsersModule } from "./user.module";
+import { OrganizationModule } from "./organization.module";
 
 const UseCases = [
     GetIssuesByFiltersUseCase,
@@ -31,6 +35,7 @@ const UseCases = [
     GetTotalIssuesUseCase,
     GetIssuesUseCase,
     GetIssueByIdUseCase,
+    CreateIssueManuallyUseCase
 ] as const;
 
 @Module({
@@ -46,6 +51,8 @@ const UseCases = [
         forwardRef(() => ParametersModule),
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
+        forwardRef(() => UsersModule),
+        forwardRef(() => OrganizationModule),
         GlobalCacheModule,
     ],
     providers: [
@@ -58,6 +65,7 @@ const UseCases = [
             provide: ISSUES_SERVICE_TOKEN,
             useClass: IssuesService,
         },
+        IssueCreationConfigService,
         {
             provide: KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN,
             useClass: KodyIssuesManagementService,
