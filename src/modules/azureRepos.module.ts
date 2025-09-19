@@ -24,6 +24,7 @@ import { AZURE_REPOS_SERVICE_TOKEN } from '@/core/domain/azureRepos/contracts/az
 import { AzureReposRequestHelper } from '@/core/infrastructure/adapters/services/azureRepos/azure-repos-request-helper';
 import { AzureReposController } from '@/core/infrastructure/http/controllers/azureRepos.controller';
 import { LicenseModule } from '@/ee/license/license.module';
+import { WebhookLogModule } from './webhookLog.module';
 
 @Module({
     imports: [
@@ -45,6 +46,7 @@ import { LicenseModule } from '@/ee/license/license.module';
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
         forwardRef(() => LicenseModule),
+        forwardRef(() => WebhookLogModule),
     ],
     providers: [
         ...SaveOrganizationMetricsToDbUseCase,
