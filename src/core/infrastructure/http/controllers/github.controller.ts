@@ -6,6 +6,7 @@ import {
     Controller,
     Get,
     HttpStatus,
+    Inject,
     Post,
     Query,
     Req,
@@ -16,6 +17,10 @@ import { PinoLoggerService } from '../../adapters/services/logger/pino.service';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { ReceiveWebhookUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/receiveWebhook.use-case';
 import * as jwt from 'jsonwebtoken';
+import {
+    IWebhookLogService,
+    WEBHOOK_LOG_SERVICE,
+} from '@/core/domain/webhookLog/contracts/webhook-log.service.contract';
 
 @Controller('github')
 export class GithubController {
@@ -24,6 +29,9 @@ export class GithubController {
         private readonly getOrganizationNameUseCase: GetOrganizationNameUseCase,
         private readonly getIntegrationGithubUseCase: GetIntegrationGithubUseCase,
         private readonly receiveWebhookUseCase: ReceiveWebhookUseCase,
+
+        @Inject(WEBHOOK_LOG_SERVICE)
+        private readonly webhookLogService: IWebhookLogService,
 
         private logger: PinoLoggerService,
     ) {}
@@ -62,6 +70,9 @@ export class GithubController {
                     repository: payload?.repository?.name,
                 },
             });
+
+            this.webhookLogService.log(PlatformType.GITHUB, event, payload);
+
             this.receiveWebhookUseCase.execute({
                 payload,
                 event,
