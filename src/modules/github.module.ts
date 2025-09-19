@@ -24,6 +24,7 @@ import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.us
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 import { CodebaseModule } from './codeBase.module';
 import { LicenseModule } from '@/ee/license/license.module';
+import { WebhookLogModule } from './webhookLog.module';
 
 @Module({
     imports: [
@@ -44,7 +45,8 @@ import { LicenseModule } from '@/ee/license/license.module';
         forwardRef(() => AgentModule),
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
-        LicenseModule
+        LicenseModule,
+        forwardRef(() => WebhookLogModule),
     ],
     providers: [
         ...UseCases,
