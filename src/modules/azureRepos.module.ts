@@ -22,6 +22,7 @@ import { AzureReposRequestHelper } from '@/core/infrastructure/adapters/services
 import { AzureReposController } from '@/core/infrastructure/http/controllers/azureRepos.controller';
 import { LicenseModule } from '@/ee/license/license.module';
 import { OrganizationParametersModule } from './organizationParameters.module';
+import { WebhookLogModule } from './webhookLog.module';
 
 @Module({
     imports: [
@@ -42,6 +43,7 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         forwardRef(() => CodebaseModule),
         forwardRef(() => OrganizationParametersModule),
         forwardRef(() => LicenseModule),
+        forwardRef(() => WebhookLogModule),
     ],
     providers: [
         RunCodeReviewAutomationUseCase,

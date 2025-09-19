@@ -10,6 +10,7 @@ import { CodebaseModule } from './codeBase.module';
 import { PlatformIntegrationModule } from './platformIntegration.module';
 import { LicenseModule } from '@/ee/license/license.module';
 import { OrganizationParametersModule } from './organizationParameters.module';
+import { WebhookLogModule } from './webhookLog.module';
 
 @Module({
     imports: [
@@ -20,7 +21,8 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         forwardRef(() => CodebaseModule),
         forwardRef(() => PlatformIntegrationModule),
         forwardRef(() => OrganizationParametersModule),
-        LicenseModule
+        forwardRef(() => WebhookLogModule),
+        LicenseModule,
     ],
     providers: [
         {

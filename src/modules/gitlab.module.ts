@@ -18,6 +18,7 @@ import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 import { CodebaseModule } from './codeBase.module';
 import { LicenseModule } from '@/ee/license/license.module';
 import { OrganizationParametersModule } from './organizationParameters.module';
+import { WebhookLogModule } from './webhookLog.module';
 
 @Module({
     imports: [
@@ -36,6 +37,7 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
         forwardRef(() => OrganizationParametersModule),
+        forwardRef(() => WebhookLogModule),
         LicenseModule,
     ],
     providers: [RunCodeReviewAutomationUseCase, PromptService],
