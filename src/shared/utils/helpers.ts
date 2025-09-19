@@ -1,6 +1,5 @@
 import { Repository } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { IOrganizationArtifact } from '@/core/domain/organizationArtifacts/interfaces/organizationArtifact.interface';
 import * as moment from 'moment-timezone';
 
 export function extractRepoNames(
@@ -175,21 +174,6 @@ export function shouldProcessNotBugItems(
     ];
 
     return skipTypes.includes(lowerCaseType);
-}
-
-export function checkArtifactActiveForTeam(
-    organizationTeamArtifactsFromParameters: any,
-    organizationArtifact: IOrganizationArtifact,
-) {
-    try {
-        const parameter = organizationTeamArtifactsFromParameters?.find(
-            (ta) => ta.name === organizationArtifact.name,
-        );
-
-        return parameter ? parameter.status : false;
-    } catch (error) {
-        console.log(error);
-    }
 }
 
 export function sanitizeString(str) {

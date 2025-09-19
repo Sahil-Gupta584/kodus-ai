@@ -18,19 +18,10 @@ import { AutomationController } from '@/core/infrastructure/http/controllers/aut
 import { TeamAutomationModule } from './teamAutomation.module';
 import { AutomationStrategyModule } from './automationStrategy.module';
 import { PlatformIntegrationModule } from './platformIntegration.module';
-import { AUTOMATION_DAILY_CHECKIN_SERVICE_TOKEN } from '@/core/domain/automation/contracts/automation-dailycheckin.service';
-import { AutomationDailyCheckinService } from '@/core/infrastructure/adapters/services/automation/processAutomation/strategies/automationDailyCheckin.service';
-import { MetricsModule } from './metrics.module';
 import { IntegrationModule } from './integration.module';
 import { PromptService } from '@/core/infrastructure/adapters/services/prompt.service';
 import { IntegrationConfigModule } from './integrationConfig.module';
-import { CheckinInsightsModule } from './checkinInsights.module';
-import { AUTOMATION_WEEKLY_CHECKIN_SERVICE_TOKEN } from '@/core/domain/automation/contracts/automation_weeklyCheckin.service';
-import { AutomationTeamProgressService } from '@/core/infrastructure/adapters/services/automation/processAutomation/strategies/automationTeamProgress.service';
-import { CheckinHistoryModule } from './checkinHistory.module';
-import { UseCases as EnrichTeamArtifactsUseCase } from '@/core/application/use-cases/teamArtifacts';
 import { AuthIntegrationModule } from './authIntegration.module';
-import { CheckinHistoryOrganizationModule } from './checkInHistoryOrganization.module';
 import { OrganizationAutomationExecutionModel } from '@/core/infrastructure/adapters/repositories/typeorm/schema/organizationAutomationExecution.model';
 import { ORGANIZATION_AUTOMATION_EXECUTION_SERVICE_TOKEN } from '@/core/domain/automation/contracts/organization-automation-execution.service';
 import { OrganizationAutomationExecutionService } from '@/core/infrastructure/adapters/services/automation/organization-automation-execution.service';
@@ -39,14 +30,12 @@ import { OrganizationAutomationExecutionRepository } from '@/core/infrastructure
 import { OrganizationAutomationModule } from './organizationAutomation.module';
 import { UseCases as OrganizationAutomationUseCases } from '@/core/application/use-cases/organizationAutomation';
 import { OrganizationModule } from './organization.module';
-import { CheckinModule } from './checkin.module';
 import { ParametersModule } from './parameters.module';
 import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.use-case';
 import { CodebaseModule } from './codeBase.module';
 import { UseCases as SaveCodeReviewFeedbackUseCase } from '@/core/application/use-cases/codeReviewFeedback';
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 import { PullRequestsModule } from './pullRequests.module';
-import { TeamArtifactsModule } from './teamArtifacts.module';
 import { LicenseModule } from '@/ee/license/license.module';
 import { CodeReviewExecutionModule } from './codeReviewExecution.module';
 import { OrganizationParametersModule } from './organizationParameters.module';
@@ -65,12 +54,8 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         forwardRef(() => OrganizationAutomationModule),
         forwardRef(() => AutomationStrategyModule),
         forwardRef(() => PlatformIntegrationModule),
-        forwardRef(() => MetricsModule),
         forwardRef(() => IntegrationModule),
         forwardRef(() => IntegrationConfigModule),
-        forwardRef(() => CheckinInsightsModule),
-        forwardRef(() => CheckinHistoryModule),
-        forwardRef(() => CheckinHistoryOrganizationModule),
         forwardRef(() => OrganizationModule),
         forwardRef(() => AuthIntegrationModule),
         forwardRef(() => ParametersModule),
@@ -79,15 +64,12 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         forwardRef(() => PullRequestsModule),
         forwardRef(() => OrganizationParametersModule),
         AuthIntegrationModule,
-        CheckinModule,
-        TeamArtifactsModule,
         LicenseModule,
         forwardRef(() => CodeReviewExecutionModule),
     ],
     providers: [
         ...UseCases,
         ...OrganizationAutomationUseCases,
-        ...EnrichTeamArtifactsUseCase,
         ...SaveCodeReviewFeedbackUseCase,
         PromptService,
         {
@@ -114,14 +96,6 @@ import { OrganizationParametersModule } from './organizationParameters.module';
             provide: ORGANIZATION_AUTOMATION_EXECUTION_REPOSITORY_TOKEN,
             useClass: OrganizationAutomationExecutionRepository,
         },
-        {
-            provide: AUTOMATION_DAILY_CHECKIN_SERVICE_TOKEN,
-            useClass: AutomationDailyCheckinService,
-        },
-        {
-            provide: AUTOMATION_WEEKLY_CHECKIN_SERVICE_TOKEN,
-            useClass: AutomationTeamProgressService,
-        },
     ],
     controllers: [AutomationController],
     exports: [
@@ -131,8 +105,6 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         AUTOMATION_EXECUTION_REPOSITORY_TOKEN,
         ORGANIZATION_AUTOMATION_EXECUTION_SERVICE_TOKEN,
         ORGANIZATION_AUTOMATION_EXECUTION_REPOSITORY_TOKEN,
-        AUTOMATION_DAILY_CHECKIN_SERVICE_TOKEN,
-        AUTOMATION_WEEKLY_CHECKIN_SERVICE_TOKEN,
         RunCodeReviewAutomationUseCase,
     ],
 })

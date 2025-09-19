@@ -24,7 +24,6 @@ import {
     PromptRole,
     LLMModelProvider,
 } from '@kodus/kodus-common/llm';
-import { createHash } from 'crypto';
 import { UpdateOrCreateCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/update-or-create-code-review-parameter-use-case';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import {
@@ -46,16 +45,16 @@ type SyncTarget = {
 @Injectable()
 export class KodyRulesSyncService {
     constructor(
-        private readonly codeManagementService: CodeManagementService,
-        private readonly promptRunner: PromptRunnerService,
-        private readonly logger: PinoLoggerService,
         @Inject(CreateOrUpdateKodyRulesUseCase)
         private readonly upsertRule: CreateOrUpdateKodyRulesUseCase,
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: IKodyRulesService,
-        private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
+        private readonly codeManagementService: CodeManagementService,
+        private readonly promptRunner: PromptRunnerService,
+        private readonly logger: PinoLoggerService,
+        private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
     ) {}
 
     /**

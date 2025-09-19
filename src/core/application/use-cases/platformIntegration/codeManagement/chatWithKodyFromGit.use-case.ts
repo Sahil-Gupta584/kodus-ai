@@ -1,8 +1,6 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { AGENT_SERVICE_TOKEN } from '@/core/domain/agents/contracts/agent.service.contracts';
 import { IntegrationConfigEntity } from '@/core/domain/integrationConfigs/entities/integration-config.entity';
-import { AgentService } from '@/core/infrastructure/adapters/services/agent/agent.service';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
@@ -149,9 +147,6 @@ export class ChatWithKodyFromGitUseCase {
     private commandManager: CommandManager;
 
     constructor(
-        @Inject(AGENT_SERVICE_TOKEN)
-        private readonly agentService: AgentService,
-
         private readonly logger: PinoLoggerService,
         private readonly codeManagementService: CodeManagementService,
         private readonly conversationAgentUseCase: ConversationAgentUseCase,
@@ -638,13 +633,6 @@ export class ChatWithKodyFromGitUseCase {
                 organizationAndTeamData,
                 thread,
             });
-        } else {
-            response = await this.agentService.conversationWithKody(
-                organizationAndTeamData,
-                sender.id,
-                message,
-                sender.login,
-            );
         }
 
         if (!response) {

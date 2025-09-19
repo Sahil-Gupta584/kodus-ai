@@ -18,10 +18,6 @@ import { PlatformIntegrationModule } from './platformIntegration.module';
 import { ParametersModule } from './parameters.module';
 import { OrganizationParametersModule } from './organizationParameters.module';
 import { AxiosJiraService } from '@/config/axios/microservices/jira.axios';
-import { TeamArtifactsModule } from './teamArtifacts.module';
-import { OrganizationMetricsModule } from './organizationMetrics.module';
-import { OrganizationArtifactsModule } from './organizationArtifacts.module';
-import { MetricsModule } from './metrics.module';
 import { TeamAutomationModule } from './teamAutomation.module';
 import { AutomationModule } from './automation.module';
 
@@ -39,11 +35,7 @@ import { AutomationModule } from './automation.module';
         forwardRef(() => OrganizationModule),
         forwardRef(() => UsersModule),
         forwardRef(() => OrganizationParametersModule),
-        forwardRef(() => OrganizationMetricsModule),
-        forwardRef(() => OrganizationArtifactsModule),
         forwardRef(() => ParametersModule),
-        forwardRef(() => MetricsModule),
-        forwardRef(() => TeamArtifactsModule),
         forwardRef(() => AutomationModule),
         forwardRef(() => TeamAutomationModule),
     ],

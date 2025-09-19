@@ -8,7 +8,6 @@ import { CreateUserUseCase } from '../user/create.use-case';
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { SaveCheckinConfigUseCase } from '../checkin/save-checkin-config.use-case';
 import { DuplicateRecordException } from '@/shared/infrastructure/filters/duplicate-record.exception';
 import {
     USER_SERVICE_TOKEN,
@@ -136,7 +135,7 @@ export class CreateOrganizationUseCase implements IUseCase {
         } catch (error) {
             this.logger.error({
                 message: 'Failed to send webhook.',
-                context: SaveCheckinConfigUseCase.name,
+                context: CreateOrganizationUseCase.name,
                 error: error,
             });
         }

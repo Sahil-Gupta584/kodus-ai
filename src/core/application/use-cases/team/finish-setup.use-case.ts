@@ -5,24 +5,18 @@ import {
 import { Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import { Request } from 'express';
-import { ExecuteTeamArtifactsUseCase } from '../teamArtifacts/execute-teamArtifacts';
 import { STATUS } from '@/config/types/database/status.type';
 import { SaveCategoryWorkItemsTypesUseCase } from '../organizationParameters/save-category-workitems-types.use-case';
 import { CreateOrUpdateParametersUseCase } from '../parameters/create-or-update-use-case';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
-import { SaveAllTeamMetricsHistoryUseCase } from '../metrics/save-all-metrics-history.use-case';
-import { SaveAllOrganizationMetricsHistoryUseCase } from '../organizationMetrics/save-metrics-history.use-case';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { CodeReviewVersion } from '@/config/types/general/codeReview.type';
 
 @Injectable()
 export class FinishSetupUseCase {
     constructor(
-        private readonly teamArtifactsUseCase: ExecuteTeamArtifactsUseCase,
         private readonly saveCategoryWorkItemsTypesUseCase: SaveCategoryWorkItemsTypesUseCase,
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
-        private readonly saveAllTeamMetricsHistoryUseCase: SaveAllTeamMetricsHistoryUseCase,
-        private readonly saveAllOrganizationMetricsHistoryUseCase: SaveAllOrganizationMetricsHistoryUseCase,
 
         @Inject(TEAM_SERVICE_TOKEN)
         private readonly teamService: ITeamService,
@@ -56,72 +50,49 @@ export class FinishSetupUseCase {
                 teamId: teamId,
             })
             .then(async () => {
-                await this.saveAllTeamMetricsHistoryUseCase
-                    .execute(teamId)
-                    .then(async () => {
-                        await this.saveAllOrganizationMetricsHistoryUseCase
-                            .execute(organizationId)
-                            .then(async () => {
-                                await Promise.all([
-                                    this.teamArtifactsUseCase.execute({
-                                        teamId: team?.uuid,
-                                        organizationId: organizationId,
-                                        type: 'daily',
-                                    }),
-                                    this.teamArtifactsUseCase.execute({
-                                        teamId: team?.uuid,
-                                        organizationId: organizationId,
-                                        type: 'weekly',
-                                    }),
-                                ]).then(async () => {});
-                            })
-                            .then(async () => {
-                                await this.createOrUpdateParametersUseCase.execute(
-                                    ParametersKey.CODE_REVIEW_CONFIG,
-                                    {
-                                        ignorePaths: [
-                                            'packages.json',
-                                            'package-lock.json',
-                                            '.env',
-                                            'yarn.lock',
-                                        ],
-                                        reviewOptions: {
-                                            security: true,
-                                            code_style: true,
-                                            kody_rules: true,
-                                            refactoring: true,
-                                            error_handling: true,
-                                            maintainability: true,
-                                            potential_issues: true,
-                                            documentation_and_comments: true,
-                                            performance_and_optimization: true,
-                                            breaking_changes: true,
-                                            bug: true,
-                                            performance: true,
-                                            cross_file: true,
-                                        },
-                                        limitationType: 'pr',
-                                        maxSuggestions: 8,
-                                        severityLevelFilter:
-                                            SeverityLevel.MEDIUM,
-                                        codeReviewVersion: CodeReviewVersion.v2,
-                                    },
-                                    {
-                                        teamId: teamId,
-                                        organizationId: organizationId,
-                                    },
-                                );
-                            });
+                await this.createOrUpdateParametersUseCase.execute(
+                    ParametersKey.CODE_REVIEW_CONFIG,
+                    {
+                        ignorePaths: [
+                            'packages.json',
+                            'package-lock.json',
+                            '.env',
+                            'yarn.lock',
+                        ],
+                        reviewOptions: {
+                            security: true,
+                            code_style: true,
+                            kody_rules: true,
+                            refactoring: true,
+                            error_handling: true,
+                            maintainability: true,
+                            potential_issues: true,
+                            documentation_and_comments: true,
+                            performance_and_optimization: true,
+                            breaking_changes: true,
+                            bug: true,
+                            performance: true,
+                            cross_file: true,
+                        },
+                        limitationType: 'pr',
+                        maxSuggestions: 8,
+                        severityLevelFilter: SeverityLevel.MEDIUM,
+                        codeReviewVersion: CodeReviewVersion.v2,
+                    },
+                    {
+                        teamId: teamId,
+                        organizationId: organizationId,
+                    },
+                );
 
-                        await this.createOrUpdateParametersUseCase.execute(
-                            ParametersKey.CHECKIN_CONFIG,
-                            this.prepareCheckinConfig(),
-                            {
-                                teamId: teamId,
-                                organizationId: organizationId,
-                            },
-                        );
-                    });
+                await this.createOrUpdateParametersUseCase.execute(
+                    ParametersKey.CHECKIN_CONFIG,
+                    this.prepareCheckinConfig(),
+                    {
+                        teamId: teamId,
+                        organizationId: organizationId,
+                    },
+                );
             });
 
         return {

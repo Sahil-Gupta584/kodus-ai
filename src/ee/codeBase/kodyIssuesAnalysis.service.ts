@@ -13,7 +13,7 @@ import {
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { contextToGenerateIssues } from '../kodyIssuesManagement/domain/kodyIssuesManagement.interface';
+import { contextToGenerateIssues } from '../../core/infrastructure/adapters/services/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 import {
     LLMProviderService,
     LLMModelProvider,

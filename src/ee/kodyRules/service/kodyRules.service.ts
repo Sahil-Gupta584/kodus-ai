@@ -11,10 +11,14 @@ import {
     KodyRulesScope,
     KodyRulesStatus,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
-import { Inject, Injectable } from '@nestjs/common';
+import {
+    BadRequestException,
+    Inject,
+    Injectable,
+    NotFoundException,
+} from '@nestjs/common';
 import { CreateKodyRuleDto } from '@/core/infrastructure/http/dtos/create-kody-rule.dto';
 import { v4 } from 'uuid';
-import { NotFoundException } from '@nestjs/common';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import * as libraryKodyRules from './data/library-kody-rules.json';
 import * as bucketsData from './data/buckets.json';
@@ -30,7 +34,6 @@ import {
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import {
     ActionType,
-    ConfigLevel,
     UserInfo,
 } from '@/config/types/general/codeReviewSettingsLog.type';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
@@ -38,7 +41,10 @@ import {
     IRuleLikeService,
     RULE_LIKE_SERVICE_TOKEN,
 } from '@/core/domain/kodyRules/contracts/ruleLike.service.contract';
-import { RuleFeedbackType } from '@/core/domain/kodyRules/entities/ruleLike.entity';
+import {
+    ILicenseService,
+    LICENSE_SERVICE_TOKEN,
+} from '@/ee/license/interfaces/license.interface';
 
 @Injectable()
 export class KodyRulesService implements IKodyRulesService {
@@ -51,6 +57,9 @@ export class KodyRulesService implements IKodyRulesService {
 
         @Inject(RULE_LIKE_SERVICE_TOKEN)
         private readonly ruleLikeService: IRuleLikeService,
+
+        @Inject(LICENSE_SERVICE_TOKEN)
+        private readonly licenseService: ILicenseService,
 
         private readonly logger: PinoLoggerService,
     ) {}
@@ -160,6 +169,8 @@ export class KodyRulesService implements IKodyRulesService {
                 throw new NotFoundException('Rule not found');
             }
 
+            await this.ensureFreePlanLimit(organizationAndTeamData, 1);
+
             const newRule: IKodyRule = {
                 uuid: v4(),
                 title: kodyRule?.title,
@@ -216,6 +227,11 @@ export class KodyRulesService implements IKodyRulesService {
 
         // If there is no UUID, it is a new rule
         if (!kodyRule.uuid) {
+            await this.ensureFreePlanLimit(
+                organizationAndTeamData,
+                (existing.rules?.length ?? 0) + 1,
+            );
+
             const newRule: IKodyRule = {
                 uuid: v4(),
                 title: kodyRule.title,
@@ -512,6 +528,50 @@ export class KodyRulesService implements IKodyRulesService {
                 },
             });
             throw error;
+        }
+    }
+
+    private async ensureFreePlanLimit(
+        organizationAndTeamData: OrganizationAndTeamData,
+        totalRulesAfterOperation: number,
+    ) {
+        if (!organizationAndTeamData?.organizationId) {
+            return;
+        }
+
+        try {
+            const validation =
+                await this.licenseService.validateOrganizationLicense(
+                    organizationAndTeamData,
+                );
+
+            const planType = validation?.planType?.toLowerCase();
+
+            if (!planType || !planType.includes('free')) {
+                return;
+            }
+
+            const limit = 10;
+
+            if (totalRulesAfterOperation > limit) {
+                throw new BadRequestException(
+                    `Plano free permite no máximo ${limit} regras personalizadas.`,
+                );
+            }
+        } catch (error) {
+            if (error instanceof BadRequestException) {
+                throw error;
+            }
+
+            this.logger.error({
+                message: 'Erro ao validar limite de Kody Rules para plano free',
+                error: error,
+                context: KodyRulesService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    totalRulesAfterOperation,
+                },
+            });
         }
     }
 

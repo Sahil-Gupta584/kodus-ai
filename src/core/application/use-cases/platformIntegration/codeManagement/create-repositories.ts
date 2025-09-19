@@ -10,10 +10,7 @@ import {
     TEAM_SERVICE_TOKEN,
 } from '@/core/domain/team/contracts/team.service.contract';
 import { STATUS } from '@/config/types/database/status.type';
-import { GenerateCodeArtifactsUseCase } from './generate-code-artifacts.use-case';
 import { Injectable } from '@nestjs/common';
-import { SaveArtifactsStructureUseCase } from '../../parameters/save-artifacts-structure.use-case';
-import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { CreateOrUpdateParametersUseCase } from '../../parameters/create-or-update-use-case';
 import {
@@ -35,10 +32,6 @@ export class CreateRepositoriesUseCase implements IUseCase {
         private readonly activeCodeManagementTeamAutomationsUseCase: ActiveCodeManagementTeamAutomationsUseCase,
 
         private readonly activeCodeReviewAutomationUseCase: ActiveCodeReviewAutomationUseCase,
-
-        private readonly generateCodeArtifactsUseCase: GenerateCodeArtifactsUseCase,
-
-        private readonly saveArtifactsStructureUseCase: SaveArtifactsStructureUseCase,
 
         private readonly codeManagementService: CodeManagementService,
 

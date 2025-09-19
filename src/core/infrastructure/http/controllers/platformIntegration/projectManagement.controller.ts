@@ -22,8 +22,6 @@ import { ColumnsConfigKey } from '@/core/domain/integrationConfigs/types/project
 import { TeamQueryDto } from '../../dtos/teamId-query-dto';
 import { JwtAuthGuard } from '@/core/infrastructure/adapters/services/auth/jwt-auth.guard';
 import { CreateIntegrationUseCase } from '@/core/application/use-cases/platformIntegration/projectManagement/create-integration.use-case';
-import { GetEpicsUseCase } from '@/core/application/use-cases/platformIntegration/projectManagement/get-epics.use-case';
-import { GetEffortTeamUseCase } from '@/core/application/use-cases/platformIntegration/projectManagement/get-team-effort.use-case';
 import { GetWorkitemTypesUseCase } from '@/core/application/use-cases/platformIntegration/projectManagement/get-workitem-types.use-case';
 import { CreateOrUpdateColumnsBoardUseCase } from '@/core/application/use-cases/platformIntegration/projectManagement/create-or-update-board-columns.use-case';
 import {
@@ -53,8 +51,6 @@ export class ProjectManagementController {
         private readonly getColumnsBoardUseCase: GetColumnsBoardUseCase,
 
         private readonly getTeamListUseCase: GetTeamListUseCase,
-        private readonly getEpicsUseCase: GetEpicsUseCase,
-        private readonly getTeamEffortUseCase: GetEffortTeamUseCase,
         private readonly getWorkItemTypesUseCase: GetWorkitemTypesUseCase,
         private readonly saveConfigUseCase: SaveConfigUseCase,
     ) {}
@@ -177,20 +173,6 @@ export class ProjectManagementController {
     @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
     public async getListMembers() {
         return this.getProjectManagementMemberListUseCase.execute();
-    }
-
-    @Get('/epics')
-    @UseGuards(PolicyGuard)
-    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
-    public async getEpic(@Query('teamId') teamId?: string) {
-        return this.getEpicsUseCase.execute(teamId ?? null);
-    }
-
-    @Get('/team-effort')
-    @UseGuards(PolicyGuard)
-    @CheckPolicies(checkPermissions(Action.Read, ResourceType.GitSettings))
-    public async getTeamEffort(@Query('teamId') teamId?: string) {
-        return this.getTeamEffortUseCase.execute(teamId ?? null);
     }
 
     @Get('/work-item-types')

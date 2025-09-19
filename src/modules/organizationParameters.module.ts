@@ -20,7 +20,6 @@ import { FindByKeyOrganizationParametersUseCase } from '@/core/application/use-c
 import { GetModelsByProviderUseCase } from '@/core/application/use-cases/organizationParameters/get-models-by-provider.use-case';
 import { ProviderService } from '@/core/infrastructure/adapters/services/providers/provider.service';
 import { LicenseModule } from '@/ee/license/license.module';
-import { ActivityLogModule } from '@/ee/activityLog/activity-log.module';
 
 @Module({
     imports: [
@@ -31,7 +30,6 @@ import { ActivityLogModule } from '@/ee/activityLog/activity-log.module';
         forwardRef(() => TeamsModule),
         forwardRef(() => ParametersModule),
         forwardRef(() => LicenseModule),
-        ActivityLogModule,
     ],
     providers: [
         SaveCategoryWorkItemsTypesUseCase,

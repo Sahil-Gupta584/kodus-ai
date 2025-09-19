@@ -37,10 +37,6 @@ import {
     IOrganizationParametersService,
     ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/organizationParameters/contracts/organizationParameters.service.contract';
-import {
-    ACTIVITY_LOG_SERVICE_TOKEN,
-    IActivityLogService,
-} from '@/ee/activityLog/domain/contracts/activity-log.service.contract';
 
 @Injectable()
 export class RunCodeReviewAutomationUseCase {
@@ -65,9 +61,6 @@ export class RunCodeReviewAutomationUseCase {
 
         @Inject(ORGANIZATION_PARAMETERS_SERVICE_TOKEN)
         private readonly organizationParametersService: IOrganizationParametersService,
-
-        @Inject(ACTIVITY_LOG_SERVICE_TOKEN)
-        private readonly activityLogService: IActivityLogService,
 
         private readonly codeManagement: CodeManagementService,
 
@@ -436,17 +429,6 @@ export class RunCodeReviewAutomationUseCase {
                                     noActiveSubscriptionType: 'general',
                                 });
 
-                                await this.recordActivityLog({
-                                    organizationAndTeamData,
-                                    planType: validation?.planType,
-                                    feature: 'CODE_REVIEW',
-                                    action: 'REVIEW_BLOCKED_NO_LICENSE',
-                                    metadata: {
-                                        prNumber: params?.prNumber,
-                                        repositoryId: params.repository?.id,
-                                    },
-                                });
-
                                 return null;
                             }
 
@@ -472,16 +454,6 @@ export class RunCodeReviewAutomationUseCase {
                                                 'byok_required',
                                         },
                                     );
-                                        await this.recordActivityLog({
-                                            organizationAndTeamData,
-                                            planType: validation?.planType,
-                                            feature: 'CODE_REVIEW',
-                                            action: 'REVIEW_BLOCKED_BYOK_REQUIRED',
-                                            metadata: {
-                                                prNumber: params?.prNumber,
-                                                repositoryId: params.repository?.id,
-                                            },
-                                        });
                                         return null;
                                     }
                                 }
@@ -491,16 +463,6 @@ export class RunCodeReviewAutomationUseCase {
                                 validation?.valid &&
                                 validation?.subscriptionStatus === 'trial'
                             ) {
-                                await this.recordActivityLog({
-                                    organizationAndTeamData,
-                                    planType: validation?.planType,
-                                    feature: 'CODE_REVIEW',
-                                    action: 'REVIEW_TRIGGERED_TRIAL',
-                                    metadata: {
-                                        prNumber: params?.prNumber,
-                                        repositoryId: params.repository?.id,
-                                    },
-                                });
                                 return {
                                     organizationAndTeamData,
                                     automationId,
@@ -520,17 +482,6 @@ export class RunCodeReviewAutomationUseCase {
                                     );
 
                                     if (user) {
-                                        await this.recordActivityLog({
-                                            organizationAndTeamData,
-                                            planType: validation?.planType,
-                                            feature: 'CODE_REVIEW',
-                                            action: 'REVIEW_TRIGGERED',
-                                            metadata: {
-                                                prNumber: params?.prNumber,
-                                                repositoryId: params.repository?.id,
-                                                userGitId: params?.userGitId,
-                                            },
-                                        });
                                         return {
                                             organizationAndTeamData,
                                             automationId,
@@ -556,18 +507,6 @@ export class RunCodeReviewAutomationUseCase {
                                         },
                                     );
 
-                                    await this.recordActivityLog({
-                                        organizationAndTeamData,
-                                        planType: validation?.planType,
-                                        feature: 'CODE_REVIEW',
-                                        action: 'REVIEW_BLOCKED_NO_USER_LICENSE',
-                                        metadata: {
-                                            prNumber: params?.prNumber,
-                                            repositoryId: params.repository?.id,
-                                            userGitId: params?.userGitId,
-                                        },
-                                    });
-
                                     return null;
                                 }
                                 else {
@@ -576,17 +515,6 @@ export class RunCodeReviewAutomationUseCase {
                     }
                 }
             }
-
-            await this.recordActivityLog({
-                organizationAndTeamData,
-                planType: undefined,
-                feature: 'CODE_REVIEW',
-                action: 'REVIEW_TRIGGERED',
-                metadata: {
-                    prNumber: params?.prNumber,
-                    repositoryId: params.repository?.id,
-                },
-            });
 
             return {
                 organizationAndTeamData,
@@ -731,38 +659,6 @@ export class RunCodeReviewAutomationUseCase {
 
             // Em caso de erro, falhar seguramente sem usar BYOK
             return null;
-        }
-    }
-
-    private async recordActivityLog(params: {
-        organizationAndTeamData: OrganizationAndTeamData;
-        planType?: string;
-        feature: string;
-        action: string;
-        metadata?: Record<string, any>;
-    }) {
-        try {
-            const organizationId =
-                params.organizationAndTeamData.organizationId;
-
-            if (!organizationId) {
-                return;
-            }
-
-            await this.activityLogService.record({
-                organizationId,
-                teamId: params.organizationAndTeamData.teamId,
-                planType: params.planType,
-                feature: params.feature,
-                action: params.action,
-                metadata: params.metadata,
-            });
-        } catch (error) {
-            this.logger.error({
-                message: 'Failed to record activity log',
-                context: RunCodeReviewAutomationUseCase.name,
-                error,
-            });
         }
     }
 

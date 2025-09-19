@@ -11,8 +11,6 @@ import { PlatformIntegrationModule } from './platformIntegration.module';
 import { TeamsModule } from './team.module';
 import { OrganizationModule } from './organization.module';
 import { UsersModule } from './user.module';
-import { MetricsModule } from './metrics.module';
-import { OrganizationMetricsModule } from './organizationMetrics.module';
 import { ParametersModule } from './parameters.module';
 import { GlobalCacheModule } from './cache.module';
 import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.use-case';
@@ -30,8 +28,6 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         forwardRef(() => PlatformIntegrationModule),
         forwardRef(() => OrganizationModule),
         forwardRef(() => UsersModule),
-        forwardRef(() => MetricsModule),
-        forwardRef(() => OrganizationMetricsModule),
         forwardRef(() => ParametersModule),
         forwardRef(() => GlobalCacheModule),
         forwardRef(() => AutomationModule),
@@ -40,9 +36,9 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
         forwardRef(() => OrganizationParametersModule),
-        LicenseModule
+        LicenseModule,
     ],
     providers: [RunCodeReviewAutomationUseCase, PromptService],
     controllers: [GitlabController],
 })
-export class GitlabModule { }
+export class GitlabModule {}

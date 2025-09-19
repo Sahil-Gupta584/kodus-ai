@@ -4,7 +4,6 @@ import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.
 import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { ImplementationStatus } from '@/core/domain/pullRequests/enums/implementationStatus.enum';
-import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
 import { LLMModelProvider } from '@kodus/kodus-common/llm';
 import { GetImpactAnalysisResponse } from '@kodus/kodus-proto/ast';
 import { TaskStatus } from '@kodus/kodus-proto/task';
@@ -13,6 +12,7 @@ import { ConfigLevel } from './pullRequestMessages.type';
 import z from 'zod';
 import { CodeReviewPipelineContext } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/context/code-review-pipeline.context';
 import { BYOKConfig } from '@kodus/kodus-common/llm';
+import { IClusterizedSuggestion } from '@/core/infrastructure/adapters/services/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
     discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[];

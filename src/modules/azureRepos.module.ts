@@ -8,9 +8,6 @@ import { IntegrationConfigModule } from './integrationConfig.module';
 import { PlatformIntegrationModule } from './platformIntegration.module';
 import { PromptService } from '@/core/infrastructure/adapters/services/prompt.service';
 import { ParametersModule } from './parameters.module';
-import { MetricsModule } from './metrics.module';
-import { OrganizationMetricsModule } from './organizationMetrics.module';
-import { UseCases as SaveOrganizationMetricsToDbUseCase } from '@/core/application/use-cases/organizationMetrics/';
 import { GlobalCacheModule } from './cache.module';
 import { AutomationModule } from './automation.module';
 import { TeamAutomationModule } from './teamAutomation.module';
@@ -35,8 +32,6 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         forwardRef(() => PlatformIntegrationModule),
         forwardRef(() => OrganizationModule),
         forwardRef(() => UsersModule),
-        forwardRef(() => MetricsModule),
-        forwardRef(() => OrganizationMetricsModule),
         forwardRef(() => ParametersModule),
         forwardRef(() => GlobalCacheModule),
         forwardRef(() => AutomationModule),
@@ -49,7 +44,6 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         forwardRef(() => LicenseModule),
     ],
     providers: [
-        ...SaveOrganizationMetricsToDbUseCase,
         RunCodeReviewAutomationUseCase,
         PromptService,
         AzureReposRequestHelper,

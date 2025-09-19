@@ -3,7 +3,10 @@ import { IIssue } from '../interfaces/issues.interface';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { IssueStatus } from '@/config/types/general/issues.type';
-import { IContributingSuggestion, IRepositoryToIssues } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
+import {
+    IContributingSuggestion,
+    IRepositoryToIssues,
+} from '@/core/infrastructure/adapters/services/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 
 export class IssuesEntity implements Entity<IIssue> {
     public uuid?: string;

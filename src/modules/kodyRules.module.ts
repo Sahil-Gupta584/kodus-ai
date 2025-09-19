@@ -29,6 +29,7 @@ import { OrganizationModule } from './organization.module';
 import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
 import { GlobalCacheModule } from './cache.module';
 import { RuleLikeModule } from './ruleLike.module';
+import { LicenseModule } from '@/ee/license/license.module';
 
 @Module({
     imports: [
@@ -47,6 +48,7 @@ import { RuleLikeModule } from './ruleLike.module';
         forwardRef(() => OrganizationModule),
         forwardRef(() => CodeReviewSettingsLogModule),
         forwardRef(() => RuleLikeModule),
+        forwardRef(() => LicenseModule),
         KodyRulesValidationModule,
         GlobalCacheModule,
     ],

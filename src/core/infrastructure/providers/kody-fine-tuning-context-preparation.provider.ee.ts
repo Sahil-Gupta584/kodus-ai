@@ -3,11 +3,11 @@
  * Kodus Tech. All rights reserved.
  */
 
-import { KodyFineTuningContextPreparationService } from '../adapters/services/kodyFineTuning/kody-fine-tuning-context-preparation.service';
+import { KodyFineTuningContextPreparationService } from '../adapters/services/kodyFineTuning1/kody-fine-tuning-context-preparation.service';
 import { Provider } from '@nestjs/common';
 import { PinoLoggerService } from '../adapters/services/logger/pino.service';
-import { KodyFineTuningService } from '@/ee/kodyFineTuning/kodyFineTuning.service';
-import { KodyFineTuningContextPreparationServiceEE } from '@/ee/kodyFineTuning/fineTuningContext/fine-tuning.service';
+import { KodyFineTuningService } from '@/core/infrastructure/adapters/services/kodyFineTuning/kodyFineTuning.service';
+import { KodyFineTuningContextPreparationServiceEE } from '@/core/infrastructure/adapters/services/kodyFineTuning/fineTuningContext/fine-tuning.service';
 import {
     IKodyFineTuningContextPreparationService,
     KODY_FINE_TUNING_CONTEXT_PREPARATION_TOKEN,

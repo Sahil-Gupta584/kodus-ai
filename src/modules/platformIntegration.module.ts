@@ -23,24 +23,16 @@ import { TeamMembersModule } from './teamMembers.module';
 import { DiscordService } from '@/core/infrastructure/adapters/services/discord.service';
 import { AzureBoardsService } from '@/core/infrastructure/adapters/services/azureBoards.service';
 import { TeamsModule } from './team.module';
-import { CheckinHistoryModule } from './checkinHistory.module';
 import { ProfileConfigModule } from './profileConfig.module';
 import { PromptService } from '@/core/infrastructure/adapters/services/prompt.service';
 import { ParametersModule } from './parameters.module';
-import { MetricsModule } from './metrics.module';
-import { CheckinHistoryOrganizationModule } from './checkInHistoryOrganization.module';
 import { GitlabModule } from './gitlab.module';
 import { AgentModule } from './agent.module';
 import { AutomationModule } from './automation.module';
 import { ReceiveWebhookUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/receiveWebhook.use-case';
 import { TeamAutomationModule } from './teamAutomation.module';
 import { FinishProjectConfigUseCase } from '@/core/application/use-cases/platformIntegration/projectManagement/finish-project-config.use-case';
-import { OrganizationMetricsModule } from './organizationMetrics.module';
 import { OrganizationParametersModule } from './organizationParameters.module';
-import { OrganizationArtifactsModule } from './organizationArtifacts.module';
-import { TeamArtifactsModule } from './teamArtifacts.module';
-import { GenerateCodeArtifactsUseCase } from '@/core/application/use-cases/platformIntegration/codeManagement/generate-code-artifacts.use-case';
-import { SaveArtifactsStructureUseCase } from '@/core/application/use-cases/parameters/save-artifacts-structure.use-case';
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 import { PullRequestsModule } from './pullRequests.module';
 import { CodebaseModule } from './codeBase.module';
@@ -66,16 +58,10 @@ import { PullRequestMessagesModule } from './pullRequestMessages.module';
         forwardRef(() => TeamMembersModule),
         forwardRef(() => TeamsModule),
         forwardRef(() => ProfileConfigModule),
-        forwardRef(() => CheckinHistoryModule),
-        forwardRef(() => CheckinHistoryOrganizationModule),
         forwardRef(() => AgentModule),
         forwardRef(() => AutomationModule),
         forwardRef(() => TeamAutomationModule),
-        forwardRef(() => MetricsModule),
-        forwardRef(() => TeamArtifactsModule),
         forwardRef(() => ParametersModule),
-        forwardRef(() => OrganizationMetricsModule),
-        forwardRef(() => OrganizationArtifactsModule),
         forwardRef(() => OrganizationParametersModule),
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
@@ -90,8 +76,6 @@ import { PullRequestMessagesModule } from './pullRequestMessages.module';
     ],
     providers: [
         ...UseCases,
-        GenerateCodeArtifactsUseCase,
-        SaveArtifactsStructureUseCase,
         PromptService,
         PlatformIntegrationFactory,
         CodeManagementService,

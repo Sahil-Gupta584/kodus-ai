@@ -15,7 +15,7 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
 import { PermissionsAbilityFactory } from '@/core/infrastructure/adapters/services/permissions/permissionsAbility.factory';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { MongoQuery } from '@casl/ability';
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 
 @Injectable()
 export class GetPermissionsUseCase implements IUseCase {

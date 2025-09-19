@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { KodyFineTuningService } from '@/ee/kodyFineTuning/kodyFineTuning.service';
+import { KodyFineTuningService } from '@/core/infrastructure/adapters/services/kodyFineTuning/kodyFineTuning.service';
 import { BasePipelineStage } from '@/core/infrastructure/adapters/services/pipeline/base-stage.abstract';
 import { CodeReviewPipelineContext } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/context/code-review-pipeline.context';
 

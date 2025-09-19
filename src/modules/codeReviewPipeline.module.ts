@@ -27,7 +27,6 @@ import { CodeReviewPipelineStrategy } from '@/core/infrastructure/adapters/servi
 import { CodeReviewPipelineStrategyEE } from '@/ee/codeReview/strategies/code-review-pipeline.strategy.ee';
 import { KodyFineTuningStage } from '@/ee/codeReview/stages/kody-fine-tuning.stage';
 import { CodeAnalysisASTStage } from '@/ee/codeReview/stages/code-analysis-ast.stage';
-import { KodyFineTuningContextModule } from '@/ee/kodyFineTuning/fineTuningContext/kodyFineTuningContext.module';
 import { KodyASTAnalyzeContextModule } from '@/ee/kodyASTAnalyze/kodyAstAnalyzeContext.module';
 import { ProcessFilesPrLevelReviewStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/process-files-pr-level-review.stage';
 import { CreatePrLevelCommentsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/create-pr-level-comments.stage';
@@ -37,6 +36,7 @@ import { TeamAutomationModule } from './teamAutomation.module';
 import { PullRequestMessagesModule } from './pullRequestMessages.module';
 import { ValidateNewCommitsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/validate-new-commits.stage';
 import { ResolveConfigStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/resolve-config.stage';
+import { KodyFineTuningContextModule } from '@/core/infrastructure/adapters/services/kodyFineTuning/fineTuningContext/kodyFineTuningContext.module';
 
 @Module({
     imports: [

@@ -1,5 +1,5 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { SuggestionEmbeddedService } from '../../../../ee/kodyFineTuning/suggestionEmbedded/suggestionEmbedded.service';
+import { SuggestionEmbeddedService } from '@/core/infrastructure/adapters/services/kodyFineTuning/suggestionEmbedded/suggestionEmbedded.service';
 
 @Controller('suggestion-embedded')
 export class SuggestionEmbeddedController {

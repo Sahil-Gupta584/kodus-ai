@@ -1,5 +1,5 @@
 import { CodeSuggestion } from '@/config/types/general/codeReview.type';
-import { contextToGenerateIssues } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
+import { contextToGenerateIssues } from '@/core/infrastructure/adapters/services/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 
 export const KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN = Symbol(
     'KodyIssuesManagementService',

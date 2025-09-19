@@ -26,15 +26,12 @@ import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 
 import { SuggestionService } from '@/core/infrastructure/adapters/services/codeBase/suggestion.service';
 import { PromptService } from '@/core/infrastructure/adapters/services/prompt.service';
-import { KodyFineTuningService } from '@/ee/kodyFineTuning/kodyFineTuning.service';
 import { CodeReviewPipelineModule } from './codeReviewPipeline.module';
 import { FileReviewModule } from '@/ee/codeReview/fileReviewContextPreparation/fileReview.module';
 import { PipelineModule } from './pipeline.module';
-import { KodyFineTuningContextModule } from '@/ee/kodyFineTuning/fineTuningContext/kodyFineTuningContext.module';
 import { KodyASTAnalyzeContextModule } from '@/ee/kodyASTAnalyze/kodyAstAnalyzeContext.module';
 import CodeBaseConfigService from '@/ee/codeBase/codeBaseConfig.service';
 import { CodeAnalysisOrchestrator } from '@/ee/codeBase/codeAnalysisOrchestrator.service';
-import { CodeAstAnalysisService } from '@/ee/kodyAST/codeASTAnalysis.service';
 import {
     KODY_RULES_ANALYSIS_SERVICE_TOKEN,
     KodyRulesAnalysisService,
@@ -56,6 +53,8 @@ import {
     TokenTrackingService,
 } from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
 import { MessageTemplateProcessor } from '@/core/infrastructure/adapters/services/codeBase/utils/services/messageTemplateProcessor.service';
+import { KodyFineTuningContextModule } from '@/core/infrastructure/adapters/services/kodyFineTuning/fineTuningContext/kodyFineTuningContext.module';
+import { KodyFineTuningService } from '@/core/infrastructure/adapters/services/kodyFineTuning/kodyFineTuning.service';
 
 @Module({
     imports: [
