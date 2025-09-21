@@ -73,6 +73,7 @@ import { AuthorContribution } from '@/core/domain/pullRequests/interfaces/author
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 import { RepositoryFile } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
 import { isFileMatchingGlob } from '@/shared/utils/glob-utils';
+import { MCPManagerService } from '../../mcp/services/mcp-manager.service';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.BITBUCKET, 'codeManagement')
@@ -111,6 +112,7 @@ export class BitbucketService
         private readonly logger: PinoLoggerService,
 
         private readonly configService: ConfigService,
+        private readonly mcpManagerService?: MCPManagerService,
     ) {}
 
     async getPullRequestAuthors(params: {
@@ -2732,6 +2734,10 @@ export class BitbucketService
                     email: params.email,
                 });
             }
+
+            this.mcpManagerService?.createKodusMCPIntegration(
+                params.organizationAndTeamData.organizationId,
+            );
 
             return res;
         } catch (err) {

@@ -7,7 +7,6 @@ import {
     SESSION_SERVICE_TOKEN,
 } from '@/core/domain/automation/contracts/session.service.contracts';
 import { Inject, Injectable } from '@nestjs/common';
-import { PromptRouter } from './config/promptRouter';
 import { IAgentService } from '@/core/domain/agents/contracts/agent.service.contracts';
 import {
     AUTH_INTEGRATION_SERVICE_TOKEN,
@@ -112,8 +111,6 @@ export class AgentService implements IAgentService {
 
         @Inject(PROFILE_CONFIG_SERVICE_TOKEN)
         private readonly profileConfigService: IProfileConfigService,
-
-        private readonly promptRouter: PromptRouter,
 
         private readonly projectManagementService: ProjectManagementService,
 
@@ -316,8 +313,7 @@ export class AgentService implements IAgentService {
                     routerPromptParams?.organizationAndTeamData?.teamId ||
                     contextTeamMemberType?.teams[0];
 
-                router =
-                    await this.promptRouter.routerPrompt(routerPromptParams);
+                router = null;
 
                 if (router?.parameters) {
                     routerPromptParams.parameters = [...router.parameters];
@@ -341,9 +337,7 @@ export class AgentService implements IAgentService {
         executionRouterPromptParams: ExecutionRouterPromptParams,
     ): Promise<any> {
         try {
-            return await this.promptRouter.executionRouterPrompt(
-                executionRouterPromptParams,
-            );
+            return null;
         } catch (error) {
             console.log(error);
         }
