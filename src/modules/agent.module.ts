@@ -1,8 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
-import { ModuleRef } from '@nestjs/core';
 import { MemoryModule } from './memory.module';
 import { TeamAutomationModule } from './teamAutomation.module';
-import { PromptRouter } from '@/core/infrastructure/adapters/services/agent/config/promptRouter';
 import { AutomationModule } from './automation.module';
 import { AGENT_EXECUTION_REPOSITORY_TOKEN } from '@/core/domain/agents/contracts/agent-execution.repository.contracts';
 import { AGENT_EXECUTION_SERVICE_TOKEN } from '@/core/domain/agents/contracts/agent-execution.service.contracts';
@@ -97,11 +95,9 @@ import { McpAgentModule } from './mcpAgent.module';
             provide: AGENT_EXECUTION_REPOSITORY_TOKEN,
             useClass: AgentExecutionDatabaseRepository,
         },
-        PromptRouter,
     ],
     controllers: [AgentController],
     exports: [
-        PromptRouter,
         AGENT_SERVICE_TOKEN,
         AGENT_EXECUTION_SERVICE_TOKEN,
         AGENT_EXECUTION_REPOSITORY_TOKEN,

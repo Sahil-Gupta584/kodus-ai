@@ -207,6 +207,7 @@ export class MCPManagerService {
     private formatConnection(connection: MCPItem): MCPServerConfig {
         return {
             name: connection.appName,
+            provider: connection.provider,
             type: 'http',
             url: connection.mcpUrl,
             headers: {
