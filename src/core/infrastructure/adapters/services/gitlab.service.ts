@@ -76,6 +76,7 @@ import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
 import { RepositoryFile } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
 import { isFileMatchingGlob } from '@/shared/utils/glob-utils';
 import { CacheService } from '@/shared/utils/cache/cache.service';
+import { MCPManagerService } from '../mcp/services/mcp-manager.service';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.GITLAB, 'codeManagement')
@@ -112,6 +113,7 @@ export class GitlabService
         private readonly logger: PinoLoggerService,
         private readonly configService: ConfigService,
         private readonly cacheService: CacheService,
+        private readonly mcpManagerService?: MCPManagerService,
     ) {}
 
     async getPullRequestAuthors(params: {
@@ -420,6 +422,10 @@ export class GitlabService
             } else if (params && params?.authMode === AuthMode.TOKEN) {
                 res = await this.authenticateWithToken(params);
             }
+
+            this.mcpManagerService?.createKodusMCPIntegration(
+                params.organizationAndTeamData.organizationId,
+            );
 
             return res;
         } catch (err) {

@@ -4,7 +4,6 @@ import {
     createMCPAdapter,
     createOrchestration,
     Thread,
-    MCPServerConfig,
     PlannerType,
     StorageEnum,
     getExecutionTraceability,
@@ -102,19 +101,7 @@ export class ConversationAgentProvider {
             organizationAndTeamData,
         );
 
-        const defaultServers: MCPServerConfig[] = [
-            {
-                name: 'kodus-mcp-server',
-                type: 'http' as const,
-                url: process.env.API_KODUS_MCP_SERVER_URL,
-                timeout: 10_000,
-                retries: 1,
-                headers: { contentType: 'application/json' },
-                allowedTools: [],
-            },
-        ];
-
-        const servers = [...defaultServers, ...mcpManagerServers];
+        const servers = [...mcpManagerServers];
 
         this.mcpAdapter = createMCPAdapter({
             servers,

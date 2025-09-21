@@ -3,6 +3,7 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import { MCPServerConfig } from '@kodus/flow';
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { PinoLoggerService } from '../../services/logger/pino.service';
 
 type MCPConnection = {
     id: string;
@@ -36,11 +37,16 @@ type MCPData = {
     items: MCPItem[];
 };
 
+export const KODUS_MCP_INTEGRATION_ID = 'kd_mcp_oTUrzqsaxTg';
+
 @Injectable()
 export class MCPManagerService {
     private axiosMCPManagerService: AxiosMCPManagerService;
 
-    constructor(private readonly jwt: JwtService) {
+    constructor(
+        private readonly jwt: JwtService,
+        private readonly logger: PinoLoggerService,
+    ) {
         this.axiosMCPManagerService = new AxiosMCPManagerService();
     }
 
@@ -107,7 +113,12 @@ export class MCPManagerService {
 
             return data.items;
         } catch (error) {
-            console.error('Error fetching MCP connections:', error);
+            this.logger.error({
+                message: 'Error fetching MCP connections',
+                context: MCPManagerService.name,
+                error: error,
+                metadata: { organizationAndTeamData },
+            });
             return [];
         }
     }
@@ -154,7 +165,41 @@ export class MCPManagerService {
 
             return data || null;
         } catch (error) {
-            console.error('Error fetching MCP connection by ID:', error);
+            this.logger.error({
+                message: 'Error fetching MCP connection by id',
+                context: MCPManagerService.name,
+                error: error,
+                metadata: { organizationAndTeamData, connectionId },
+            });
+            return null;
+        }
+    }
+
+    public async createKodusMCPIntegration(
+        organizationId: string,
+    ): Promise<void> {
+        try {
+            const organizationAndTeamData: OrganizationAndTeamData = {
+                organizationId,
+            };
+
+            await this.axiosMCPManagerService.post(
+                `mcp/integration/kodusmcp`,
+                {
+                    integrationId: KODUS_MCP_INTEGRATION_ID,
+                    mcpUrl: process.env.API_KODUS_MCP_SERVER_URL ?? '',
+                },
+                {
+                    headers: this.getAuthHeaders(organizationAndTeamData),
+                },
+            );
+        } catch (error) {
+            this.logger.error({
+                message: 'Error creating Kodus MCP integration',
+                context: MCPManagerService.name,
+                error: error,
+                metadata: { organizationId },
+            });
             return null;
         }
     }
@@ -162,6 +207,7 @@ export class MCPManagerService {
     private formatConnection(connection: MCPItem): MCPServerConfig {
         return {
             name: connection.appName,
+            provider: connection.provider,
             type: 'http',
             url: connection.mcpUrl,
             headers: {
