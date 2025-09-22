@@ -135,8 +135,11 @@ export class RunCodeReviewAutomationUseCase {
                 return;
             }
 
-            const { organizationAndTeamData: teamData, automationId, byokConfig } =
-                teamWithAutomation;
+            const {
+                organizationAndTeamData: teamData,
+                automationId,
+                byokConfig,
+            } = teamWithAutomation;
             organizationAndTeamData = teamData;
 
             if (!pullRequest) {
@@ -437,6 +440,24 @@ export class RunCodeReviewAutomationUseCase {
                                     organizationAndTeamData,
                                     validation,
                                 );
+
+                                const planType = validation.planType;
+                                const needsBYOK =
+                                    planType?.includes('byok') ||
+                                    planType?.includes('free');
+
+                                if (needsBYOK && !byokConfig) {
+                                    await this.createNoActiveSubscriptionComment(
+                                        {
+                                            organizationAndTeamData,
+                                            repository: params.repository,
+                                            prNumber: params?.prNumber,
+                                            noActiveSubscriptionType:
+                                                'byok_required',
+                                        },
+                                    );
+                                    return null;
+                                }
                             } catch (error) {
                                 if (error.message === 'BYOK_NOT_CONFIGURED') {
                                     const planType = validation.planType;
@@ -508,8 +529,7 @@ export class RunCodeReviewAutomationUseCase {
                                     );
 
                                     return null;
-                                }
-                                else {
+                                } else {
                                     return null;
                                 }
                     }
@@ -684,7 +704,6 @@ export class RunCodeReviewAutomationUseCase {
             '## BYOK Configuration Required! 🔑\n\n' +
             'Your plan requires a Bring Your Own Key (BYOK) configuration to perform code reviews.\n\n' +
             'Please configure your API keys in [Settings > BYOK Configuration](https://app.kodus.io/settings/byok).\n\n' +
-            'Supported providers: OpenAI, Anthropic, Google Gemini, and more.\n\n' +
             '<!-- kody-codereview -->'
         );
     }
