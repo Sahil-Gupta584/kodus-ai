@@ -421,13 +421,26 @@ export class CommentManagerService implements ICommentManagerService {
                 PlatformType.GITHUB === platformType &&
                 pullRequestMessages?.globalSettings?.hideComments
             ) {
-                await this.codeManagementService.minimizeComment({
-                    organizationAndTeamData,
-                    commentId: comment.node_id
-                        ? comment.node_id.toString()
-                        : comment.id.toString(),
-                    reason: 'OUTDATED',
-                });
+                try {
+                    await this.codeManagementService.minimizeComment({
+                        organizationAndTeamData,
+                        commentId: comment?.node_id
+                            ? comment.node_id.toString()
+                            : comment.id.toString(),
+                        reason: 'OUTDATED',
+                    });
+                } catch (error) {
+                    this.logger.warn({
+                        message: `Comment created but failed to minimize for PR#${prNumber}: ${error.message}`,
+                        context: CommentManagerService.name,
+                        metadata: {
+                            organizationAndTeamData,
+                            prNumber,
+                            repository: repository.name,
+                            commentId: comment?.id,
+                        },
+                    });
+                }
             }
 
             const commentId = Number(comment?.id) || null;
