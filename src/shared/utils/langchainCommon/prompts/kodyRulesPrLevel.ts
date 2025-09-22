@@ -77,7 +77,7 @@ Return a JSON array containing only rules that have violations:
 \`\`\`json
 [
   {
-    "ruleId": "rule-id-here",
+    "ruleId": "rule-uuid-here",
     "violations": [
       {
         "violatedFileSha": ["file-sha-1", "file-sha-2"], // The file/files that violated the rule
@@ -96,7 +96,7 @@ Return a JSON array containing only rules that have violations:
 **Scenario**: Controller adds new route but documentation missing
 \`\`\`json
 {
-  "ruleId": "route-documentation",
+  "ruleId": "rule-uuid",
   "violations": [
     {
       "violatedFileSha": "user-controller",
@@ -113,7 +113,7 @@ Return a JSON array containing only rules that have violations:
 \`\`\`json
 [
   {
-    "ruleId": "pr-description-required",
+    "ruleId": "rule-uuid",
     "violations": [
       {
         "violatedFileSha": null,
@@ -130,7 +130,7 @@ Return a JSON array containing only rules that have violations:
 **Scenario**: Controller contains business logic that should be in service classes
 \`\`\`json
 {
-  "ruleId": "business-logic-separation",
+  "ruleId": "rule-uuid",
   "violations": [
     {
       "violatedFileSha": ["user-controller", "product-controller"],
@@ -193,7 +193,7 @@ Related File Sha: ${v.relatedFileSha}
 - Return ONLY the output JSON in the following format:
 \`\`\`json
 {
-  "ruleId": "rule-id-here",
+  "ruleId": "rule-uuid-here",
   "violations": [
     {
       "violatedFileSha": ["file-sha-1", "file-sha-2"], // The file/files that violated the rule
