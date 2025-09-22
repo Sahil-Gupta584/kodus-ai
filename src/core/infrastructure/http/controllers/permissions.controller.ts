@@ -92,11 +92,17 @@ export class PermissionsController {
     @UseGuards(PolicyGuard)
     @CheckPolicies(checkPermissions(Action.Update, ResourceType.UserSettings))
     async assignRepos(
-        @Body() body: { repositoryIds: string[]; userId: string },
+        @Body()
+        body: {
+            repositoryIds: string[];
+            userId: string;
+            teamId: string;
+        },
     ) {
         return this.assignReposUseCase.execute({
             repoIds: body.repositoryIds,
             userId: body.userId,
+            teamId: body.teamId,
         });
     }
 }

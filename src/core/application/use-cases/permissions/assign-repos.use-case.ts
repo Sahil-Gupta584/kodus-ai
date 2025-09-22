@@ -31,9 +31,13 @@ export class AssignReposUseCase implements IUseCase {
         private readonly logger: PinoLoggerService,
     ) {}
 
-    async execute(params: { userId: string; repoIds: string[] }) {
+    async execute(params: {
+        userId: string;
+        repoIds: string[];
+        teamId: string;
+    }) {
         try {
-            const { userId, repoIds } = params;
+            const { userId, repoIds, teamId } = params;
 
             const user = await this.userService.findOne({ uuid: userId });
             if (!user) {
@@ -47,6 +51,10 @@ export class AssignReposUseCase implements IUseCase {
                         organization: {
                             uuid: user.organization?.uuid,
                         },
+                        team: {
+                            uuid: teamId,
+                        },
+                        status: true,
                     },
                 });
             if (!integrationConfigs) {
