@@ -31,9 +31,10 @@ import {
     LLMModelProvider,
     ParserType,
     PromptRole,
-    PromptRunnerService,
+    PromptRunnerService as BasePromptRunnerService,
     PromptScope,
 } from '@kodus/kodus-common/llm';
+import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
 import { decrypt } from '@/shared/utils/crypto';
 
 // Interface for token tracking
@@ -121,7 +122,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
 
     constructor(
         private readonly logger: PinoLoggerService,
-        private readonly promptRunnerService: PromptRunnerService,
+        private readonly promptRunnerService: BasePromptRunnerService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
@@ -312,32 +313,15 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         const defaultProvider = LLMModelProvider.GEMINI_2_5_PRO;
         const defaultFallback = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
-        let analysisBuilder = this.promptRunnerService
-            .builder()
-            .setProviders({
-                main: defaultProvider,
-                fallback: byokConfig?.fallback ? defaultFallback : undefined,
-            });
+        // Criar instância da nova PromptRunnerService com configuração simplificada
+        const promptRunner = new PromptRunnerService(
+            this.promptRunnerService,
+            defaultProvider,
+            defaultFallback,
+            byokConfig,
+        );
 
-        if (byokConfig?.main) {
-            analysisBuilder = analysisBuilder
-                .setBYOKConfig({
-                    provider: byokConfig.main.provider,
-                    apiKey: decrypt(byokConfig.main.apiKey),
-                    model: byokConfig.main.model,
-                    baseURL: byokConfig.main.baseURL,
-                })
-                .setBYOKFallbackConfig(
-                    byokConfig.fallback
-                        ? {
-                              provider: byokConfig.fallback.provider,
-                              apiKey: decrypt(byokConfig.fallback.apiKey),
-                              model: byokConfig.fallback.model,
-                              baseURL: byokConfig.fallback.baseURL,
-                          }
-                        : null,
-                );
-        }
+        let analysisBuilder = promptRunner.builder();
 
         // Reset token tracking for new analysis
         this.tokenTracker.reset();
@@ -669,6 +653,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         suggestions: any[],
         languageResultPrompt: string,
         reviewMode: ReviewModeResponse,
+        byokConfig: BYOKConfig,
     ): Promise<ISafeguardResponse> {
         try {
             suggestions?.forEach((suggestion) => {
@@ -684,7 +669,15 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             });
 
             const provider = LLMModelProvider.GEMINI_2_5_PRO;
-            const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+            const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+
+            // Criar instância da nova PromptRunnerService
+            const promptRunner = new PromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
 
             this.tokenTracker.reset();
 
@@ -729,12 +722,8 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 ),
             });
 
-            const filteredSuggestions = await this.promptRunnerService
+            const filteredSuggestions = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
                 .setParser(ParserType.ZOD, schema as any, {
                     provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
                     fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,

@@ -12,6 +12,7 @@ import {
 } from '@/config/types/general/codeReview.type';
 import { PriorityStatus } from '@/core/domain/pullRequests/enums/priorityStatus.enum';
 import { ISuggestionByPR } from '../../pullRequests/interfaces/pullRequests.interface';
+import { BYOKConfig } from '@kodus/kodus-common/llm';
 
 /**
  * Contract for the service that handles code suggestions lifecycle,
@@ -66,6 +67,7 @@ export interface ISuggestionService {
         suggestions: Partial<CodeSuggestion>[],
         languageResultPrompt: string,
         reviewMode: ReviewModeResponse,
+        byokConfig: BYOKConfig,
     ): Promise<any>;
 
     /**

@@ -34,7 +34,7 @@ import {
 import { ImplementationStatus } from '@/core/domain/pullRequests/enums/implementationStatus.enum';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
-import { LLMModelProvider } from '@kodus/kodus-common/llm';
+import { BYOKConfig, LLMModelProvider } from '@kodus/kodus-common/llm';
 
 @Injectable()
 export class SuggestionService implements ISuggestionService {
@@ -218,6 +218,7 @@ export class SuggestionService implements ISuggestionService {
         suggestions: any[],
         languageResultPrompt: string,
         reviewMode: ReviewModeResponse,
+        byokConfig: BYOKConfig,
     ) {
         if (!suggestions?.length) {
             return suggestions;
@@ -232,6 +233,7 @@ export class SuggestionService implements ISuggestionService {
             suggestions,
             languageResultPrompt,
             reviewMode,
+            byokConfig,
         );
     }
 

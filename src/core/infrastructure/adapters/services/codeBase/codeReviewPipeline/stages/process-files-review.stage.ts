@@ -924,6 +924,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 filteredSuggestions,
                 context?.codeReviewConfig?.languageResultPrompt,
                 reviewModeResponse,
+                context?.codeReviewConfig?.byokConfig,
             );
 
         const safeguardLLMProvider =
