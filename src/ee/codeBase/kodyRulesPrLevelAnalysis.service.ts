@@ -34,10 +34,12 @@ import {
 } from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
 import {
     LLMModelProvider,
-    PromptRunnerService,
+    PromptRunnerService as BasePromptRunnerService,
     PromptRole,
     ParserType,
+    BYOKConfig,
 } from '@kodus/kodus-common/llm';
+import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
 
 //#region Interfaces
 // Interface for token tracking
@@ -122,7 +124,7 @@ export class KodyRulesPrLevelAnalysisService
 
         private readonly tokenChunkingService: TokenChunkingService,
 
-        private readonly promptRunnerService: PromptRunnerService,
+        private readonly promptRunnerService: BasePromptRunnerService,
     ) {
         this.tokenTracker = new TokenTrackingSession(
             uuidv4(),
@@ -312,7 +314,7 @@ export class KodyRulesPrLevelAnalysisService
             }
 
             const parse = this.processLLMResponse(response);
-            const parsedResponse = Array.isArray(parse)?parse:[parse];
+            const parsedResponse = Array.isArray(parse) ? parse : [parse];
 
             if (!parsedResponse) {
                 this.logger.warn({
@@ -648,6 +650,7 @@ export class KodyRulesPrLevelAnalysisService
             organizationAndTeamData,
             prNumber,
             language,
+            context?.codeReviewConfig?.byokConfig,
         );
     }
 
@@ -932,11 +935,19 @@ export class KodyRulesPrLevelAnalysisService
             language,
         };
 
-        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+        const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+
+        const promptRunner = new PromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            context?.codeReviewConfig?.byokConfig,
+        );
+
+        let analysisBuilder = promptRunner.builder();
 
         try {
-            const analysis = await this.promptRunnerService
-                .builder()
+            const analysis = await analysisBuilder
                 .setProviders({
                     main: provider,
                     fallback: fallbackProvider,
@@ -1013,6 +1024,7 @@ export class KodyRulesPrLevelAnalysisService
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         language: string,
+        byokConfig: BYOKConfig,
     ): Promise<AIAnalysisResultPrLevel> {
         if (!allViolatedRules?.length) {
             this.logger.log({
@@ -1051,6 +1063,7 @@ export class KodyRulesPrLevelAnalysisService
             language,
             organizationAndTeamData,
             prNumber,
+            byokConfig,
         );
 
         // Adicionar severidade
@@ -1098,6 +1111,7 @@ export class KodyRulesPrLevelAnalysisService
         language: string,
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
+        byokConfig: BYOKConfig,
     ): Promise<ISuggestionByPR[]> {
         if (!suggestions?.length) {
             return suggestions;
@@ -1153,6 +1167,7 @@ export class KodyRulesPrLevelAnalysisService
                     language,
                     organizationAndTeamData,
                     prNumber,
+                    byokConfig,
                 );
 
                 groupedSuggestions.push(groupedSuggestion);
@@ -1219,6 +1234,7 @@ export class KodyRulesPrLevelAnalysisService
         language: string,
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
+        byokConfig: BYOKConfig,
     ): Promise<ISuggestionByPR> {
         // Validação de segurança
         if (!duplicatedSuggestions || duplicatedSuggestions.length === 0) {
@@ -1260,13 +1276,35 @@ export class KodyRulesPrLevelAnalysisService
         };
 
         try {
-            const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+            const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
-            const grouping = await this.promptRunnerService
-                .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
+            const promptRunner = new PromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
+
+            let analysisBuilder = promptRunner.builder();
+
+            const grouping = await analysisBuilder
+                .setParser(ParserType.STRING)
+                .setLLMJsonMode(true)
+                .setPayload(groupingPayload)
+                .addPrompt({
+                    prompt: prompt_kodyrules_prlevel_group_rules,
+                    role: PromptRole.SYSTEM,
+                })
+                .addPrompt({
+                    prompt: 'Please consolidate the provided violations into a single coherent comment following the instructions.',
+                    role: PromptRole.USER,
+                })
+                .addMetadata({
+                    organizationAndTeamData,
+                    prNumber,
+                    ruleId: rule?.uuid,
+                    provider: provider,
+                    fallbackProvider: fallbackProvider,
                 })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
