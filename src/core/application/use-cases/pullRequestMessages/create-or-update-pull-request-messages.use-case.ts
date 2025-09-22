@@ -87,11 +87,11 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
                 existingEndMessage:
                     existingPullRequestMessage?.endReviewMessage,
                 directoryPath:
-                    await this.getAdditionalInfoHelper.getDirectoryPathByOrganizationAndRepository(
+                    (await this.getAdditionalInfoHelper.getDirectoryPathByOrganizationAndRepository(
                         pullRequestMessages.organizationId,
                         pullRequestMessages.repositoryId,
                         pullRequestMessages.directoryId,
-                    ) || '',
+                    )) || '',
                 isUpdate,
             };
             await this.codeReviewSettingsLogService.registerPullRequestMessagesLog(
