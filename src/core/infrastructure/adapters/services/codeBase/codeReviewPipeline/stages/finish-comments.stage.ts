@@ -84,6 +84,7 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                     organizationAndTeamData,
                     codeReviewConfig.languageResultPrompt,
                     codeReviewConfig.summary,
+                    codeReviewConfig?.byokConfig ?? null,
                     isCommitRun,
                 );
 

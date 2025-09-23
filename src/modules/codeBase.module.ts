@@ -55,6 +55,9 @@ import {
 import { MessageTemplateProcessor } from '@/core/infrastructure/adapters/services/codeBase/utils/services/messageTemplateProcessor.service';
 import { KodyFineTuningContextModule } from '@/core/infrastructure/adapters/services/kodyFineTuning/fineTuningContext/kodyFineTuningContext.module';
 import { KodyFineTuningService } from '@/core/infrastructure/adapters/services/kodyFineTuning/kodyFineTuning.service';
+import { ValidateLicenseService } from '@/shared/infrastructure/services/validateLicense.service';
+import { LicenseModule } from '@/ee/license/license.module';
+import { LicenseService } from '@/ee/license/license.service';
 
 @Module({
     imports: [
@@ -77,6 +80,7 @@ import { KodyFineTuningService } from '@/core/infrastructure/adapters/services/k
         forwardRef(() => KodyASTAnalyzeContextModule),
         forwardRef(() => GlobalParametersModule),
         forwardRef(() => TokenChunkingModule),
+        forwardRef(() => LicenseModule),
         LogModule,
     ],
     providers: [
@@ -122,6 +126,8 @@ import { KodyFineTuningService } from '@/core/infrastructure/adapters/services/k
         KodyFineTuningService,
         CommentAnalysisService,
         MessageTemplateProcessor,
+        ValidateLicenseService,
+        LicenseService,
     ],
     exports: [
         PULL_REQUEST_MANAGER_SERVICE_TOKEN,

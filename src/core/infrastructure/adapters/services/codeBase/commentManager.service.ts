@@ -49,6 +49,7 @@ import {
     MessageTemplateProcessor,
     PlaceholderContext,
 } from './utils/services/messageTemplateProcessor.service';
+import { ValidateLicenseService } from '@/shared/infrastructure/services/validateLicense.service';
 
 @Injectable()
 export class CommentManagerService implements ICommentManagerService {
@@ -62,6 +63,8 @@ export class CommentManagerService implements ICommentManagerService {
         private readonly parametersService: IParametersService,
         private readonly messageProcessor: MessageTemplateProcessor,
         private readonly promptRunnerService: BasePromptRunnerService,
+
+        private readonly validateLicenseService: ValidateLicenseService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
     }
@@ -73,11 +76,29 @@ export class CommentManagerService implements ICommentManagerService {
         organizationAndTeamData: OrganizationAndTeamData,
         languageResultPrompt: string,
         summaryConfig: SummaryConfig,
-        isCommitRun: boolean,
         byokConfig?: BYOKConfig,
+        isCommitRun?: boolean,
+        prPreview?: boolean,
     ): Promise<string> {
+        let byokConfigValue: BYOKConfig | null = byokConfig ?? null;
+
         if (!summaryConfig?.generatePRSummary) {
             return null;
+        }
+
+        if (prPreview) {
+            const validLicense =
+                await this.validateLicenseService.validateLicense(
+                    organizationAndTeamData,
+                );
+
+            if (!validLicense) {
+                return null;
+            }
+
+            byokConfigValue = await this.validateLicenseService.getBYOKConfig(
+                organizationAndTeamData,
+            );
         }
 
         const maxRetries = 2;
@@ -163,12 +184,11 @@ export class CommentManagerService implements ICommentManagerService {
                     this.promptRunnerService,
                     LLMModelProvider.GEMINI_2_5_FLASH,
                     fallbackProvider,
-                    byokConfig,
+                    byokConfigValue,
                 );
 
-                let analysisBuilder = promptRunner.builder();
-
-                const result = await analysisBuilder
+                const result = await promptRunner
+                    .builder()
                     .setParser(ParserType.STRING)
                     .setLLMJsonMode(false)
                     .setPayload(baseContext)
