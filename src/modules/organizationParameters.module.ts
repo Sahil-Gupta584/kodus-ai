@@ -18,6 +18,7 @@ import { OrgnizationParametersController } from '@/core/infrastructure/http/cont
 import { CreateOrUpdateOrganizationParametersUseCase } from '@/core/application/use-cases/organizationParameters/create-or-update.use-case';
 import { FindByKeyOrganizationParametersUseCase } from '@/core/application/use-cases/organizationParameters/find-by-key.use-case';
 import { GetModelsByProviderUseCase } from '@/core/application/use-cases/organizationParameters/get-models-by-provider.use-case';
+import { DeleteByokConfigUseCase } from '@/core/application/use-cases/organizationParameters/delete-byok-config.use-case';
 import { ProviderService } from '@/core/infrastructure/adapters/services/providers/provider.service';
 import { LicenseModule } from '@/ee/license/license.module';
 
@@ -36,6 +37,7 @@ import { LicenseModule } from '@/ee/license/license.module';
         CreateOrUpdateOrganizationParametersUseCase,
         FindByKeyOrganizationParametersUseCase,
         GetModelsByProviderUseCase,
+        DeleteByokConfigUseCase,
         OrganizationParametersService,
         PromptService,
         ProjectManagementService,
@@ -57,6 +59,7 @@ import { LicenseModule } from '@/ee/license/license.module';
         SaveCategoryWorkItemsTypesUseCase,
         OrganizationParametersService,
         GetModelsByProviderUseCase,
+        DeleteByokConfigUseCase,
     ],
 })
 export class OrganizationParametersModule {}

@@ -18,4 +18,8 @@ export interface IOrganizationParametersService
         configKey: OrganizationParametersKey,
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<OrganizationParametersEntity>;
+    deleteByokConfig(
+        organizationId: string,
+        configType: 'main' | 'fallback'
+    ): Promise<boolean>;
 }
