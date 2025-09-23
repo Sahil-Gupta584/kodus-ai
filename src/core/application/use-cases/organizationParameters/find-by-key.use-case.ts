@@ -62,9 +62,10 @@ export class FindByKeyOrganizationParametersUseCase {
                                 ...configValue.main,
                                 apiKey: maskedMainApiKey,
                             };
+                        } else {
+                            processedConfig.main = null;
                         }
 
-                        // Processa fallback se existir e tiver apiKey
                         if (configValue.fallback?.apiKey) {
                             const decryptedFallbackApiKey = decrypt(
                                 configValue.fallback.apiKey,
@@ -77,9 +78,10 @@ export class FindByKeyOrganizationParametersUseCase {
                                 ...configValue.fallback,
                                 apiKey: maskedFallbackApiKey,
                             };
+                        } else {
+                            processedConfig.fallback = null;
                         }
 
-                        // Retorna na estrutura original com API key mascarada
                         return {
                             uuid: parameter.uuid,
                             configKey: parameter.configKey,
