@@ -33,8 +33,10 @@ import {
     LLMProviderService,
     ParserType,
     PromptRole,
-    PromptRunnerService,
+    PromptRunnerService as BasePromptRunnerService,
+    BYOKConfig,
 } from '@kodus/kodus-common/llm';
+import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
 
 interface ClusteredSuggestion {
     id: string;
@@ -59,8 +61,7 @@ export class CommentManagerService implements ICommentManagerService {
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
         private readonly messageProcessor: MessageTemplateProcessor,
-
-        private readonly promptRunnerService: PromptRunnerService,
+        private readonly promptRunnerService: BasePromptRunnerService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
     }
@@ -73,6 +74,7 @@ export class CommentManagerService implements ICommentManagerService {
         languageResultPrompt: string,
         summaryConfig: SummaryConfig,
         isCommitRun: boolean,
+        byokConfig?: BYOKConfig,
     ): Promise<string> {
         if (!summaryConfig?.generatePRSummary) {
             return null;
@@ -157,12 +159,16 @@ export class CommentManagerService implements ICommentManagerService {
 
                 const userPrompt = `<changedFilesContext>${JSON.stringify(baseContext?.changedFiles, null, 2) || 'No files changed'}</changedFilesContext>`;
 
-                const result = await this.promptRunnerService
-                    .builder()
-                    .setProviders({
-                        main: LLMModelProvider.GEMINI_2_5_FLASH,
-                        fallback: fallbackProvider,
-                    })
+                const promptRunner = new PromptRunnerService(
+                    this.promptRunnerService,
+                    LLMModelProvider.GEMINI_2_5_FLASH,
+                    fallbackProvider,
+                    byokConfig,
+                );
+
+                let analysisBuilder = promptRunner.builder();
+
+                const result = await analysisBuilder
                     .setParser(ParserType.STRING)
                     .setLLMJsonMode(false)
                     .setPayload(baseContext)
@@ -834,6 +840,7 @@ ${reviewOptions}
         prNumber: number,
         provider: LLMModelProvider,
         codeSuggestions: any[],
+        byokConfig?: BYOKConfig,
     ) {
         const language = (
             await this.parametersService.findByKey(
@@ -857,12 +864,15 @@ ${reviewOptions}
 
             const userPrompt = `<codeSuggestionsContext>${JSON.stringify(baseContext?.codeSuggestions, null, 2) || 'No code suggestions provided'}</codeSuggestionsContext>`;
 
-            const result = await this.promptRunnerService
+            const promptRunner = new PromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
+
+            const result = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setPayload(baseContext)
