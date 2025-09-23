@@ -6,29 +6,27 @@ import {
     TokenTrackingSession,
     TOKEN_TRACKING_SERVICE_TOKEN,
 } from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
-import { RunnableSequence } from '@langchain/core/runnables';
 import {
     CrossFileAnalysisPayload,
     prompt_codereview_cross_file_analysis,
 } from '@/shared/utils/langchainCommon/prompts/codeReviewCrossFileAnalysis';
 import {
     AnalysisContext,
-    CodeReviewVersion,
     CodeSuggestion,
     SuggestionType,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import { v4 as uuidv4 } from 'uuid';
-import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
 import {
     LLMModelProvider,
     LLMProviderService,
     ParserType,
     PromptRole,
-    PromptRunnerService,
+    PromptRunnerService as BasePromptRunnerService,
 } from '@kodus/kodus-common/llm';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
+import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
 
 //#region Interfaces
 interface TokenUsage {
@@ -84,7 +82,7 @@ export class CrossFileAnalysisService {
         @Inject(TOKEN_TRACKING_SERVICE_TOKEN)
         private readonly tokenTrackingService: TokenTrackingService,
 
-        private readonly promptRunnerService: PromptRunnerService,
+        private readonly promptRunnerService: BasePromptRunnerService,
     ) {
         this.tokenTracker = new TokenTrackingSession(
             uuidv4(),
@@ -461,16 +459,19 @@ export class CrossFileAnalysisService {
             payload = preparedFilesChunk;
         }
 
-        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+        const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
-        const runName = `crossFile${analysisType.charAt(0).toUpperCase() + analysisType.slice(1)}`;
+        const runName = `crossFileAnalyzeCodeWithAI`;
 
-        const analysis = await this.promptRunnerService
-            .builder()
-            .setProviders({
-                main: provider,
-                fallback: fallbackProvider,
-            })
+        const promptRunner = new PromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            context?.codeReviewConfig?.byokConfig,
+        );
+        let analysisBuilder = promptRunner.builder();
+
+        const analysis = await analysisBuilder
             .setParser(ParserType.STRING)
             .setLLMJsonMode(true)
             .setPayload(payload)
