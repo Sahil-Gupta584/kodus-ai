@@ -37,14 +37,14 @@ export class ProviderService {
             requiresApiKey: true,
             requiresBaseUrl: false,
         },
-        [BYOKProvider.GOOGLE_VERTEX]: {
-            id: BYOKProvider.GOOGLE_VERTEX,
-            name: 'Google Vertex',
-            description: 'Vertex AI models from Google Cloud',
-            supported: true,
-            requiresApiKey: true,
-            requiresBaseUrl: false,
-        },
+        // [BYOKProvider.GOOGLE_VERTEX]: {
+        //     id: BYOKProvider.GOOGLE_VERTEX,
+        //     name: 'Google Vertex',
+        //     description: 'Vertex AI models from Google Cloud',
+        //     supported: true,
+        //     requiresApiKey: true,
+        //     requiresBaseUrl: false,
+        // },
         [BYOKProvider.OPEN_ROUTER]: {
             id: BYOKProvider.OPEN_ROUTER,
             name: 'OpenRouter',
