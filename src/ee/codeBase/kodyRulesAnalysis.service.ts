@@ -667,18 +667,6 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 prompt: prompt_kodyrules_updatestdsuggestions_system,
                 role: PromptRole.SYSTEM,
             })
-            .setProviders({
-                main: provider,
-                fallback: fallbackProvider,
-            })
-            .setParser(ParserType.STRING)
-            .setLLMJsonMode(true)
-            .setTemperature(0)
-            .setPayload(context)
-            .addPrompt({
-                prompt: prompt_kodyrules_updatestdsuggestions_system,
-                role: PromptRole.SYSTEM,
-            })
             .addPrompt({
                 prompt: prompt_kodyrules_updatestdsuggestions_user,
                 role: PromptRole.USER,
