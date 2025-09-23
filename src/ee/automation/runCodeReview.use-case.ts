@@ -37,6 +37,7 @@ import {
     IOrganizationParametersService,
     ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/organizationParameters/contracts/organizationParameters.service.contract';
+import { BYOKDeterminationService } from '@/shared/infrastructure/services/byokDetermination.service';
 
 @Injectable()
 export class RunCodeReviewAutomationUseCase {
@@ -63,6 +64,8 @@ export class RunCodeReviewAutomationUseCase {
         private readonly organizationParametersService: IOrganizationParametersService,
 
         private readonly codeManagement: CodeManagementService,
+
+        private readonly byokDeterminationService: BYOKDeterminationService,
 
         private logger: PinoLoggerService,
     ) {
@@ -601,85 +604,12 @@ export class RunCodeReviewAutomationUseCase {
         organizationAndTeamData: OrganizationAndTeamData,
         validation: OrganizationLicenseValidationResult,
     ): Promise<BYOKConfig | null> {
-        try {
-            // Self-hosted sempre usa config das env vars (não usa BYOK)
-            if (!this.isCloud) {
-                return null;
-            }
-
-            if (!validation) {
-                return null;
-            }
-
-            if (!validation?.valid) {
-                return null;
-            }
-
-            const planType = validation?.planType;
-
-            const isBYOKPlan = planType?.includes('byok');
-            const isFreePlan = planType?.includes('free');
-            const isManagedPlan = planType?.includes('managed') && !isBYOKPlan;
-
-            // Managed plans (sem byok) usam nossas keys
-            if (isManagedPlan) {
-                this.logger.log({
-                    message: 'Using managed keys for review',
-                    context: RunCodeReviewAutomationUseCase.name,
-                    metadata: { organizationAndTeamData, planType },
-                });
-                return null;
-            }
-
-            // Free plan ou BYOK plan precisam de BYOK config
-            if (isFreePlan || isBYOKPlan) {
-                const byokData =
-                    await this.organizationParametersService.findByKey(
-                        OrganizationParametersKey.BYOK_CONFIG,
-                        organizationAndTeamData,
-                    );
-
-                if (!byokData?.configValue) {
-                    this.logger.warn({
-                        message: `BYOK required but not configured for plan ${planType}`,
-                        context: RunCodeReviewAutomationUseCase.name,
-                        metadata: { organizationAndTeamData, planType },
-                    });
-
-                    throw new Error('BYOK_NOT_CONFIGURED');
-                }
-
-                this.logger.log({
-                    message: 'Using BYOK configuration for review',
-                    context: RunCodeReviewAutomationUseCase.name,
-                    metadata: {
-                        organizationAndTeamData,
-                        planType,
-                        provider: byokData.configValue?.provider,
-                        model: byokData.configValue?.model,
-                    },
-                });
-
-                return byokData.configValue;
-            }
-
-            // Caso não identificado, usar keys gerenciadas
-            return null;
-        } catch (error) {
-            if (error.message === 'BYOK_NOT_CONFIGURED') {
-                throw error; // Re-throw para ser tratado no findTeamWithActiveCodeReview
-            }
-
-            this.logger.error({
-                message: 'Error determining BYOK usage',
-                context: RunCodeReviewAutomationUseCase.name,
-                error: error,
-                metadata: { organizationAndTeamData },
-            });
-
-            // Em caso de erro, falhar seguramente sem usar BYOK
-            return null;
-        }
+        return this.byokDeterminationService.determineBYOKUsage(
+            organizationAndTeamData,
+            validation,
+            this.isCloud,
+            RunCodeReviewAutomationUseCase.name,
+        );
     }
 
     private async noActiveSubscriptionGeneralMessage(): Promise<string> {
