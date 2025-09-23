@@ -29,6 +29,13 @@ export class FindByKeyOrganizationParametersUseCase {
                     organizationAndTeamData,
                 );
 
+            if (!parameter) {
+                throw new NotFoundException(
+                    'Organization parameter config does not exist',
+                );
+            }
+
+            // Processa configuração BYOK mascarando API keys
             if (
                 organizationParametersKey ===
                 OrganizationParametersKey.BYOK_CONFIG
@@ -45,9 +52,12 @@ export class FindByKeyOrganizationParametersUseCase {
 
                         // Processa main se existir e tiver apiKey
                         if (configValue.main?.apiKey) {
-                            const decryptedMainApiKey = decrypt(configValue.main.apiKey);
-                            const maskedMainApiKey = this.maskApiKey(decryptedMainApiKey);
-                            
+                            const decryptedMainApiKey = decrypt(
+                                configValue.main.apiKey,
+                            );
+                            const maskedMainApiKey =
+                                this.maskApiKey(decryptedMainApiKey);
+
                             processedConfig.main = {
                                 ...configValue.main,
                                 apiKey: maskedMainApiKey,
@@ -56,16 +66,26 @@ export class FindByKeyOrganizationParametersUseCase {
 
                         // Processa fallback se existir e tiver apiKey
                         if (configValue.fallback?.apiKey) {
-                            const decryptedFallbackApiKey = decrypt(configValue.fallback.apiKey);
-                            const maskedFallbackApiKey = this.maskApiKey(decryptedFallbackApiKey);
-                            
+                            const decryptedFallbackApiKey = decrypt(
+                                configValue.fallback.apiKey,
+                            );
+                            const maskedFallbackApiKey = this.maskApiKey(
+                                decryptedFallbackApiKey,
+                            );
+
                             processedConfig.fallback = {
                                 ...configValue.fallback,
                                 apiKey: maskedFallbackApiKey,
                             };
                         }
 
-                        return processedConfig;
+                        // Retorna na estrutura original com API key mascarada
+                        return {
+                            uuid: parameter.uuid,
+                            configKey: parameter.configKey,
+                            configValue: processedConfig,
+                            organization: parameter.organization,
+                        };
                     } catch (error) {
                         this.logger.error({
                             message: 'Error decrypting API key',
@@ -74,17 +94,9 @@ export class FindByKeyOrganizationParametersUseCase {
                             error: error,
                         });
                         // Retorna o valor original em caso de erro na descriptografia
-                        return configValue;
+                        return this.getUpdatedParameters(parameter);
                     }
                 }
-
-                return configValue;
-            }
-
-            if (!parameter) {
-                throw new NotFoundException(
-                    'Organization parameter config does not exist',
-                );
             }
 
             const updatedParameters = this.getUpdatedParameters(parameter);
