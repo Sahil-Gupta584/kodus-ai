@@ -15,6 +15,7 @@ import {
     CodeReviewConfig,
     CommentResult,
     CodeReviewVersion,
+    AnalysisContext,
 } from '@/config/types/general/codeReview.type';
 import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.enum';
 import { PriorityStatus } from '@/core/domain/pullRequests/enums/priorityStatus.enum';
@@ -555,6 +556,7 @@ export class SuggestionService implements ISuggestionService {
         suggestionControl: SuggestionControlConfig,
         prNumber: number,
         suggestions: any[],
+        byokConfig?: BYOKConfig,
     ): Promise<{
         prioritizedSuggestions: any[];
         discardedSuggestionsBySeverityOrQuantity: any[];
@@ -585,6 +587,7 @@ export class SuggestionService implements ISuggestionService {
                     prNumber,
                     LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                     suggestions,
+                    byokConfig,
                 );
 
             refinedSuggestions =
@@ -635,6 +638,7 @@ export class SuggestionService implements ISuggestionService {
         suggestionControl: SuggestionControlConfig,
         prNumber: number,
         suggestions: any[],
+        byokConfig?: BYOKConfig,
     ): Promise<{
         prioritizedSuggestions: any[];
         discardedSuggestionsBySeverityOrQuantity: any[];
@@ -675,6 +679,7 @@ export class SuggestionService implements ISuggestionService {
                 suggestionControl,
                 prNumber,
                 suggestions,
+                byokConfig,
             );
         } catch (error) {
             this.logger.error({
@@ -690,6 +695,7 @@ export class SuggestionService implements ISuggestionService {
                 suggestionControl,
                 prNumber,
                 suggestions,
+                byokConfig,
             );
         }
     }
@@ -699,6 +705,7 @@ export class SuggestionService implements ISuggestionService {
         suggestionControl: SuggestionControlConfig,
         prNumber: number,
         suggestions: any[],
+        byokConfig?: BYOKConfig,
     ): Promise<{
         prioritizedSuggestions: any[];
         discardedSuggestionsBySeverityOrQuantity: any[];
@@ -724,6 +731,7 @@ export class SuggestionService implements ISuggestionService {
                 suggestionControl,
                 prNumber,
                 suggestions,
+                byokConfig,
             );
         }
 
@@ -1217,6 +1225,7 @@ export class SuggestionService implements ISuggestionService {
                     codeReviewConfig.suggestionControl,
                     pullRequest.number,
                     validSuggestionsToAnalyze,
+                    codeReviewConfig?.byokConfig,
                 );
             } else {
                 analyzedSuggestions = {
@@ -1379,6 +1388,7 @@ export class SuggestionService implements ISuggestionService {
         codeSuggestions: CodeSuggestion[],
         selectedCategories: ReviewOptions,
         codeReviewVersion: CodeReviewVersion,
+        byokConfig?: BYOKConfig,
     ) {
         try {
             if (!codeSuggestions?.length) {
@@ -1395,6 +1405,7 @@ export class SuggestionService implements ISuggestionService {
                     prNumber,
                     LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
                     codeSuggestions,
+                    byokConfig,
                 );
 
             const suggestionsWithSeverity = this.mergeSuggestionsWithSeverity(
