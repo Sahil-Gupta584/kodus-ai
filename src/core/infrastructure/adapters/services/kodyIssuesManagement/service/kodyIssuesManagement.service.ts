@@ -27,11 +27,23 @@ import { ISuggestion } from '@/core/domain/pullRequests/interfaces/pullRequests.
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { CacheService } from '@/shared/utils/cache/cache.service';
+import { environment } from '@/ee/configs/environment';
+import {
+    ILicenseService,
+    LICENSE_SERVICE_TOKEN,
+    OrganizationLicenseValidationResult,
+} from '@/ee/license/interfaces/license.interface';
+import { BYOKConfig } from '@kodus/kodus-common/llm';
+import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { BYOKDeterminationService } from '@/shared/infrastructure/services/byokDetermination.service';
 
 @Injectable()
 export class KodyIssuesManagementService
     implements IKodyIssuesManagementService
 {
+    public readonly isCloud: boolean;
+    public readonly isDevelopment: boolean;
+
     constructor(
         private readonly logger: PinoLoggerService,
 
@@ -47,11 +59,59 @@ export class KodyIssuesManagementService
         @Inject(PULL_REQUEST_MANAGER_SERVICE_TOKEN)
         private pullRequestHandlerService: IPullRequestManagerService,
 
+        @Inject(LICENSE_SERVICE_TOKEN)
+        private readonly licenseService: ILicenseService,
+
         private readonly cacheService: CacheService,
-    ) {}
+
+        private readonly byokDeterminationService: BYOKDeterminationService,
+    ) {
+        this.isCloud = environment.API_CLOUD_MODE;
+        //this.isDevelopment = environment.API_DEVELOPMENT_MODE;
+        this.isDevelopment = false; //TODO Remover
+    }
 
     async processClosedPr(params: contextToGenerateIssues): Promise<void> {
         try {
+            let byokConfig: BYOKConfig | null = null;
+
+            if (!this.isDevelopment) {
+                if (this.isCloud) {
+                    const validation =
+                        await this.licenseService.validateOrganizationLicense(
+                            params.organizationAndTeamData,
+                        );
+
+                    if (!validation?.valid) {
+                        return;
+                    }
+
+                    byokConfig = await this.determineBYOKUsage(
+                        params.organizationAndTeamData,
+                        validation,
+                    );
+
+                    const planType = validation.planType;
+                    const needsBYOK =
+                        planType?.includes('byok') ||
+                        planType?.includes('free');
+
+                    if (needsBYOK && !byokConfig) {
+                        this.logger.warn({
+                            message: `BYOK required but not configured for plan ${planType}`,
+                            context: KodyIssuesManagementService.name,
+                            metadata: {
+                                organizationAndTeamData:
+                                    params.organizationAndTeamData,
+                                planType,
+                            },
+                        });
+
+                        return;
+                    }
+                }
+            }
+
             this.logger.log({
                 message: `Starting issue processing for closed PR#${params.pullRequest.number}`,
                 context: KodyIssuesManagementService.name,
@@ -82,11 +142,12 @@ export class KodyIssuesManagementService
                     params,
                     filePath,
                     suggestionsByFile[filePath],
+                    byokConfig,
                 );
             }
 
             // 4. Resolver issues que podem ter sido corrigidas
-            await this.resolveExistingIssues(params, params.prFiles);
+            await this.resolveExistingIssues(params, params.prFiles, byokConfig);
 
             await this.pullRequestsService.updateSyncedWithIssuesFlag(
                 params.pullRequest.number,
@@ -109,6 +170,7 @@ export class KodyIssuesManagementService
         context: contextToGenerateIssues,
         filePath: string,
         newSuggestions: any[],
+        byokConfig: BYOKConfig | null,
     ): Promise<any> {
         const { organizationAndTeamData, repository, pullRequest } = context;
 
@@ -175,6 +237,7 @@ export class KodyIssuesManagementService
                     organizationAndTeamData,
                     pullRequest,
                     promptData,
+                    byokConfig,
                 );
 
             // 4. Processar resultado do merge
@@ -263,6 +326,7 @@ export class KodyIssuesManagementService
             'organizationAndTeamData' | 'repository' | 'pullRequest'
         >,
         files: any[],
+        byokConfig: BYOKConfig | null,
     ): Promise<void> {
         try {
             if (!files || files?.length === 0) {
@@ -321,6 +385,7 @@ export class KodyIssuesManagementService
                     await this.kodyIssuesAnalysisService.resolveExistingIssues(
                         context,
                         promptData,
+                        byokConfig,
                     );
 
                 if (llmResult?.issueVerificationResults) {
@@ -591,4 +656,16 @@ export class KodyIssuesManagementService
         }
     }
     //#endregion
+
+    private async determineBYOKUsage(
+        organizationAndTeamData: OrganizationAndTeamData,
+        validation: OrganizationLicenseValidationResult,
+    ): Promise<BYOKConfig | null> {
+        return this.byokDeterminationService.determineBYOKUsage(
+            organizationAndTeamData,
+            validation,
+            this.isCloud,
+            KodyIssuesManagementService.name,
+        );
+    }
 }

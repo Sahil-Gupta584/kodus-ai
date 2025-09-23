@@ -29,10 +29,7 @@ import {
     OrganizationLicenseValidationResult,
 } from '@/ee/license/interfaces/license.interface';
 import { environment } from '@/ee/configs/environment';
-import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
-import { decrypt } from '@/shared/utils/crypto';
 import { BYOKConfig } from '@kodus/kodus-common/llm';
-import { BYOKProvider } from '@kodus/kodus-common/llm';
 import {
     IOrganizationParametersService,
     ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
@@ -70,7 +67,8 @@ export class RunCodeReviewAutomationUseCase {
         private logger: PinoLoggerService,
     ) {
         this.isCloud = environment.API_CLOUD_MODE;
-        this.isDevelopment = environment.API_DEVELOPMENT_MODE;
+        //this.isDevelopment = environment.API_DEVELOPMENT_MODE;
+        this.isDevelopment = false;
     }
 
     async execute(params: {

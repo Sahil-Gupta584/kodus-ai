@@ -1,7 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { RunnableSequence } from '@langchain/core/runnables';
-import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import { Inject } from '@nestjs/common';
 import {
@@ -17,20 +15,23 @@ import { contextToGenerateIssues } from '../../core/infrastructure/adapters/serv
 import {
     LLMProviderService,
     LLMModelProvider,
-    PromptRunnerService,
+    PromptRunnerService as BasePromptRunnerService,
     ParserType,
     PromptRole,
+    BYOKConfig,
 } from '@kodus/kodus-common/llm';
+import { environment } from '@/ee/configs/environment';
+import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
 
 export const KODY_ISSUES_ANALYSIS_SERVICE_TOKEN = Symbol(
     'KodyIssuesAnalysisService',
 );
 
-type SystemPromptFn = () => string;
-type UserPromptFn = (input: any) => string;
-
 @Injectable()
 export class KodyIssuesAnalysisService {
+    public readonly isCloud: boolean;
+    public readonly isDevelopment: boolean;
+
     constructor(
         private readonly logger: PinoLoggerService,
 
@@ -39,23 +40,41 @@ export class KodyIssuesAnalysisService {
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
 
-        private readonly promptRunnerService: PromptRunnerService,
-    ) {}
+        private readonly promptRunnerService: BasePromptRunnerService,
+    ) {
+        this.isCloud = environment.API_CLOUD_MODE;
+        this.isDevelopment = environment.API_DEVELOPMENT_MODE;
+    }
 
     async mergeSuggestionsIntoIssues(
         organizationAndTeamData: OrganizationAndTeamData,
         pullRequest: any,
         promptData: any,
+        byokConfig: BYOKConfig | null,
     ): Promise<any> {
         try {
             const provider = LLMModelProvider.GEMINI_2_5_PRO;
             const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
 
-            const result = await this.promptRunnerService
+            const promptRunner = new PromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
+
+            const result = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
+                .setParser(ParserType.STRING)
+                .setLLMJsonMode(true)
+                .setPayload(promptData)
+                .addPrompt({
+                    prompt: prompt_kodyissues_merge_suggestions_into_issues_system,
+                    role: PromptRole.SYSTEM,
+                })
+                .addPrompt({
+                    prompt: (input) => JSON.stringify(input, null, 2),
+                    role: PromptRole.USER,
                 })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
@@ -119,16 +138,37 @@ export class KodyIssuesAnalysisService {
             'organizationAndTeamData' | 'repository' | 'pullRequest'
         >,
         promptData: any,
+        byokConfig: BYOKConfig | null,
     ): Promise<any> {
         try {
             const provider = LLMModelProvider.GEMINI_2_5_PRO;
-            const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+            const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
-            const result = await this.promptRunnerService
+            const promptRunner = new PromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
+
+            const result = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
+                .setParser(ParserType.STRING)
+                .setLLMJsonMode(true)
+                .setPayload(promptData)
+                .addPrompt({
+                    prompt: prompt_kodyissues_resolve_issues_system,
+                    role: PromptRole.SYSTEM,
+                })
+                .addPrompt({
+                    prompt: (input) => JSON.stringify(input, null, 2),
+                    role: PromptRole.USER,
+                })
+                .addMetadata({
+                    organizationAndTeamData: context.organizationAndTeamData,
+                    prNumber: context.pullRequest.number,
+                    provider: provider,
+                    fallbackProvider: fallbackProvider,
                 })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
