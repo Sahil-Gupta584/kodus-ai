@@ -56,11 +56,13 @@ export interface IAIAnalysisService {
         provider: LLMModelProvider,
         file: FileChange,
         codeDiff: string,
+        byokConfig: BYOKConfig,
     ): Promise<ReviewModeResponse>;
     severityAnalysisAssignment(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         provider: LLMModelProvider,
         codeSuggestions: CodeSuggestion[],
+        byokConfig: BYOKConfig,
     ): Promise<Partial<CodeSuggestion>[]>;
 }
