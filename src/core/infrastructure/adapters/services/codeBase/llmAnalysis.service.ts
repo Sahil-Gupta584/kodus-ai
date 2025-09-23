@@ -35,7 +35,6 @@ import {
     PromptScope,
 } from '@kodus/kodus-common/llm';
 import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
-import { decrypt } from '@/shared/utils/crypto';
 
 // Interface for token tracking
 interface TokenUsage {
@@ -205,6 +204,13 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
         const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
+        const promptRunner = new PromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            context?.codeReviewConfig?.byokConfig,
+        );
+
         // Reset token tracking for new analysis
         this.tokenTracker.reset();
 
@@ -212,12 +218,8 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         const baseContext = this.prepareAnalysisContext(fileContext, context);
 
         try {
-            const analysis = await this.promptRunnerService
+            const analysis = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setPayload(baseContext)
@@ -321,8 +323,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             byokConfig,
         );
 
-        let analysisBuilder = promptRunner.builder();
-
         // Reset token tracking for new analysis
         this.tokenTracker.reset();
 
@@ -350,7 +350,8 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 overallSummary: z.string(),
             });
 
-            const analysis = await analysisBuilder
+            const analysis = await promptRunner
+                .builder()
                 .setParser(ParserType.ZOD, schema as any, {
                     provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
                     fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
@@ -485,6 +486,8 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         // Reset token tracking for new suggestions
         this.tokenTracker.reset();
 
+
+
         try {
             const result = await this.promptRunnerService
                 .builder()
@@ -569,19 +572,23 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         prNumber: number,
         provider: LLMModelProvider,
         codeSuggestions: CodeSuggestion[],
+        byokConfig: BYOKConfig,
     ): Promise<Partial<CodeSuggestion>[]> {
         const fallbackProvider =
             provider === LLMModelProvider.OPENAI_GPT_4O
                 ? LLMModelProvider.NOVITA_DEEPSEEK_V3_0324
                 : LLMModelProvider.OPENAI_GPT_4O;
 
+        const promptRunner = new PromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            byokConfig,
+        );
+
         try {
-            const result = await this.promptRunnerService
+            const result = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setPayload(codeSuggestions)
@@ -929,6 +936,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         provider: LLMModelProvider,
         file: FileChange,
         codeDiff: string,
+        byokConfig: BYOKConfig,
     ): Promise<ReviewModeResponse> {
         const fallbackProvider =
             provider === LLMModelProvider.OPENAI_GPT_4O
@@ -941,12 +949,15 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         };
 
         try {
-            const result = await this.promptRunnerService
+            const promptRunner = new PromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
+
+            const result = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setTemperature(0)
