@@ -944,14 +944,9 @@ export class KodyRulesPrLevelAnalysisService
             context?.codeReviewConfig?.byokConfig,
         );
 
-        let analysisBuilder = promptRunner.builder();
-
         try {
-            const analysis = await analysisBuilder
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
+            const analysis = await promptRunner
+                .builder()
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setPayload(analyzerPayload)
@@ -1285,9 +1280,8 @@ export class KodyRulesPrLevelAnalysisService
                 byokConfig,
             );
 
-            let analysisBuilder = promptRunner.builder();
-
-            const grouping = await analysisBuilder
+            const grouping = await promptRunner
+                .builder()
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setPayload(groupingPayload)
