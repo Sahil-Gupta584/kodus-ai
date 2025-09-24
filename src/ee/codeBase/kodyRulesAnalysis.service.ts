@@ -184,6 +184,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         suggestions: AIAnalysisResult,
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
+        byokConfig?: BYOKConfig,
     ): Promise<AIAnalysisResult> {
         if (!suggestions?.codeSuggestions?.length) {
             return suggestions;
@@ -226,6 +227,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                                             organizationAndTeamData,
                                             prNumber,
                                             suggestion,
+                                            byokConfig,
                                         );
                                     if (extractedIds.length > 0) {
                                         foundIds = extractedIds;
@@ -277,6 +279,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         suggestion: Partial<CodeSuggestion>,
+        byokConfig?: BYOKConfig,
     ): Promise<string[]> {
         try {
             const provider = LLMModelProvider.GEMINI_2_5_FLASH;
@@ -286,12 +289,15 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 `${KodyRulesAnalysisService.name}::extractKodyRuleIdsFromContent`,
             );
 
-            const extraction = await this.promptRunnerService
+            const promptRunner = new PromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
+
+            const extraction = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setPayload({
@@ -520,6 +526,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 finalOutput,
                 organizationAndTeamData,
                 prNumber,
+                context?.codeReviewConfig?.byokConfig,
             );
 
             return this.addSeverityToSuggestions(
