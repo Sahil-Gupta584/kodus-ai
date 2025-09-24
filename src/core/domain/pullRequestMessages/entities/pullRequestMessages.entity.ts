@@ -3,9 +3,7 @@ import {
     IPullRequestMessageContent,
     IPullRequestMessages,
 } from '../interfaces/pullRequestMessages.interface';
-import {
-    ConfigLevel,
-} from '@/config/types/general/pullRequestMessages.type';
+import { ConfigLevel } from '@/config/types/general/pullRequestMessages.type';
 
 export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
     private readonly _uuid: string;
@@ -15,6 +13,9 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
     private readonly _startReviewMessage?: IPullRequestMessageContent;
     private readonly _endReviewMessage?: IPullRequestMessageContent;
     private readonly _directoryId?: string;
+    private readonly _globalSettings?: {
+        hideComments?: boolean;
+    };
     private readonly _directoryPath?: string;
 
     constructor(pullRequestMessages: IPullRequestMessages) {
@@ -25,6 +26,7 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
         this._startReviewMessage = pullRequestMessages.startReviewMessage;
         this._endReviewMessage = pullRequestMessages.endReviewMessage;
         this._directoryId = pullRequestMessages.directoryId;
+        this._globalSettings = pullRequestMessages.globalSettings;
     }
 
     toJson(): IPullRequestMessages {
@@ -36,6 +38,7 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
             startReviewMessage: this._startReviewMessage,
             endReviewMessage: this._endReviewMessage,
             directoryId: this._directoryId,
+            globalSettings: this._globalSettings,
         };
     }
 
@@ -48,6 +51,7 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
             startReviewMessage: this._startReviewMessage,
             endReviewMessage: this._endReviewMessage,
             directoryId: this._directoryId,
+            globalSettings: this._globalSettings,
         };
     }
 
@@ -77,6 +81,10 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
 
     get directoryId(): string | undefined {
         return this._directoryId;
+    }
+
+    get globalSettings(): { hideComments?: boolean } | undefined {
+        return this._globalSettings;
     }
 
     public static create(

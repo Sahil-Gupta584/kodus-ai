@@ -1,7 +1,6 @@
 import {
     ConfigLevel,
     PullRequestMessageStatus,
-    PullRequestMessageType,
 } from '@/config/types/general/pullRequestMessages.type';
 
 export interface IPullRequestMessageContent {
@@ -17,4 +16,7 @@ export interface IPullRequestMessages {
     startReviewMessage?: IPullRequestMessageContent;
     endReviewMessage?: IPullRequestMessageContent;
     directoryId?: string;
+    globalSettings?: {
+        hideComments?: boolean;
+    };
 }

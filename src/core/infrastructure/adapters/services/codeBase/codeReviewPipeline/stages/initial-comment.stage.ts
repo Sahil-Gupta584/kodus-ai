@@ -10,13 +10,11 @@ import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import {
     ConfigLevel,
     PullRequestMessageStatus,
-    PullRequestMessageType,
 } from '@/config/types/general/pullRequestMessages.type';
 import {
     PULL_REQUEST_MESSAGES_SERVICE_TOKEN,
     IPullRequestMessagesService,
 } from '@/core/domain/pullRequestMessages/contracts/pullRequestMessages.service.contract';
-import { GLOBAL_MODULE_METADATA } from '@nestjs/common/constants';
 import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 
 @Injectable()
@@ -107,7 +105,7 @@ export class InitialCommentStage extends BasePipelineStage<CodeReviewPipelineCon
             context.codeReviewConfig?.languageResultPrompt ?? 'en-US',
             context.platformType,
             context.codeReviewConfig,
-            startReviewMessage?.content,
+            pullRequestMessagesConfig,
         );
 
         return this.updateContext(context, (draft) => {

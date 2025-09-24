@@ -57,6 +57,22 @@ export class PullRequestMessagesModel extends CoreDocument {
 
     @Prop({ type: String, required: false })
     directoryId: string;
+
+    @Prop({
+        type: {
+            hideComments: {
+                type: Boolean,
+                default: false,
+                required: false,
+            },
+        },
+        _id: false,
+        required: false,
+        default: { hideComments: false },
+    })
+    globalSettings: {
+        hideComments: boolean;
+    };
 }
 
 export const PullRequestMessagesSchema = SchemaFactory.createForClass(
