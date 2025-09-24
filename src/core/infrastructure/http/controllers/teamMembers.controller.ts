@@ -12,11 +12,21 @@ import {
     ParseBoolPipe,
     Post,
     Query,
+    UseGuards,
 } from '@nestjs/common';
 import { TeamQueryDto } from '../dtos/teamId-query-dto';
 import { SendInvitesUseCase } from '@/core/application/use-cases/teamMembers/send-invites.use-case';
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
 import { DeleteTeamMembersUseCase } from '@/core/application/use-cases/teamMembers/delete.use-case';
+import {
+    CheckPolicies,
+    PolicyGuard,
+} from '../../adapters/services/permissions/policy.guard';
+import { checkPermissions } from '../../adapters/services/permissions/policy.handlers';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 @Controller('team-members')
 export class TeamMembersController {
@@ -29,16 +39,22 @@ export class TeamMembersController {
     ) {}
 
     @Get('/organization')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.UserSettings))
     public async getTeamMemberByOrganizationId(@Query() query: TeamQueryDto) {
         return this.getTeamMemberByRelationsUseCase.execute(query.teamId);
     }
 
     @Get('/')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.UserSettings))
     public async getTeamMembers(@Query() query: TeamQueryDto) {
         return this.getTeamMembersUseCase.execute(query.teamId);
     }
 
     @Post('/')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.UserSettings))
     public async createOrUpdateTeamMembers(
         @Body() body: { members: IMembers[]; teamId: string },
     ) {
@@ -49,6 +65,8 @@ export class TeamMembersController {
     }
 
     @Post('/send-invite')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.UserSettings))
     public async sendInvites(
         @Body()
         body: {
@@ -65,6 +83,8 @@ export class TeamMembersController {
     }
 
     @Delete('/:uuid')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Delete, ResourceType.UserSettings))
     public async deleteTeamMember(
         @Param('uuid') uuid: string,
         @Query('removeAll', new DefaultValuePipe(false), ParseBoolPipe)

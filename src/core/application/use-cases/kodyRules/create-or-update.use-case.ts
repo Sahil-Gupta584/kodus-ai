@@ -1,7 +1,12 @@
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { KODY_RULES_SERVICE_TOKEN } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import { IKodyRulesService } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
 import { CreateKodyRuleDto } from '@/core/infrastructure/http/dtos/create-kody-rule.dto';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
@@ -22,9 +27,15 @@ export class CreateOrUpdateKodyRulesUseCase {
                 email: string;
             };
         },
-    ) { }
 
-    async execute(kodyRule: CreateKodyRuleDto, organizationId: string, userInfo?: { userId: string, userEmail: string }) {
+        private readonly authorizationService: AuthorizationService,
+    ) {}
+
+    async execute(
+        kodyRule: CreateKodyRuleDto,
+        organizationId: string,
+        userInfo?: { userId: string; userEmail: string },
+    ) {
         try {
             const organizationAndTeamData: OrganizationAndTeamData = {
                 organizationId,
@@ -32,9 +43,22 @@ export class CreateOrUpdateKodyRulesUseCase {
 
             const req: any = this.request as any;
             const reqUser = req?.user;
-            const userInfoData = userInfo || (reqUser?.uuid && reqUser?.email
-                ? { userId: reqUser.uuid, userEmail: reqUser.email }
-                : { userId: 'kody-system', userEmail: 'kody@kodus.io' });
+            const userInfoData =
+                userInfo ||
+                (reqUser?.uuid && reqUser?.email
+                    ? { userId: reqUser.uuid, userEmail: reqUser.email }
+                    : { userId: 'kody-system', userEmail: 'kody@kodus.io' });
+
+            if (userInfoData.userId !== 'kody-system') {
+                await this.authorizationService.ensure({
+                    user: this.request.user,
+                    action: Action.Create,
+                    resource: ResourceType.KodyRules,
+                    repoIds: kodyRule.repositoryId
+                        ? [kodyRule.repositoryId]
+                        : undefined,
+                });
+            }
 
             const result = await this.kodyRulesService.createOrUpdate(
                 organizationAndTeamData,

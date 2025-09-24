@@ -23,7 +23,7 @@ import {
 } from '@/core/domain/user/contracts/user.service.contract';
 import { STATUS } from '@/config/types/database/status.type';
 import { IUser } from '@/core/domain/user/interfaces/user.interface';
-import { UserRole } from '@/core/domain/user/enums/userRole.enum';
+import { Role } from '@/core/domain/permissions/enums/permissions.enum';
 import { sendInvite } from '@/shared/utils/email/sendMail';
 import { TeamMemberRole } from '@/core/domain/teamMembers/enums/teamMemberRole.enum';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
@@ -174,6 +174,7 @@ export class TeamMemberService implements ITeamMemberService {
                     userStatus: member?.user?.status,
                     userExists:
                         member.user && member.user.status === STATUS.ACTIVE,
+                    role: member?.user?.role || Role.CONTRIBUTOR,
                 }),
             );
 
@@ -181,7 +182,8 @@ export class TeamMemberService implements ITeamMemberService {
         } catch (error) {
             this.logger.error({
                 message: 'Error in findTeamMembersFormated',
-                error: error instanceof Error ? error : new Error(String(error)),
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
                 context: 'TeamMemberService.findTeamMembersFormated',
                 metadata: {
                     organizationId: organizationAndTeamData.organizationId,
@@ -215,7 +217,8 @@ export class TeamMemberService implements ITeamMemberService {
                         email: problematicUser.email,
                         status: 'user_already_registered_in_other_organization',
                         uuid: problematicUser.uuid,
-                        message: 'User already registered in another organization'
+                        message:
+                            'User already registered in another organization',
                     });
                 }
             }
@@ -223,20 +226,21 @@ export class TeamMemberService implements ITeamMemberService {
             // If there are problematic users, we still process the valid ones
             if (!success) {
                 // Continue processing valid users but return partial success
-                const validEmails = emails.filter(email =>
-                    !problematicUserIds.some(pu => pu.email === email)
+                const validEmails = emails.filter(
+                    (email) =>
+                        !problematicUserIds.some((pu) => pu.email === email),
                 );
 
                 if (validEmails.length === 0) {
                     return {
                         success: false,
-                        results
+                        results,
                     };
                 }
 
                 // Filter members to only include valid ones
-                members = members.filter(member =>
-                    validEmails.includes(member.email)
+                members = members.filter((member) =>
+                    validEmails.includes(member.email),
                 );
             }
 
@@ -282,7 +286,7 @@ export class TeamMemberService implements ITeamMemberService {
                 results.push({
                     email: member.email,
                     status: 'invite_sent',
-                    message: 'Invite sent successfully'
+                    message: 'Invite sent successfully',
                 });
             }
 
@@ -295,7 +299,7 @@ export class TeamMemberService implements ITeamMemberService {
 
             return {
                 success: true,
-                results
+                results,
             };
         } catch (error) {
             throw new Error(error);
@@ -391,7 +395,7 @@ export class TeamMemberService implements ITeamMemberService {
             user = await this.usersService.register({
                 email: member.email,
                 password: this.generateTemporaryPassword(),
-                role: [UserRole.OWNER],
+                role: Role.CONTRIBUTOR,
                 status: STATUS.PENDING,
                 organization: {
                     uuid: organizationAndTeamData.organizationId,
@@ -456,7 +460,7 @@ export class TeamMemberService implements ITeamMemberService {
     ) {
         const admin = await this.usersService.findOne({
             organization: { uuid: organizationAndTeamData.organizationId },
-            role: [UserRole.OWNER],
+            role: Role.OWNER,
         });
 
         for (const userToSendInvitation of usersToSendInvitation) {

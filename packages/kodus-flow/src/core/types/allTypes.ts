@@ -2541,6 +2541,7 @@ export interface MCPServerConfig {
     timeout?: number;
     retries?: number;
     allowedTools?: string[];
+    provider?: string;
 }
 
 export interface MCPAdapterConfig {

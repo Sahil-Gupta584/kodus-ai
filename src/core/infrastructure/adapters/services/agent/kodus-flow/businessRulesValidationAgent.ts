@@ -111,22 +111,39 @@ export class BusinessRulesValidationAgentProvider {
             organizationAndTeamData,
         );
 
-        const defaultServers: MCPServerConfig[] = [
-            {
-                name: 'kodus-mcp-server',
-                type: 'http' as const,
-                url: process.env.API_KODUS_MCP_SERVER_URL,
-                timeout: 15_000,
-                retries: 2,
-                headers: { contentType: 'application/json' },
-                allowedTools: [
-                    'KODUS_GET_PULL_REQUEST_DIFF',
-                    'KODUS_GET_PULL_REQUEST',
-                ],
-            },
+        const requiredTools = [
+            'KODUS_GET_PULL_REQUEST_DIFF',
+            'KODUS_GET_PULL_REQUEST',
         ];
 
-        const servers = [...defaultServers, ...mcpManagerServers];
+        const filteredServers = mcpManagerServers.filter((server) => {
+            if (server.provider !== 'kodusmcp') {
+                return true;
+            }
+
+            const hasRequiredTools = requiredTools.some((tool) =>
+                server.allowedTools.includes(tool),
+            );
+
+            return hasRequiredTools;
+        });
+
+        if (filteredServers.length === 0) {
+            this.mcpAdapter = null;
+            return;
+        }
+
+        const servers = filteredServers.map((server) => {
+            if (server.provider === 'kodusmcp') {
+                return {
+                    ...server,
+                    allowedTools: server.allowedTools.filter((tool) =>
+                        requiredTools.includes(tool),
+                    ),
+                };
+            }
+            return server;
+        });
 
         this.mcpAdapter = createMCPAdapter({
             servers,
@@ -448,7 +465,10 @@ Remember to follow the RESPONSE FORMATTING INSTRUCTIONS from your system prompt.
     private buildValidationPrompt(context: any): string {
         return `BUSINESS RULES GAP ANALYSIS - Find what's missing, forgotten, or overlooked
 
-USER REQUEST: ${context?.prepareContext?.userQuestion || 'Analyze business rules compliance'}
+USER REQUEST: ${
+            context?.prepareContext?.userQuestion ||
+            'Analyze business rules compliance'
+        }
 
 LANGUAGE REQUIREMENTS:
 - Default response language is English

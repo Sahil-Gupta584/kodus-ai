@@ -7,12 +7,10 @@ import { PinoLoggerService } from '../../../logger/pino.service';
 import {
     AIAnalysisResult,
     AnalysisContext,
-    CodeReviewConfig,
     CodeReviewVersion,
     CodeSuggestion,
     FileChange,
     IFinalAnalysisResult,
-    Repository,
 } from '@/config/types/general/codeReview.type';
 import { benchmark } from '@/shared/utils/benchmark.util';
 import { createOptimizedBatches } from '@/shared/utils/batch.helper';
@@ -911,7 +909,8 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
 
             discardedSuggestionsBySeverity = prioritizedSuggestions.filter(
                 (suggestion) =>
-                    suggestion.priorityStatus === PriorityStatus.DISCARDED_BY_SEVERITY,
+                    suggestion.priorityStatus ===
+                    PriorityStatus.DISCARDED_BY_SEVERITY,
             );
         }
 
