@@ -1,14 +1,18 @@
-import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { Inject, Injectable, LoggerService } from '@nestjs/common';
-import { LLMModelProvider, MODEL_STRATEGIES, getChatGPT } from './helper';
+import {
+    FactoryArgs,
+    LLMModelProvider,
+    MODEL_STRATEGIES,
+    getChatGPT,
+} from './helper';
 import { ChatOpenAI } from '@langchain/openai';
 import { Runnable } from '@langchain/core/runnables';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { BYOKConfig, BYOKProviderService } from './byokProvider.service';
+import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 
-export type LLMProviderOptions = {
+export type LLMProviderOptions = FactoryArgs & {
     model: LLMModelProvider | string;
-    temperature: number;
     callbacks?: BaseCallbackHandler[];
     maxTokens?: number;
     jsonMode?: boolean;
@@ -34,13 +38,7 @@ export class LLMProviderService {
                 const byokProvider =
                     this.byokProviderService.createBYOKProvider(
                         options.byokConfig,
-                        {
-                            temperature: options.temperature,
-                            maxTokens: options.maxTokens,
-                            callbacks: options.callbacks,
-                            jsonMode: options.jsonMode,
-                            maxReasoningTokens: options.maxReasoningTokens,
-                        },
+                        options,
                     );
 
                 if (options.jsonMode && byokProvider instanceof ChatOpenAI) {
@@ -57,10 +55,8 @@ export class LLMProviderService {
             if (envMode !== 'auto') {
                 // for self-hosted: using openAI provider and changing baseURL
                 const llm = getChatGPT({
+                    ...options,
                     model: envMode,
-                    temperature: options.temperature,
-                    maxTokens: options.maxTokens,
-                    callbacks: options.callbacks,
                     baseURL: process.env.API_OPENAI_FORCE_BASE_URL,
                     apiKey: process.env.API_OPEN_AI_API_KEY,
                 });
@@ -90,11 +86,9 @@ export class LLMProviderService {
                 });
 
                 const llm = getChatGPT({
+                    ...options,
                     model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
                         .modelName,
-                    temperature: options.temperature,
-                    maxTokens: options.maxTokens,
-                    callbacks: options.callbacks,
                 });
 
                 return options.jsonMode
@@ -107,10 +101,8 @@ export class LLMProviderService {
             const { factory, modelName, baseURL } = strategy;
 
             let llm = factory({
+                ...options,
                 model: modelName,
-                temperature: options.temperature,
-                maxTokens: options.maxTokens,
-                callbacks: options.callbacks,
                 baseURL,
                 json: options.jsonMode,
                 maxReasoningTokens:
@@ -139,11 +131,9 @@ export class LLMProviderService {
             });
 
             const llm = getChatGPT({
+                ...options,
                 model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
                     .modelName,
-                temperature: options.temperature,
-                maxTokens: options.maxTokens,
-                callbacks: options.callbacks,
                 apiKey: process.env.API_OPEN_AI_API_KEY,
             });
 
