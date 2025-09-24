@@ -26,6 +26,8 @@ import {
     Action,
     ResourceType,
 } from '@/core/domain/permissions/enums/permissions.enum';
+import { IPullRequests } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
+import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.enum';
 
 @Injectable()
 export class GetEnrichedPullRequestsUseCase implements IUseCase {
@@ -50,7 +52,14 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
     async execute(
         query: EnrichedPullRequestsQueryDto,
     ): Promise<PaginatedEnrichedPullRequestsResponse> {
-        const { repositoryId, repositoryName, limit = 30, page = 1 } = query;
+        const {
+            repositoryId,
+            repositoryName,
+            limit = 30,
+            page = 1,
+            hasSentSuggestions,
+            pullRequestTitle,
+        } = query;
 
         if (!this.request.user?.organization?.uuid) {
             this.logger.warn({
@@ -137,13 +146,21 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
 
             for (const execution of filteredExecutions) {
                 try {
-                    // Buscar PR no MongoDB
                     const pullRequest =
                         await this.pullRequestsService.findByNumberAndRepositoryId(
                             execution.pullRequestNumber!,
                             execution.repositoryId!,
                             { organizationId },
                         );
+
+                    if (
+                        pullRequestTitle &&
+                        !pullRequest?.title
+                            .toLocaleLowerCase()
+                            .includes(pullRequestTitle.toLocaleLowerCase())
+                    ) {
+                        continue;
+                    }
 
                     if (!pullRequest) {
                         this.logger.warn({
@@ -158,7 +175,6 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                         continue;
                     }
 
-                    // Aplicar filtro por nome do repositório se fornecido
                     if (
                         repositoryName &&
                         pullRequest.repository.name !== repositoryName
@@ -166,13 +182,11 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                         continue;
                     }
 
-                    // Buscar timeline de code review executions da tabela específica
                     const codeReviewExecutions =
                         await this.codeReviewExecutionService.find({
                             automationExecution: { uuid: execution.uuid },
                         });
 
-                    // Filtrar apenas PRs que têm histórico de code review
                     if (
                         !codeReviewExecutions ||
                         codeReviewExecutions.length === 0
@@ -199,13 +213,26 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                         }),
                     );
 
-                    // Extrair dados enriquecidos do dataExecution
                     const enrichedData = this.extractEnrichedData(
                         execution.dataExecution,
                     );
 
+                    const suggestionsCount =
+                        this.extractSuggestionsCount(pullRequest);
+
+                    if (
+                        hasSentSuggestions === true &&
+                        suggestionsCount?.sent <= 0
+                    ) {
+                        continue;
+                    } else if (
+                        hasSentSuggestions === false &&
+                        suggestionsCount?.sent > 0
+                    ) {
+                        continue;
+                    }
+
                     const enrichedPR: EnrichedPullRequestResponse = {
-                        // Dados do PR
                         prId: pullRequest.uuid!,
                         prNumber: pullRequest.number,
                         title: pullRequest.title,
@@ -227,8 +254,6 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                             name: pullRequest.user.name,
                         },
                         isDraft: pullRequest.isDraft,
-
-                        // Dados da execução de automação
                         automationExecution: {
                             uuid: execution.uuid,
                             status: execution.status,
@@ -237,12 +262,9 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                             updatedAt: execution.updatedAt!,
                             origin: execution.origin,
                         },
-
-                        // Timeline
                         codeReviewTimeline,
-
-                        // Dados enriquecidos
                         enrichedData,
+                        suggestionsCount,
                     };
 
                     enrichedPullRequests.push(enrichedPR);
@@ -257,7 +279,6 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                             repositoryId: execution.repositoryId,
                         },
                     });
-                    // Continue processing other executions
                 }
             }
 
@@ -361,5 +382,19 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                   }
                 : undefined,
         };
+    }
+
+    private extractSuggestionsCount(pullRequest: IPullRequests) {
+        return (pullRequest.files ?? []).reduce(
+            (acc, file) => {
+                for (const { deliveryStatus } of file.suggestions ?? []) {
+                    if (deliveryStatus === DeliveryStatus.SENT) acc.sent += 1;
+                    else if (deliveryStatus === DeliveryStatus.NOT_SENT)
+                        acc.filtered += 1;
+                }
+                return acc;
+            },
+            { sent: 0, filtered: 0 },
+        );
     }
 }
