@@ -15,6 +15,7 @@ import { TaskStatus } from '@kodus/kodus-proto/task';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { IClusterizedSuggestion } from '../../../kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
+import { ObservabilitySystem } from '@kodus/flow/dist/observability';
 
 export interface CodeReviewPipelineContext extends PipelineContext {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -105,4 +106,6 @@ export interface CodeReviewPipelineContext extends PipelineContext {
 
     // Metadados dos arquivos processados (reviewMode, codeReviewModelUsed, etc.)
     fileMetadata?: Map<string, any>;
+
+    correlationId: string;
 }

@@ -1,11 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { TokenChunkingService } from '@/shared/utils/tokenChunking/tokenChunking.service';
-import {
-    TokenTrackingService,
-    TokenTrackingSession,
-    TOKEN_TRACKING_SERVICE_TOKEN,
-} from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
 import { RunnableSequence } from '@langchain/core/runnables';
 import {
     CrossFileAnalysisPayload,
@@ -27,8 +22,10 @@ import {
     ParserType,
     PromptRole,
     PromptRunnerService,
+    TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
+import { endSpan, newSpan } from './utils/span.utils';
 
 //#region Interfaces
 interface TokenUsage {
@@ -68,7 +65,7 @@ interface PreparedFileData {
 
 @Injectable()
 export class CrossFileAnalysisService {
-    private readonly tokenTracker: TokenTrackingSession;
+    private readonly tokenTracker: TokenTrackingHandler;
     private readonly DEFAULT_USAGE_LLM_MODEL_PERCENTAGE = 70;
     private readonly DEFAULT_BATCH_CONFIG: BatchProcessingConfig = {
         maxConcurrentChunks: 10,
@@ -81,15 +78,10 @@ export class CrossFileAnalysisService {
         private readonly llmProviderService: LLMProviderService,
         private readonly logger: PinoLoggerService,
         private readonly tokenChunkingService: TokenChunkingService,
-        @Inject(TOKEN_TRACKING_SERVICE_TOKEN)
-        private readonly tokenTrackingService: TokenTrackingService,
 
         private readonly promptRunnerService: PromptRunnerService,
     ) {
-        this.tokenTracker = new TokenTrackingSession(
-            uuidv4(),
-            this.tokenTrackingService,
-        );
+        this.tokenTracker = new TokenTrackingHandler();
     }
 
     async analyzeCrossFileCode(
@@ -465,6 +457,8 @@ export class CrossFileAnalysisService {
 
         const runName = `crossFile${analysisType.charAt(0).toUpperCase() + analysisType.slice(1)}`;
 
+        newSpan(`${CrossFileAnalysisService.name}::processChunk`);
+
         const analysis = await this.promptRunnerService
             .builder()
             .setProviders({
@@ -487,7 +481,7 @@ export class CrossFileAnalysisService {
                 ...this.buildTags(provider, 'primary', analysisType),
                 ...this.buildTags(fallbackProvider, 'fallback', analysisType),
             ])
-            .addCallbacks([this.tokenTracker.createCallbackHandler()])
+            .addCallbacks([this.tokenTracker])
             .setRunName(runName)
             .setMaxReasoningTokens(5000)
             .addMetadata({
@@ -498,6 +492,12 @@ export class CrossFileAnalysisService {
                 analysisType,
             })
             .execute();
+
+        endSpan(this.tokenTracker, {
+            organizationId: organizationAndTeamData?.organizationId,
+            prNumber,
+            analysisType,
+        });
 
         if (!analysis) {
             const message = `Empty response from LLM for ${analysisType} on chunk ${chunkIndex + 1}`;

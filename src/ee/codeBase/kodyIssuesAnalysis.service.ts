@@ -20,7 +20,12 @@ import {
     PromptRunnerService,
     ParserType,
     PromptRole,
+    TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
+import {
+    endSpan,
+    newSpan,
+} from '@/core/infrastructure/adapters/services/codeBase/utils/span.utils';
 
 export const KODY_ISSUES_ANALYSIS_SERVICE_TOKEN = Symbol(
     'KodyIssuesAnalysisService',
@@ -31,6 +36,8 @@ type UserPromptFn = (input: any) => string;
 
 @Injectable()
 export class KodyIssuesAnalysisService {
+    private readonly tokenTracker: TokenTrackingHandler;
+
     constructor(
         private readonly logger: PinoLoggerService,
 
@@ -40,7 +47,9 @@ export class KodyIssuesAnalysisService {
         private readonly parametersService: IParametersService,
 
         private readonly promptRunnerService: PromptRunnerService,
-    ) {}
+    ) {
+        this.tokenTracker = new TokenTrackingHandler();
+    }
 
     async mergeSuggestionsIntoIssues(
         organizationAndTeamData: OrganizationAndTeamData,
@@ -50,6 +59,10 @@ export class KodyIssuesAnalysisService {
         try {
             const provider = LLMModelProvider.GEMINI_2_5_PRO;
             const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+
+            newSpan(
+                `${KodyIssuesAnalysisService.name}::mergeSuggestionsIntoIssues`,
+            );
 
             const result = await this.promptRunnerService
                 .builder()
@@ -79,8 +92,14 @@ export class KodyIssuesAnalysisService {
                     ...this.buildTags(provider, 'primary'),
                     ...this.buildTags(fallbackProvider, 'fallback'),
                 ])
+                .addCallbacks([this.tokenTracker])
                 .setTemperature(0)
                 .execute();
+
+            endSpan(this.tokenTracker, {
+                organizationId: organizationAndTeamData.organizationId,
+                prNumber: pullRequest.number,
+            });
 
             if (!result) {
                 const message = `No response from LLM for PR#${pullRequest.number}`;
@@ -124,6 +143,8 @@ export class KodyIssuesAnalysisService {
             const provider = LLMModelProvider.GEMINI_2_5_PRO;
             const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
 
+            newSpan(`${KodyIssuesAnalysisService.name}::resolveExistingIssues`);
+
             const result = await this.promptRunnerService
                 .builder()
                 .setProviders({
@@ -152,8 +173,14 @@ export class KodyIssuesAnalysisService {
                     ...this.buildTags(provider, 'primary'),
                     ...this.buildTags(fallbackProvider, 'fallback'),
                 ])
+                .addCallbacks([this.tokenTracker])
                 .setTemperature(0)
                 .execute();
+
+            endSpan(this.tokenTracker, {
+                organizationId: context.organizationAndTeamData.organizationId,
+                prNumber: context.pullRequest.number,
+            });
 
             if (!result) {
                 const message = `No response from LLM for PR#${context.pullRequest.number}`;

@@ -10,15 +10,26 @@ import { CodeReviewPipelineContext } from './codeReviewPipeline/context/code-rev
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { TaskStatus } from '@kodus/kodus-proto/task';
 import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
+import { getObservability, IdGenerator } from '@kodus/flow';
+import { ConfigService } from '@nestjs/config';
+import { DatabaseConnection } from '@/config/types';
+import { ConnectionString } from 'connection-string';
 
 @Injectable()
 export class CodeReviewHandlerService {
+    private readonly config: DatabaseConnection;
+
     constructor(
         @Inject('PIPELINE_PROVIDER')
         private readonly pipelineFactory: PipelineFactory<CodeReviewPipelineContext>,
 
         private readonly logger: PinoLoggerService,
-    ) {}
+
+        private readonly configService: ConfigService,
+    ) {
+        this.config =
+            this.configService.get<DatabaseConnection>('mongoDatabase');
+    }
 
     async handlePullRequest(
         organizationAndTeamData: OrganizationAndTeamData,
@@ -31,6 +42,40 @@ export class CodeReviewHandlerService {
         action: string,
     ) {
         try {
+            const uri = new ConnectionString('', {
+                user: this.config.username,
+                password: this.config.password,
+                protocol: this.config.port ? 'mongodb' : 'mongodb+srv',
+                hosts: [{ name: this.config.host, port: this.config.port }],
+            }).toString();
+
+            const correlationId = IdGenerator.correlationId();
+            const obs = getObservability({
+                logging: { enabled: true, level: 'info' },
+                mongodb: {
+                    type: 'mongodb',
+                    connectionString: uri,
+                    database: this.config.database,
+                    collections: {
+                        logs: 'observability_logs',
+                        telemetry: 'observability_telemetry',
+                        errors: 'observability_errors',
+                    },
+                    batchSize: 100,
+                    flushIntervalMs: 5000,
+                    ttlDays: 30,
+                    enableObservability: true,
+                },
+                telemetry: {
+                    enabled: true,
+                    serviceName: 'codeReviewPipeline',
+                    sampling: { rate: 1, strategy: 'probabilistic' },
+                },
+            });
+            obs.initialize();
+            const ctx = obs.createContext(correlationId);
+            obs.setContext(ctx);
+
             const initialContext: CodeReviewPipelineContext = {
                 statusInfo: {
                     status: AutomationStatus.IN_PROGRESS,
@@ -63,6 +108,7 @@ export class CodeReviewHandlerService {
                         status: TaskStatus.TASK_STATUS_UNSPECIFIED,
                     },
                 },
+                correlationId,
             };
 
             this.logger.log({

@@ -29,27 +29,19 @@ import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { TokenChunkingService } from '@/shared/utils/tokenChunking/tokenChunking.service';
 import {
-    TokenTrackingService,
-    TokenTrackingSession,
-} from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
-import {
     LLMModelProvider,
     PromptRunnerService,
     PromptRole,
     ParserType,
+    TokenUsage,
+    TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
+import {
+    endSpan,
+    newSpan,
+} from '@/core/infrastructure/adapters/services/codeBase/utils/span.utils';
 
 //#region Interfaces
-// Interface for token tracking
-interface TokenUsage {
-    input_tokens?: number;
-    output_tokens?: number;
-    total_tokens?: number;
-    model?: string;
-    runId?: string;
-    parentRunId?: string;
-}
-
 // Interface for analyzer response
 interface AnalyzerViolation {
     violatedFileSha: string[] | null;
@@ -103,7 +95,7 @@ export const KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN = Symbol(
 export class KodyRulesPrLevelAnalysisService
     implements IKodyRulesAnalysisService
 {
-    private readonly tokenTracker: TokenTrackingSession;
+    private readonly tokenTracker: TokenTrackingHandler;
 
     private readonly DEFAULT_USAGE_LLM_MODEL_PERCENTAGE = 70;
 
@@ -124,10 +116,7 @@ export class KodyRulesPrLevelAnalysisService
 
         private readonly promptRunnerService: PromptRunnerService,
     ) {
-        this.tokenTracker = new TokenTrackingSession(
-            uuidv4(),
-            new TokenTrackingService(),
-        );
+        this.tokenTracker = new TokenTrackingHandler();
     }
 
     async analyzeCodeWithAI(
@@ -934,6 +923,8 @@ export class KodyRulesPrLevelAnalysisService
         const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
 
         try {
+            newSpan(`${KodyRulesPrLevelAnalysisService.name}::processChunk`);
+
             const analysis = await this.promptRunnerService
                 .builder()
                 .setProviders({
@@ -962,10 +953,16 @@ export class KodyRulesPrLevelAnalysisService
                     ...this.buildTags(provider, 'primary'),
                     ...this.buildTags(fallbackProvider, 'fallback'),
                 ])
-                .addCallbacks([this.tokenTracker.createCallbackHandler()])
+                .addCallbacks([this.tokenTracker])
                 .setRunName('prLevelKodyRulesAnalyzer')
                 .setTemperature(0)
                 .execute();
+
+            endSpan(this.tokenTracker, {
+                organizationId: organizationAndTeamData.organizationId,
+                prNumber,
+                chunkIndex,
+            });
 
             if (!analysis) {
                 const message = `No response from LLM for chunk ${chunkIndex + 1} for PR#${prNumber}`;
@@ -1261,6 +1258,10 @@ export class KodyRulesPrLevelAnalysisService
         try {
             const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
 
+            newSpan(
+                `${KodyRulesPrLevelAnalysisService.name}::processRuleGrouping`,
+            );
+
             const grouping = await this.promptRunnerService
                 .builder()
                 .setProviders({
@@ -1287,12 +1288,18 @@ export class KodyRulesPrLevelAnalysisService
                 })
                 .setRunName('prLevelKodyRulesGrouper')
                 .setTemperature(0)
-                .addCallbacks([this.tokenTracker.createCallbackHandler()])
+                .addCallbacks([this.tokenTracker])
                 .addTags([
                     ...this.buildTags(provider, 'primary'),
                     ...this.buildTags(fallbackProvider, 'fallback'),
                 ])
                 .execute();
+
+            endSpan(this.tokenTracker, {
+                organizationId: organizationAndTeamData.organizationId,
+                prNumber,
+                ruleId: rule?.uuid,
+            });
 
             if (!grouping) {
                 const message = 'No response from LLM for grouping suggestions';

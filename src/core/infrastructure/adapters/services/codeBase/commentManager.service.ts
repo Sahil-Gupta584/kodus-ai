@@ -34,6 +34,7 @@ import {
     ParserType,
     PromptRole,
     PromptRunnerService,
+    TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
 
 interface ClusteredSuggestion {
@@ -47,10 +48,12 @@ import {
     MessageTemplateProcessor,
     PlaceholderContext,
 } from './utils/services/messageTemplateProcessor.service';
+import { endSpan, newSpan } from './utils/span.utils';
 
 @Injectable()
 export class CommentManagerService implements ICommentManagerService {
     private readonly llmResponseProcessor: LLMResponseProcessor;
+    private readonly tokenTracker: TokenTrackingHandler;
 
     constructor(
         private readonly codeManagementService: CodeManagementService,
@@ -63,6 +66,7 @@ export class CommentManagerService implements ICommentManagerService {
         private readonly promptRunnerService: PromptRunnerService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
+        this.tokenTracker = new TokenTrackingHandler();
     }
 
     async generateSummaryPR(
@@ -157,6 +161,8 @@ export class CommentManagerService implements ICommentManagerService {
 
                 const userPrompt = `<changedFilesContext>${JSON.stringify(baseContext?.changedFiles, null, 2) || 'No files changed'}</changedFilesContext>`;
 
+                newSpan(`${CommentManagerService.name}::generateSummaryPR`);
+
                 const result = await this.promptRunnerService
                     .builder()
                     .setProviders({
@@ -182,9 +188,16 @@ export class CommentManagerService implements ICommentManagerService {
                         provider: LLMModelProvider.GEMINI_2_5_FLASH,
                         fallbackProvider,
                     })
+                    .addCallbacks([this.tokenTracker])
                     .setRunName('generateSummaryPR')
                     .setTemperature(0)
                     .execute();
+
+                endSpan(this.tokenTracker, {
+                    organizationId: organizationAndTeamData?.organizationId,
+                    prNumber: pullRequest?.number,
+                    repositoryId: repository?.id,
+                });
 
                 if (!result) {
                     throw new Error(
@@ -857,6 +870,10 @@ ${reviewOptions}
 
             const userPrompt = `<codeSuggestionsContext>${JSON.stringify(baseContext?.codeSuggestions, null, 2) || 'No code suggestions provided'}</codeSuggestionsContext>`;
 
+            newSpan(
+                `${CommentManagerService.name}::repeatedCodeReviewSuggestionClustering`,
+            );
+
             const result = await this.promptRunnerService
                 .builder()
                 .setProviders({
@@ -881,9 +898,15 @@ ${reviewOptions}
                     provider,
                     fallbackProvider,
                 })
+                .addCallbacks([this.tokenTracker])
                 .setRunName('repeatedCodeReviewSuggestionClustering')
                 .setTemperature(0)
                 .execute();
+
+            endSpan(this.tokenTracker, {
+                organizationId: organizationAndTeamData?.organizationId,
+                prNumber,
+            });
 
             if (!result) {
                 const message =

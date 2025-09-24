@@ -45,8 +45,13 @@ import {
     PromptRunnerService,
     ParserType,
     PromptRole,
+    TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
 import { z } from 'zod';
+import {
+    endSpan,
+    newSpan,
+} from '@/core/infrastructure/adapters/services/codeBase/utils/span.utils';
 
 // Interface for extended context used in Kody Rules analysis
 interface KodyRulesExtendedContext {
@@ -68,79 +73,6 @@ interface KodyRulesExtendedContext {
     standardSuggestions?: AIAnalysisResult;
     updatedSuggestions?: AIAnalysisResult;
     filteredKodyRules?: Array<Partial<IKodyRule>>;
-}
-
-// Interface for token tracking
-interface TokenUsage {
-    input_tokens?: number;
-    output_tokens?: number;
-    total_tokens?: number;
-    model?: string;
-    runId?: string;
-    parentRunId?: string;
-}
-
-// Handler for token tracking
-class TokenTrackingHandler extends BaseCallbackHandler {
-    name = 'TokenTrackingHandler';
-    tokenUsages: TokenUsage[] = [];
-
-    private extractUsageMetadata(output: any): TokenUsage {
-        try {
-            // Attempts to extract information from different locations in the response
-            const usage: TokenUsage = {};
-
-            // Extracts token information
-            if (output?.llmOutput?.tokenUsage) {
-                Object.assign(usage, output.llmOutput.tokenUsage);
-            } else if (output?.llmOutput?.usage) {
-                Object.assign(usage, output.llmOutput.usage);
-            } else if (output?.generations?.[0]?.[0]?.message?.usage_metadata) {
-                const metadata =
-                    output.generations[0][0].message.usage_metadata;
-                usage.input_tokens = metadata.input_tokens;
-                usage.output_tokens = metadata.output_tokens;
-                usage.total_tokens = metadata.total_tokens;
-            }
-
-            // Extracts model
-            usage.model =
-                output?.llmOutput?.model ||
-                output?.generations?.[0]?.[0]?.message?.response_metadata
-                    ?.model ||
-                'unknown';
-
-            return usage;
-        } catch (error) {
-            console.error('Error extracting usage metadata:', error);
-            return {};
-        }
-    }
-
-    async handleLLMEnd(
-        output: any,
-        runId: string,
-        parentRunId?: string,
-        tags?: string[],
-    ) {
-        const usage = this.extractUsageMetadata(output);
-
-        if (Object.keys(usage).length > 0) {
-            this.tokenUsages.push({
-                ...usage,
-                runId,
-                parentRunId,
-            });
-        }
-    }
-
-    getTokenUsages(): TokenUsage[] {
-        return this.tokenUsages;
-    }
-
-    reset() {
-        this.tokenUsages = [];
-    }
 }
 
 export const KODY_RULES_ANALYSIS_SERVICE_TOKEN = Symbol(
@@ -352,6 +284,10 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
             const provider = LLMModelProvider.GEMINI_2_5_FLASH;
             const fallbackProvider = LLMModelProvider.GEMINI_2_5_PRO;
 
+            newSpan(
+                `${KodyRulesAnalysisService.name}::extractKodyRuleIdsFromContent`,
+            );
+
             const extraction = await this.promptRunnerService
                 .builder()
                 .setProviders({
@@ -386,6 +322,11 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 .setRunName('extractKodyRuleIdsFromContent')
                 .setTemperature(0)
                 .execute();
+
+            endSpan(this.tokenTracker, {
+                organizationId: organizationAndTeamData.organizationId,
+                prNumber: prNumber,
+            });
 
             if (!extraction) {
                 const message = `No Kody Rule IDs extracted from content for PR#${prNumber}`;
@@ -476,6 +417,8 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         };
 
         try {
+            newSpan(`${KodyRulesAnalysisService.name}::analyzeCodeWithAI`);
+
             const classifier = this.getClassifier(
                 provider,
                 fallbackProvider,
@@ -545,6 +488,11 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
 
             const generatedKodyRulesSuggestionsResult =
                 await generator.execute();
+
+            endSpan(this.tokenTracker, {
+                organizationId: organizationAndTeamData.organizationId,
+                prNumber: prNumber,
+            });
 
             const generatedKodyRulesSuggestions = this.processLLMResponse(
                 organizationAndTeamData,
@@ -852,42 +800,6 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
 
         // Retorna true apenas se filtros estão explicitamente habilitados para Kody Rules
         return suggestionControl.applyFiltersToKodyRules === true;
-    }
-
-    private getBasePromptBuilder(
-        provider: LLMModelProvider,
-        baseContext: KodyRulesExtendedContext,
-        fallbackProvider?: LLMModelProvider,
-    ) {
-        let fallbackProviderToUse = fallbackProvider;
-        if (!fallbackProviderToUse)
-            fallbackProviderToUse =
-                provider === LLMModelProvider.GEMINI_2_5_PRO
-                    ? LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET
-                    : LLMModelProvider.GEMINI_2_5_FLASH;
-
-        return this.promptRunnerService
-            .builder()
-            .setProviders({
-                main: provider,
-                fallback: fallbackProvider,
-            })
-            .setParser(ParserType.STRING)
-            .setLLMJsonMode(true)
-            .addMetadata({
-                organizationId:
-                    baseContext?.organizationAndTeamData?.organizationId,
-                teamId: baseContext?.organizationAndTeamData?.teamId,
-                pullRequestId: baseContext?.pullRequest?.number,
-                provider: provider,
-                fallbackProvider: fallbackProvider,
-            })
-            .addCallbacks([this.tokenTracker])
-            .addTags([
-                ...this.buildTags(provider, 'primary'),
-                ...this.buildTags(fallbackProvider, 'fallback'),
-            ])
-            .setTemperature(0);
     }
 
     private processClassifierResponse(

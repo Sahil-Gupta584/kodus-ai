@@ -47,13 +47,19 @@ import {
     PromptRunnerService,
     PromptRole,
     ParserType,
+    TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
 import { status as Status } from '@grpc/grpc-js';
+import {
+    endSpan,
+    newSpan,
+} from '@/core/infrastructure/adapters/services/codeBase/utils/span.utils';
 
 @Injectable()
 export class CodeAstAnalysisService
     implements IASTAnalysisService, OnModuleInit
 {
+    private readonly tokenTracker: TokenTrackingHandler;
     private readonly llmResponseProcessor: LLMResponseProcessor;
     private astMicroservice: ASTAnalyzerServiceClient;
     private taskMicroservice: TaskManagerServiceClient;
@@ -71,6 +77,7 @@ export class CodeAstAnalysisService
         private readonly promptRunnerService: PromptRunnerService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
+        this.tokenTracker = new TokenTrackingHandler();
     }
 
     onModuleInit() {
@@ -95,6 +102,8 @@ export class CodeAstAnalysisService
 
             const payload = await this.prepareAnalysisContext(context);
 
+            newSpan(`${CodeAstAnalysisService.name}::analyzeASTWithAI`);
+
             const analysis = await this.promptRunnerService
                 .builder()
                 .setProviders({
@@ -115,8 +124,14 @@ export class CodeAstAnalysisService
                     pullRequestId: context?.pullRequest?.number,
                 })
                 .setTemperature(0)
+                .addCallbacks([this.tokenTracker])
                 .setRunName('CodeASTAnalysisAI')
                 .execute();
+
+            endSpan(this.tokenTracker, {
+                organizationId: context.organizationAndTeamData.organizationId,
+                prNumber: context.pullRequest.number,
+            });
 
             if (!analysis) {
                 const message = `No response from LLM for PR#${context.pullRequest.number}`;

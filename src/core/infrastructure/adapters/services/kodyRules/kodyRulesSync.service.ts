@@ -23,6 +23,7 @@ import {
     ParserType,
     PromptRole,
     LLMModelProvider,
+    TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
 import { UpdateOrCreateCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/update-or-create-code-review-parameter-use-case';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
@@ -31,6 +32,7 @@ import {
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import * as path from 'path';
+import { endSpan, newSpan } from '../codeBase/utils/span.utils';
 
 type SyncTarget = {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -44,6 +46,8 @@ type SyncTarget = {
 
 @Injectable()
 export class KodyRulesSyncService {
+    private readonly tokenTracker: TokenTrackingHandler;
+
     constructor(
         @Inject(CreateOrUpdateKodyRulesUseCase)
         private readonly upsertRule: CreateOrUpdateKodyRulesUseCase,
@@ -55,7 +59,9 @@ export class KodyRulesSyncService {
         private readonly promptRunner: PromptRunnerService,
         private readonly logger: PinoLoggerService,
         private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
-    ) {}
+    ) {
+        this.tokenTracker = new TokenTrackingHandler();
+    }
 
     /**
      * Find the configured directory (if any) that contains a given repository-relative file path.
@@ -844,6 +850,8 @@ export class KodyRulesSyncService {
         content: string;
     }): Promise<Array<Partial<CreateKodyRuleDto>>> {
         try {
+            newSpan(`${KodyRulesSyncService.name}::convertFileToKodyRules`);
+
             const result = await this.promptRunner
                 .builder()
                 .setProviders({
@@ -882,8 +890,15 @@ export class KodyRulesSyncService {
                     role: PromptRole.USER,
                     prompt: `File: ${params.filePath}\n\nContent:\n${params.content}`,
                 })
+                .addCallbacks([this.tokenTracker])
                 .setRunName('kodyRulesFileToRules')
                 .execute();
+
+            endSpan(this.tokenTracker, {
+                repositoryId: params.repositoryId,
+                filePath: params.filePath,
+                fallback: false,
+            });
 
             if (!Array.isArray(result)) return [];
 
@@ -898,6 +913,8 @@ export class KodyRulesSyncService {
             }));
         } catch (error) {
             try {
+                newSpan(`${KodyRulesSyncService.name}::convertFileToKodyRules`);
+
                 const raw = await this.promptRunner
                     .builder()
                     .setProviders({
@@ -918,8 +935,15 @@ export class KodyRulesSyncService {
                         role: PromptRole.USER,
                         prompt: `File: ${params.filePath}\n\nContent:\n${params.content}`,
                     })
+                    .addCallbacks([this.tokenTracker])
                     .setRunName('kodyRulesFileToRulesRaw')
                     .execute();
+
+                endSpan(this.tokenTracker, {
+                    repositoryId: params.repositoryId,
+                    filePath: params.filePath,
+                    fallback: true,
+                });
 
                 const parsed = this.extractJsonArray(raw);
                 if (!Array.isArray(parsed)) return [];
