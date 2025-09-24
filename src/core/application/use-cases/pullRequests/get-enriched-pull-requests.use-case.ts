@@ -81,42 +81,202 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
         const organizationId = this.request.user.organization.uuid;
 
         try {
-            const automationExecutions =
-                await this.automationExecutionService.find({
-                    teamAutomation: {
-                        team: {
-                            organization: {
-                                uuid: organizationId,
-                            },
-                        },
-                    },
-                });
+            const assignedRepositoryIds =
+                await this.authorizationService.getRepositoryScope(
+                    this.request.user,
+                    Action.Read,
+                    ResourceType.PullRequests,
+                );
 
-            if (!automationExecutions || automationExecutions.length === 0) {
-                this.logger.warn({
-                    message: 'No automation executions found for organization',
-                    context: GetEnrichedPullRequestsUseCase.name,
-                    metadata: { organizationId },
-                });
-                return {
-                    data: [],
-                    pagination: {
-                        currentPage: page,
-                        totalPages: 0,
-                        totalItems: 0,
-                        itemsPerPage: limit,
-                        hasNextPage: false,
-                        hasPreviousPage: false,
-                    },
-                };
+            const allowedRepositoryIds = (() => {
+                if (repositoryId) {
+                    return [repositoryId];
+                }
+
+                if (assignedRepositoryIds !== null) {
+                    return assignedRepositoryIds;
+                }
+
+                return undefined;
+            })();
+
+            const enrichedPullRequests: EnrichedPullRequestResponse[] = [];
+            const initialSkip = (page - 1) * limit;
+            let accumulatedExecutions = 0;
+            let totalExecutions = 0;
+            let hasMoreExecutions = true;
+
+            while (enrichedPullRequests.length < limit && hasMoreExecutions) {
+                const { data: executionsBatch, total } =
+                    await this.automationExecutionService.findPullRequestExecutionsByOrganization(
+                        {
+                            organizationId,
+                            repositoryIds: allowedRepositoryIds,
+                            skip: initialSkip + accumulatedExecutions,
+                            take: limit,
+                            order: 'DESC',
+                        },
+                    );
+
+                if (totalExecutions === 0) {
+                    totalExecutions = total;
+                }
+
+                if (!executionsBatch.length) {
+                    hasMoreExecutions = false;
+                    break;
+                }
+
+                for (const execution of executionsBatch) {
+                    try {
+                        const pullRequest =
+                            await this.pullRequestsService.findByNumberAndRepositoryId(
+                                execution.pullRequestNumber!,
+                                execution.repositoryId!,
+                                { organizationId },
+                            );
+
+                        if (
+                            pullRequestTitle &&
+                            !pullRequest?.title
+                                .toLocaleLowerCase()
+                                .includes(pullRequestTitle.toLocaleLowerCase())
+                        ) {
+                            continue;
+                        }
+
+                        if (!pullRequest) {
+                            this.logger.warn({
+                                message: 'Pull request not found in MongoDB',
+                                context: GetEnrichedPullRequestsUseCase.name,
+                                metadata: {
+                                    prNumber: execution.pullRequestNumber,
+                                    repositoryId: execution.repositoryId,
+                                    organizationId,
+                                },
+                            });
+                            continue;
+                        }
+
+                        if (
+                            repositoryName &&
+                            pullRequest.repository.name !== repositoryName
+                        ) {
+                            continue;
+                        }
+
+                        const codeReviewExecutions =
+                            await this.codeReviewExecutionService.find({
+                                automationExecution: { uuid: execution.uuid },
+                            });
+
+                        if (
+                            !codeReviewExecutions ||
+                            codeReviewExecutions.length === 0
+                        ) {
+                            this.logger.debug({
+                                message: 'Skipping PR without code review history',
+                                context: GetEnrichedPullRequestsUseCase.name,
+                                metadata: {
+                                    prNumber: execution.pullRequestNumber,
+                                    repositoryId: execution.repositoryId,
+                                    executionUuid: execution.uuid,
+                                },
+                            });
+                            continue;
+                        }
+
+                        const codeReviewTimeline = codeReviewExecutions.map(
+                            (cre) => ({
+                                uuid: cre.uuid,
+                                createdAt: cre.createdAt,
+                                updatedAt: cre.updatedAt,
+                                status: cre.status,
+                                message: cre.message,
+                            }),
+                        );
+
+                        const enrichedData = this.extractEnrichedData(
+                            execution.dataExecution,
+                        );
+
+                        const suggestionsCount =
+                            this.extractSuggestionsCount(pullRequest);
+
+                        if (
+                            hasSentSuggestions === true &&
+                            suggestionsCount?.sent <= 0
+                        ) {
+                            continue;
+                        } else if (
+                            hasSentSuggestions === false &&
+                            suggestionsCount?.sent > 0
+                        ) {
+                            continue;
+                        }
+
+                        const enrichedPR: EnrichedPullRequestResponse = {
+                            prId: pullRequest.uuid!,
+                            prNumber: pullRequest.number,
+                            title: pullRequest.title,
+                            status: pullRequest.status,
+                            merged: pullRequest.merged,
+                            url: pullRequest.url,
+                            baseBranchRef: pullRequest.baseBranchRef,
+                            headBranchRef: pullRequest.headBranchRef,
+                            repositoryName: pullRequest.repository.name,
+                            repositoryId: pullRequest.repository.id,
+                            openedAt: pullRequest.openedAt,
+                            closedAt: pullRequest.closedAt,
+                            createdAt: pullRequest.createdAt,
+                            updatedAt: pullRequest.updatedAt,
+                            provider: pullRequest.provider,
+                            author: {
+                                id: pullRequest.user.id,
+                                username: pullRequest.user.username,
+                                name: pullRequest.user.name,
+                            },
+                            isDraft: pullRequest.isDraft,
+                            automationExecution: {
+                                uuid: execution.uuid,
+                                status: execution.status,
+                                errorMessage: execution.errorMessage,
+                                createdAt: execution.createdAt!,
+                                updatedAt: execution.updatedAt!,
+                                origin: execution.origin,
+                            },
+                            codeReviewTimeline,
+                            enrichedData,
+                            suggestionsCount,
+                        };
+
+                        enrichedPullRequests.push(enrichedPR);
+                    } catch (error) {
+                        this.logger.error({
+                            message: 'Error processing automation execution',
+                            context: GetEnrichedPullRequestsUseCase.name,
+                            error,
+                            metadata: {
+                                executionUuid: execution.uuid,
+                                prNumber: execution.pullRequestNumber,
+                                repositoryId: execution.repositoryId,
+                            },
+                        });
+                    }
+
+                    if (enrichedPullRequests.length >= limit) {
+                        break;
+                    }
+                }
+
+                accumulatedExecutions += executionsBatch.length;
+
+                if (initialSkip + accumulatedExecutions >= totalExecutions) {
+                    hasMoreExecutions = false;
+                }
             }
 
-            const executionsWithPR = automationExecutions.filter(
-                (execution) =>
-                    execution.pullRequestNumber && execution.repositoryId,
-            );
-
-            if (executionsWithPR.length === 0) {
+            if (totalExecutions === 0) {
                 this.logger.warn({
                     message: 'No automation executions with PR data found',
                     context: GetEnrichedPullRequestsUseCase.name,
@@ -135,187 +295,13 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                 };
             }
 
-            let filteredExecutions = executionsWithPR;
-            if (repositoryId) {
-                filteredExecutions = executionsWithPR.filter(
-                    (execution) => execution.repositoryId === repositoryId,
-                );
-            }
+            const paginatedData = enrichedPullRequests.slice(0, limit);
 
-            const enrichedPullRequests: EnrichedPullRequestResponse[] = [];
-
-            for (const execution of filteredExecutions) {
-                try {
-                    const pullRequest =
-                        await this.pullRequestsService.findByNumberAndRepositoryId(
-                            execution.pullRequestNumber!,
-                            execution.repositoryId!,
-                            { organizationId },
-                        );
-
-                    if (
-                        pullRequestTitle &&
-                        !pullRequest?.title
-                            .toLocaleLowerCase()
-                            .includes(pullRequestTitle.toLocaleLowerCase())
-                    ) {
-                        continue;
-                    }
-
-                    if (!pullRequest) {
-                        this.logger.warn({
-                            message: 'Pull request not found in MongoDB',
-                            context: GetEnrichedPullRequestsUseCase.name,
-                            metadata: {
-                                prNumber: execution.pullRequestNumber,
-                                repositoryId: execution.repositoryId,
-                                organizationId,
-                            },
-                        });
-                        continue;
-                    }
-
-                    if (
-                        repositoryName &&
-                        pullRequest.repository.name !== repositoryName
-                    ) {
-                        continue;
-                    }
-
-                    const codeReviewExecutions =
-                        await this.codeReviewExecutionService.find({
-                            automationExecution: { uuid: execution.uuid },
-                        });
-
-                    if (
-                        !codeReviewExecutions ||
-                        codeReviewExecutions.length === 0
-                    ) {
-                        this.logger.debug({
-                            message: 'Skipping PR without code review history',
-                            context: GetEnrichedPullRequestsUseCase.name,
-                            metadata: {
-                                prNumber: execution.pullRequestNumber,
-                                repositoryId: execution.repositoryId,
-                                executionUuid: execution.uuid,
-                            },
-                        });
-                        continue;
-                    }
-
-                    const codeReviewTimeline = codeReviewExecutions.map(
-                        (cre) => ({
-                            uuid: cre.uuid,
-                            createdAt: cre.createdAt,
-                            updatedAt: cre.updatedAt,
-                            status: cre.status,
-                            message: cre.message,
-                        }),
-                    );
-
-                    const enrichedData = this.extractEnrichedData(
-                        execution.dataExecution,
-                    );
-
-                    const suggestionsCount =
-                        this.extractSuggestionsCount(pullRequest);
-
-                    if (
-                        hasSentSuggestions === true &&
-                        suggestionsCount?.sent <= 0
-                    ) {
-                        continue;
-                    } else if (
-                        hasSentSuggestions === false &&
-                        suggestionsCount?.sent > 0
-                    ) {
-                        continue;
-                    }
-
-                    const enrichedPR: EnrichedPullRequestResponse = {
-                        prId: pullRequest.uuid!,
-                        prNumber: pullRequest.number,
-                        title: pullRequest.title,
-                        status: pullRequest.status,
-                        merged: pullRequest.merged,
-                        url: pullRequest.url,
-                        baseBranchRef: pullRequest.baseBranchRef,
-                        headBranchRef: pullRequest.headBranchRef,
-                        repositoryName: pullRequest.repository.name,
-                        repositoryId: pullRequest.repository.id,
-                        openedAt: pullRequest.openedAt,
-                        closedAt: pullRequest.closedAt,
-                        createdAt: pullRequest.createdAt,
-                        updatedAt: pullRequest.updatedAt,
-                        provider: pullRequest.provider,
-                        author: {
-                            id: pullRequest.user.id,
-                            username: pullRequest.user.username,
-                            name: pullRequest.user.name,
-                        },
-                        isDraft: pullRequest.isDraft,
-                        automationExecution: {
-                            uuid: execution.uuid,
-                            status: execution.status,
-                            errorMessage: execution.errorMessage,
-                            createdAt: execution.createdAt!,
-                            updatedAt: execution.updatedAt!,
-                            origin: execution.origin,
-                        },
-                        codeReviewTimeline,
-                        enrichedData,
-                        suggestionsCount,
-                    };
-
-                    enrichedPullRequests.push(enrichedPR);
-                } catch (error) {
-                    this.logger.error({
-                        message: 'Error processing automation execution',
-                        context: GetEnrichedPullRequestsUseCase.name,
-                        error,
-                        metadata: {
-                            executionUuid: execution.uuid,
-                            prNumber: execution.pullRequestNumber,
-                            repositoryId: execution.repositoryId,
-                        },
-                    });
-                }
-            }
-
-            const assignedRepositoryIds =
-                await this.authorizationService.getRepositoryScope(
-                    this.request.user,
-                    Action.Read,
-                    ResourceType.PullRequests,
-                );
-
-            let filteredByAssignedRepos = enrichedPullRequests;
-            if (assignedRepositoryIds !== null) {
-                filteredByAssignedRepos = filteredByAssignedRepos.filter((pr) =>
-                    assignedRepositoryIds.includes(pr.repositoryId),
-                );
-            }
-
-            // 5. Ordenar por data de criação (mais recentes primeiro)
-            filteredByAssignedRepos.sort(
-                (a, b) =>
-                    new Date(b.automationExecution.createdAt).getTime() -
-                    new Date(a.automationExecution.createdAt).getTime(),
-            );
-
-            // 6. Aplicar paginação
-            const totalItems = filteredByAssignedRepos.length;
-            const totalPages = Math.ceil(totalItems / limit);
-            const offset = (page - 1) * limit;
-            const paginatedData = filteredByAssignedRepos.slice(
-                offset,
-                offset + limit,
-            );
-
+            const totalPages = Math.ceil(totalExecutions / limit);
             const paginationMetadata: PaginationMetadata = {
                 currentPage: page,
                 totalPages,
-                totalItems,
+                totalItems: totalExecutions,
                 itemsPerPage: limit,
                 hasNextPage: page < totalPages,
                 hasPreviousPage: page > 1,
@@ -327,13 +313,10 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
                 context: GetEnrichedPullRequestsUseCase.name,
                 metadata: {
                     organizationId,
-                    totalExecutions: automationExecutions.length,
-                    executionsWithPR: executionsWithPR.length,
-                    filteredExecutions: filteredExecutions.length,
-                    totalItems,
+                    totalExecutions,
+                    returnedItems: paginatedData.length,
                     page,
                     limit,
-                    returnedItems: paginatedData.length,
                 },
             });
 

@@ -22,6 +22,16 @@ export interface IAutomationExecutionRepository {
     find(
         filter?: Partial<IAutomationExecution>,
     ): Promise<AutomationExecutionEntity[]>;
+    findPullRequestExecutionsByOrganization(params: {
+        organizationId: string;
+        repositoryIds?: string[];
+        skip?: number;
+        take?: number;
+        order?: 'ASC' | 'DESC';
+    }): Promise<{
+        data: AutomationExecutionEntity[];
+        total: number;
+    }>;
     findLatestExecutionByFilters(
         filters?: Partial<any>,
     ): Promise<AutomationExecutionEntity | null>;

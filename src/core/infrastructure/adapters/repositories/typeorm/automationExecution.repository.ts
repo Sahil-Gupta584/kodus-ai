@@ -9,7 +9,6 @@ import {
     FindOneOptions,
     FindOptionsWhere,
     Repository,
-    UpdateQueryBuilder,
 } from 'typeorm';
 import {
     mapSimpleModelToEntity,
@@ -170,6 +169,83 @@ export class AutomationExecutionRepository
             );
         } catch (error) {
             console.log(error);
+        }
+    }
+
+    async findPullRequestExecutionsByOrganization(params: {
+        organizationId: string;
+        repositoryIds?: string[];
+        skip?: number;
+        take?: number;
+        order?: 'ASC' | 'DESC';
+    }): Promise<{ data: AutomationExecutionEntity[]; total: number }> {
+        const {
+            organizationId,
+            repositoryIds,
+            skip = 0,
+            take = 30,
+            order = 'DESC',
+        } = params;
+
+        try {
+            const queryBuilder =
+                this.automationExecutionRepository.createQueryBuilder(
+                    'automation_execution',
+                );
+
+            queryBuilder
+                .leftJoinAndSelect(
+                    'automation_execution.teamAutomation',
+                    'teamAutomation',
+                )
+                .leftJoinAndSelect('teamAutomation.team', 'team')
+                .leftJoin('team.organization', 'organization')
+                .leftJoinAndSelect(
+                    'automation_execution.codeReviewExecutions',
+                    'codeReviewExecutions',
+                )
+                .where('automation_execution.pullRequestNumber IS NOT NULL')
+                .andWhere('automation_execution.repositoryId IS NOT NULL')
+                .andWhere('organization.uuid = :organizationId', {
+                    organizationId,
+                });
+
+            if (repositoryIds?.length) {
+                if (repositoryIds.length === 1) {
+                    queryBuilder.andWhere(
+                        'automation_execution.repositoryId = :repositoryId',
+                        { repositoryId: repositoryIds[0] },
+                    );
+                } else {
+                    queryBuilder.andWhere(
+                        'automation_execution.repositoryId IN (:...repositoryIds)',
+                        { repositoryIds },
+                    );
+                }
+            }
+
+            const total = await queryBuilder.getCount();
+
+            if (total === 0) {
+                return { data: [], total: 0 };
+            }
+
+            const executions = await queryBuilder
+                .orderBy('automation_execution.createdAt', order)
+                .skip(skip)
+                .take(take)
+                .getMany();
+
+            const mapped =
+                (mapSimpleModelsToEntities(
+                    executions,
+                    AutomationExecutionEntity,
+                ) as AutomationExecutionEntity[]) ?? [];
+
+            return { data: mapped, total };
+        } catch (error) {
+            console.log(error);
+            return { data: [], total: 0 };
         }
     }
 

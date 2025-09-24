@@ -97,6 +97,18 @@ export class AutomationExecutionService implements IAutomationExecutionService {
         return this.automationExecutionRepository.find(filter);
     }
 
+    findPullRequestExecutionsByOrganization(params: {
+        organizationId: string;
+        repositoryIds?: string[];
+        skip?: number;
+        take?: number;
+        order?: 'ASC' | 'DESC';
+    }): Promise<{ data: AutomationExecutionEntity[]; total: number }> {
+        return this.automationExecutionRepository.findPullRequestExecutionsByOrganization(
+            params,
+        );
+    }
+
     findByPeriodAndTeamAutomationId(
         startDate: Date,
         endDate: Date,
