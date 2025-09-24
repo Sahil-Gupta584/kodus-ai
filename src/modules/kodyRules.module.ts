@@ -30,6 +30,9 @@ import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
 import { GlobalCacheModule } from './cache.module';
 import { RuleLikeModule } from './ruleLike.module';
 import { LicenseModule } from '@/ee/license/license.module';
+import { ValidateLicenseService } from '@/shared/infrastructure/services/validateLicense.service';
+import { LicenseService } from '@/ee/license/license.service';
+import { OrganizationParametersModule } from './organizationParameters.module';
 
 @Module({
     imports: [
@@ -49,6 +52,7 @@ import { LicenseModule } from '@/ee/license/license.module';
         forwardRef(() => CodeReviewSettingsLogModule),
         forwardRef(() => RuleLikeModule),
         forwardRef(() => LicenseModule),
+        forwardRef(() => OrganizationParametersModule),
         KodyRulesValidationModule,
         GlobalCacheModule,
     ],
@@ -64,6 +68,8 @@ import { LicenseModule } from '@/ee/license/license.module';
         },
         KodyRulesValidationService,
         KodyRulesSyncService,
+        ValidateLicenseService,
+        LicenseService,
     ],
     controllers: [KodyRulesController],
     exports: [
@@ -77,6 +83,7 @@ import { LicenseModule } from '@/ee/license/license.module';
         KodyRulesValidationService,
         KodyRulesSyncService,
         SyncSelectedRepositoriesKodyRulesUseCase,
+        LicenseService,
     ],
 })
 export class KodyRulesModule {}

@@ -19,7 +19,7 @@ import {
     KODY_RULES_SERVICE_TOKEN,
 } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import {
-    PromptRunnerService,
+    PromptRunnerService as BasePromptRunnerService,
     ParserType,
     PromptRole,
     LLMModelProvider,
@@ -33,6 +33,8 @@ import {
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import * as path from 'path';
 import { endSpan, newSpan } from '../codeBase/utils/span.utils';
+import { ValidateLicenseService } from '@/shared/infrastructure/services/validateLicense.service';
+import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
 
 type SyncTarget = {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -56,9 +58,10 @@ export class KodyRulesSyncService {
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
         private readonly codeManagementService: CodeManagementService,
-        private readonly promptRunner: PromptRunnerService,
         private readonly logger: PinoLoggerService,
         private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
+        private readonly promptRunnerService: BasePromptRunnerService,
+        private readonly validateLicenseService: ValidateLicenseService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
     }
@@ -474,6 +477,7 @@ export class KodyRulesSyncService {
                     filePath: f.filename,
                     repositoryId: repository.id,
                     content: decoded,
+                    organizationAndTeamData,
                 });
 
                 if (!Array.isArray(rules) || rules.length === 0) {
@@ -707,6 +711,7 @@ export class KodyRulesSyncService {
                     filePath: file.path,
                     repositoryId: repository.id,
                     content: decoded,
+                    organizationAndTeamData,
                 });
 
                 const oneRule = rules.find(
@@ -848,18 +853,40 @@ export class KodyRulesSyncService {
         filePath: string;
         repositoryId: string;
         content: string;
+        organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<Array<Partial<CreateKodyRuleDto>>> {
         try {
             newSpan(`${KodyRulesSyncService.name}::convertFileToKodyRules`);
+            
+            const validLicense =
+                await this.validateLicenseService.validateLicense(
+                    params.organizationAndTeamData,
+                );
 
-            const result = await this.promptRunner
+            if (!validLicense) {
+                return null;
+            }
+
+            const byokConfigValue =
+                await this.validateLicenseService.getBYOKConfig(
+                    params.organizationAndTeamData,
+                );
+
+            const provider =
+                LLMModelProvider.NOVITA_MOONSHOTAI_KIMI_K2_INSTRUCT;
+            const fallbackProvider =
+                LLMModelProvider.NOVITA_QWEN3_235B_A22B_THINKING_2507;
+
+            const promptRunner = new PromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfigValue,
+            );
+
+            const result: Array<Partial<CreateKodyRuleDto>> = await promptRunner
                 .builder()
-                .setProviders({
-                    main: LLMModelProvider.NOVITA_MOONSHOTAI_KIMI_K2_INSTRUCT,
-                    fallback:
-                        LLMModelProvider.NOVITA_QWEN3_235B_A22B_THINKING_2507,
-                })
-                .setParser<Array<Partial<CreateKodyRuleDto>>>(ParserType.JSON)
+                .setParser(ParserType.JSON)
                 .setLLMJsonMode(true)
                 .setPayload({
                     filePath: params.filePath,
@@ -914,13 +941,33 @@ export class KodyRulesSyncService {
         } catch (error) {
             try {
                 newSpan(`${KodyRulesSyncService.name}::convertFileToKodyRules`);
+                
+                const validLicense =
+                    await this.validateLicenseService.validateLicense(
+                        params.organizationAndTeamData,
+                    );
 
-                const raw = await this.promptRunner
+                if (!validLicense) {
+                    return null;
+                }
+
+                const byokConfigValue =
+                    await this.validateLicenseService.getBYOKConfig(
+                        params.organizationAndTeamData,
+                    );
+
+                const provider = LLMModelProvider.GEMINI_2_5_FLASH;
+                const fallbackProvider = LLMModelProvider.GEMINI_2_5_PRO;
+
+                const promptRunner = new PromptRunnerService(
+                    this.promptRunnerService,
+                    provider,
+                    fallbackProvider,
+                    byokConfigValue,
+                );
+
+                const raw = await promptRunner
                     .builder()
-                    .setProviders({
-                        main: LLMModelProvider.GEMINI_2_5_FLASH,
-                        fallback: LLMModelProvider.GEMINI_2_5_PRO,
-                    })
                     .setParser(ParserType.STRING)
                     .setPayload({
                         filePath: params.filePath,
