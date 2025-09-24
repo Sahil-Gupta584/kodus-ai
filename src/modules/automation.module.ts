@@ -39,6 +39,7 @@ import { PullRequestsModule } from './pullRequests.module';
 import { LicenseModule } from '@/ee/license/license.module';
 import { CodeReviewExecutionModule } from './codeReviewExecution.module';
 import { OrganizationParametersModule } from './organizationParameters.module';
+import { BYOKDeterminationService } from '@/shared/infrastructure/services/byokDetermination.service';
 
 @Module({
     imports: [
@@ -71,6 +72,7 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         ...UseCases,
         ...OrganizationAutomationUseCases,
         ...SaveCodeReviewFeedbackUseCase,
+        BYOKDeterminationService,
         PromptService,
         {
             provide: AUTOMATION_REPOSITORY_TOKEN,

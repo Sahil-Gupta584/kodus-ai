@@ -8,35 +8,26 @@ import {
 } from '@/shared/utils/langchainCommon/prompts/codeReviewCrossFileAnalysis';
 import {
     AnalysisContext,
-    CodeReviewVersion,
     CodeSuggestion,
     SuggestionType,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import { v4 as uuidv4 } from 'uuid';
-import { CustomStringOutputParser } from '@/shared/utils/langchainCommon/customStringOutputParser';
 import {
     LLMModelProvider,
     LLMProviderService,
     ParserType,
     PromptRole,
-    PromptRunnerService,
+    PromptRunnerService as BasePromptRunnerService,
     TokenTrackingHandler,
+    TokenUsage,
 } from '@kodus/kodus-common/llm';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
+import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
 import { endSpan, newSpan } from './utils/span.utils';
 
 //#region Interfaces
-interface TokenUsage {
-    input_tokens?: number;
-    output_tokens?: number;
-    total_tokens?: number;
-    model?: string;
-    runId?: string;
-    parentRunId?: string;
-}
-
 interface BatchProcessingConfig {
     maxConcurrentChunks: number;
     batchDelay: number; // milliseconds between batches
@@ -79,7 +70,7 @@ export class CrossFileAnalysisService {
         private readonly logger: PinoLoggerService,
         private readonly tokenChunkingService: TokenChunkingService,
 
-        private readonly promptRunnerService: PromptRunnerService,
+        private readonly promptRunnerService: BasePromptRunnerService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
     }
@@ -453,14 +444,21 @@ export class CrossFileAnalysisService {
             payload = preparedFilesChunk;
         }
 
-        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+        const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
-        const runName = `crossFile${analysisType.charAt(0).toUpperCase() + analysisType.slice(1)}`;
+        const runName = `crossFileAnalyzeCodeWithAI`;
 
         newSpan(`${CrossFileAnalysisService.name}::processChunk`);
 
-        const analysis = await this.promptRunnerService
-            .builder()
+        const promptRunner = new PromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            context?.codeReviewConfig?.byokConfig,
+        );
+        let analysisBuilder = promptRunner.builder();
+
+        const analysis = await analysisBuilder
             .setProviders({
                 main: provider,
                 fallback: fallbackProvider,

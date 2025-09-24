@@ -87,6 +87,7 @@ import {
 } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
 import { isFileMatchingGlob } from '@/shared/utils/glob-utils';
 import pLimit from 'p-limit';
+import { MCPManagerService } from '../../mcp/services/mcp-manager.service';
 
 interface GitHubAuthResponse {
     token: string;
@@ -169,6 +170,7 @@ export class GithubService
         private readonly promptService: PromptService,
         private readonly logger: PinoLoggerService,
         private readonly configService: ConfigService,
+        private readonly mcpManagerService?: MCPManagerService,
     ) {}
 
     private async handleIntegration(
@@ -263,8 +265,20 @@ export class GithubService
                 res = await this.authenticateWithToken(params);
             }
 
+            this.mcpManagerService?.createKodusMCPIntegration(
+                params.organizationAndTeamData.organizationId,
+            );
+
             return res;
         } catch (err) {
+            this.logger.error({
+                message:
+                    'Failed to list repositories when creating integration',
+                context: GithubService.name,
+                serviceName: GithubService.name,
+                error: err,
+                metadata: params,
+            });
             throw new BadRequestException(err);
         }
     }

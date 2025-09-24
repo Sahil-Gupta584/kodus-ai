@@ -33,9 +33,11 @@ import {
     LLMProviderService,
     ParserType,
     PromptRole,
-    PromptRunnerService,
+    PromptRunnerService as BasePromptRunnerService,
+    BYOKConfig,
     TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
+import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
 
 interface ClusteredSuggestion {
     id: string;
@@ -48,6 +50,7 @@ import {
     MessageTemplateProcessor,
     PlaceholderContext,
 } from './utils/services/messageTemplateProcessor.service';
+import { ValidateLicenseService } from '@/shared/infrastructure/services/validateLicense.service';
 import { endSpan, newSpan } from './utils/span.utils';
 
 @Injectable()
@@ -62,8 +65,9 @@ export class CommentManagerService implements ICommentManagerService {
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
         private readonly messageProcessor: MessageTemplateProcessor,
+        private readonly promptRunnerService: BasePromptRunnerService,
 
-        private readonly promptRunnerService: PromptRunnerService,
+        private readonly validateLicenseService: ValidateLicenseService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
         this.tokenTracker = new TokenTrackingHandler();
@@ -76,10 +80,29 @@ export class CommentManagerService implements ICommentManagerService {
         organizationAndTeamData: OrganizationAndTeamData,
         languageResultPrompt: string,
         summaryConfig: SummaryConfig,
-        isCommitRun: boolean,
+        byokConfig?: BYOKConfig,
+        isCommitRun?: boolean,
+        prPreview?: boolean,
     ): Promise<string> {
+        let byokConfigValue: BYOKConfig | null = byokConfig ?? null;
+
         if (!summaryConfig?.generatePRSummary) {
             return null;
+        }
+
+        if (prPreview) {
+            const validLicense =
+                await this.validateLicenseService.validateLicense(
+                    organizationAndTeamData,
+                );
+
+            if (!validLicense) {
+                return null;
+            }
+
+            byokConfigValue = await this.validateLicenseService.getBYOKConfig(
+                organizationAndTeamData,
+            );
         }
 
         const maxRetries = 2;
@@ -163,12 +186,15 @@ export class CommentManagerService implements ICommentManagerService {
 
                 newSpan(`${CommentManagerService.name}::generateSummaryPR`);
 
-                const result = await this.promptRunnerService
+                const promptRunner = new PromptRunnerService(
+                    this.promptRunnerService,
+                    LLMModelProvider.GEMINI_2_5_FLASH,
+                    fallbackProvider,
+                    byokConfigValue,
+                );
+
+                const result = await promptRunner
                     .builder()
-                    .setProviders({
-                        main: LLMModelProvider.GEMINI_2_5_FLASH,
-                        fallback: fallbackProvider,
-                    })
                     .setParser(ParserType.STRING)
                     .setLLMJsonMode(false)
                     .setPayload(baseContext)
@@ -847,6 +873,7 @@ ${reviewOptions}
         prNumber: number,
         provider: LLMModelProvider,
         codeSuggestions: any[],
+        byokConfig?: BYOKConfig,
     ) {
         const language = (
             await this.parametersService.findByKey(
@@ -874,12 +901,15 @@ ${reviewOptions}
                 `${CommentManagerService.name}::repeatedCodeReviewSuggestionClustering`,
             );
 
-            const result = await this.promptRunnerService
+            const promptRunner = new PromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
+
+            const result = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setPayload(baseContext)

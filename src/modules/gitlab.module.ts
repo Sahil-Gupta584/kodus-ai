@@ -19,6 +19,7 @@ import { CodebaseModule } from './codeBase.module';
 import { LicenseModule } from '@/ee/license/license.module';
 import { OrganizationParametersModule } from './organizationParameters.module';
 import { WebhookLogModule } from './webhookLog.module';
+import { BYOKDeterminationService } from '@/shared/infrastructure/services/byokDetermination.service';
 
 @Module({
     imports: [
@@ -40,7 +41,7 @@ import { WebhookLogModule } from './webhookLog.module';
         forwardRef(() => WebhookLogModule),
         LicenseModule,
     ],
-    providers: [RunCodeReviewAutomationUseCase, PromptService],
+    providers: [RunCodeReviewAutomationUseCase, PromptService, BYOKDeterminationService],
     controllers: [GitlabController],
 })
 export class GitlabModule {}

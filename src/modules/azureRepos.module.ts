@@ -23,6 +23,7 @@ import { AzureReposController } from '@/core/infrastructure/http/controllers/azu
 import { LicenseModule } from '@/ee/license/license.module';
 import { OrganizationParametersModule } from './organizationParameters.module';
 import { WebhookLogModule } from './webhookLog.module';
+import { BYOKDeterminationService } from '@/shared/infrastructure/services/byokDetermination.service';
 
 @Module({
     imports: [
@@ -49,6 +50,7 @@ import { WebhookLogModule } from './webhookLog.module';
         RunCodeReviewAutomationUseCase,
         PromptService,
         AzureReposRequestHelper,
+        BYOKDeterminationService,
         {
             provide: AZURE_REPOS_SERVICE_TOKEN,
             useClass: AzureReposService,

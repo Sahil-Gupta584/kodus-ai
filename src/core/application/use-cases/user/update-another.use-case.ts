@@ -73,9 +73,6 @@ export class UpdateAnotherUserUseCase implements IUseCase {
                 organization: {
                     uuid: organization.uuid,
                 },
-                team: {
-                    uuid: team.uuid,
-                },
                 user: {
                     uuid: targetUser.uuid,
                 },

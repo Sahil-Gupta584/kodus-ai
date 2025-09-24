@@ -655,6 +655,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     safeGuardResult.safeguardSuggestions,
                     context?.codeReviewConfig?.reviewOptions,
                     context?.codeReviewConfig?.codeReviewVersion,
+                    context?.codeReviewConfig?.byokConfig,
                 );
 
             const crossFileSuggestionsWithSeverity =
@@ -663,6 +664,8 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     context?.pullRequest?.number,
                     filteredCrossFileSuggestions,
                     context?.codeReviewConfig?.reviewOptions,
+                    context?.codeReviewConfig?.codeReviewVersion,
+                    context?.codeReviewConfig?.byokConfig,
                 );
 
             let mergedSuggestions = [];
@@ -924,6 +927,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 filteredSuggestions,
                 context?.codeReviewConfig?.languageResultPrompt,
                 reviewModeResponse,
+                context?.codeReviewConfig?.byokConfig,
             );
 
         const safeguardLLMProvider =

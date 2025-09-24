@@ -43,7 +43,6 @@ import { AzureReposAuthDetail } from '@/core/domain/authIntegrations/types/azure
 import { IntegrationEntity } from '@/core/domain/integrations/entities/integration.entity';
 import { AzureReposRequestHelper } from './azureRepos/azure-repos-request-helper';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
-import { AzureGitPullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
 import {
     Comment,
     CommentResult,
@@ -77,6 +76,7 @@ import { ConfigService } from '@nestjs/config';
 import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeManagement/gitCloneParams.type';
 import { RepositoryFile } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
 import { isFileMatchingGlob } from '@/shared/utils/glob-utils';
+import { MCPManagerService } from '../mcp/services/mcp-manager.service';
 
 @IntegrationServiceDecorator(PlatformType.AZURE_REPOS, 'codeManagement')
 export class AzureReposService
@@ -109,6 +109,7 @@ export class AzureReposService
         private readonly logger: PinoLoggerService,
         private readonly azureReposRequestHelper: AzureReposRequestHelper,
         private readonly configService: ConfigService,
+        private readonly mcpManagerService?: MCPManagerService,
     ) {}
 
     async getPullRequestAuthors(params: {
@@ -1695,6 +1696,10 @@ export class AzureReposService
                     throw new BadRequestException(res.status);
                 }
             }
+
+            this.mcpManagerService?.createKodusMCPIntegration(
+                params.organizationAndTeamData.organizationId,
+            );
 
             return res;
         } catch (err) {

@@ -42,12 +42,13 @@ import { IKodyRulesAnalysisService } from '@/core/domain/codeBase/contracts/Kody
 import {
     LLMProviderService,
     LLMModelProvider,
-    PromptRunnerService,
+    PromptRunnerService as BasePromptRunnerService,
     ParserType,
     PromptRole,
+    BYOKConfig,
     TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
-import { z } from 'zod';
+import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
 import {
     endSpan,
     newSpan,
@@ -79,9 +80,6 @@ export const KODY_RULES_ANALYSIS_SERVICE_TOKEN = Symbol(
     'KodyRulesAnalysisService',
 );
 
-type SystemPromptFn = () => string;
-type UserPromptFn = (input: any) => string;
-
 @Injectable()
 export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
     private readonly anthropic: Anthropic;
@@ -92,7 +90,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
 
     constructor(
         private readonly logger: PinoLoggerService,
-        private readonly promptRunnerService: PromptRunnerService,
+        private readonly promptRunnerService: BasePromptRunnerService,
     ) {
         this.anthropic = new Anthropic({
             apiKey: process.env.API_ANTHROPIC_API_KEY,
@@ -423,16 +421,19 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 provider,
                 fallbackProvider,
                 extendedContext,
+                context?.codeReviewConfig?.byokConfig,
             );
             const updater = this.getUpdater(
                 provider,
                 fallbackProvider,
                 extendedContext,
+                context?.codeReviewConfig?.byokConfig,
             );
             const guardian = this.getGuardian(
                 provider,
                 fallbackProvider,
                 extendedContext,
+                context?.codeReviewConfig?.byokConfig,
             );
 
             // These chains do not depend on each other, so we can run them in parallel
@@ -484,6 +485,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 provider,
                 fallbackProvider,
                 extendedContext,
+                context?.codeReviewConfig?.byokConfig,
             );
 
             const generatedKodyRulesSuggestionsResult =
@@ -548,13 +550,17 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         provider: LLMModelProvider,
         fallbackProvider: LLMModelProvider,
         context: KodyRulesExtendedContext,
+        byokConfig?: BYOKConfig,
     ) {
-        return this.promptRunnerService
+        const promptRunner = new PromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            byokConfig,
+        );
+
+        return promptRunner
             .builder()
-            .setProviders({
-                main: provider,
-                fallback: fallbackProvider,
-            })
             .setParser(ParserType.ZOD, kodyRulesClassifierSchema, {
                 provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
                 fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
@@ -590,13 +596,17 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         provider: LLMModelProvider,
         fallbackProvider: LLMModelProvider,
         context: KodyRulesExtendedContext,
+        byokConfig?: BYOKConfig,
     ) {
-        return this.promptRunnerService
+        const promptRunner = new PromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            byokConfig,
+        );
+
+        return promptRunner
             .builder()
-            .setProviders({
-                main: provider,
-                fallback: fallbackProvider,
-            })
             .setParser(ParserType.STRING)
             .setLLMJsonMode(true)
             .setTemperature(0)
@@ -629,13 +639,17 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         provider: LLMModelProvider,
         fallbackProvider: LLMModelProvider,
         context: KodyRulesExtendedContext,
+        byokConfig?: BYOKConfig,
     ) {
-        return this.promptRunnerService
+        const promptRunner = new PromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            byokConfig,
+        );
+
+        return promptRunner
             .builder()
-            .setProviders({
-                main: provider,
-                fallback: fallbackProvider,
-            })
             .setParser(ParserType.STRING)
             .setLLMJsonMode(true)
             .setTemperature(0)
@@ -668,13 +682,16 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         provider: LLMModelProvider,
         fallbackProvider: LLMModelProvider,
         context: KodyRulesExtendedContext,
+        byokConfig?: BYOKConfig,
     ) {
-        return this.promptRunnerService
+        const promptRunner = new PromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            byokConfig,
+        );
+        return promptRunner
             .builder()
-            .setProviders({
-                main: provider,
-                fallback: fallbackProvider,
-            })
             .setParser(ParserType.STRING)
             .setLLMJsonMode(true)
             .setTemperature(0)

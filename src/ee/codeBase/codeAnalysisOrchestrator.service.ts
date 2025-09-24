@@ -17,8 +17,6 @@ import { LLM_ANALYSIS_SERVICE_TOKEN } from '@/core/infrastructure/adapters/servi
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { KODY_RULES_ANALYSIS_SERVICE_TOKEN } from './kodyRulesAnalysis.service';
-import { BYOKProvider } from '@kodus/kodus-common/llm';
-import { decrypt } from '@/shared/utils/crypto';
 
 @Injectable()
 export class CodeAnalysisOrchestrator {

@@ -20,6 +20,12 @@ export class WebhookLogEntity implements Entity<IWebhookLog> {
         this._meta = webhookLog.meta;
     }
 
+    public static create(
+        webhookLog: IWebhookLog | Partial<IWebhookLog>,
+    ): WebhookLogEntity {
+        return new WebhookLogEntity(webhookLog);
+    }
+
     toObject(): IWebhookLog {
         return {
             uuid: this.uuid,

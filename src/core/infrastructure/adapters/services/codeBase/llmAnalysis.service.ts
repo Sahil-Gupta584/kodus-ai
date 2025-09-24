@@ -31,11 +31,11 @@ import {
     LLMModelProvider,
     ParserType,
     PromptRole,
-    PromptRunnerService,
+    PromptRunnerService as BasePromptRunnerService,
     PromptScope,
     TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
-import { decrypt } from '@/shared/utils/crypto';
+import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
 import { getObservability } from '@kodus/flow';
 import { endSpan, newSpan } from './utils/span.utils';
 
@@ -48,7 +48,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
 
     constructor(
         private readonly logger: PinoLoggerService,
-        private readonly promptRunnerService: PromptRunnerService,
+        private readonly promptRunnerService: BasePromptRunnerService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
@@ -121,18 +121,21 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
         const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
+        const promptRunner = new PromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            context?.codeReviewConfig?.byokConfig,
+        );
+
         // Prepare base context
         const baseContext = this.prepareAnalysisContext(fileContext, context);
 
         try {
             newSpan(`${LLMAnalysisService.name}::analyzeCodeWithAI`);
 
-            const analysis = await this.promptRunnerService
+            const analysis = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setPayload(baseContext)
@@ -225,30 +228,13 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         const defaultProvider = LLMModelProvider.GEMINI_2_5_PRO;
         const defaultFallback = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
-        let analysisBuilder = this.promptRunnerService.builder().setProviders({
-            main: defaultProvider,
-            fallback: byokConfig?.fallback ? defaultFallback : undefined,
-        });
-
-        if (byokConfig?.main) {
-            analysisBuilder = analysisBuilder
-                .setBYOKConfig({
-                    provider: byokConfig.main.provider,
-                    apiKey: decrypt(byokConfig.main.apiKey),
-                    model: byokConfig.main.model,
-                    baseURL: byokConfig.main.baseURL,
-                })
-                .setBYOKFallbackConfig(
-                    byokConfig.fallback
-                        ? {
-                              provider: byokConfig.fallback.provider,
-                              apiKey: decrypt(byokConfig.fallback.apiKey),
-                              model: byokConfig.fallback.model,
-                              baseURL: byokConfig.fallback.baseURL,
-                          }
-                        : null,
-                );
-        }
+        // Criar instância da nova PromptRunnerService com configuração simplificada
+        const promptRunner = new PromptRunnerService(
+            this.promptRunnerService,
+            defaultProvider,
+            defaultFallback,
+            byokConfig,
+        );
 
         // Prepare base context
         const baseContext = this.prepareAnalysisContext(fileContext, context);
@@ -276,8 +262,9 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
 
             newSpan(`${LLMAnalysisService.name}::analyzeCodeWithAI_v2`);
 
-            const analysis = await analysisBuilder
-                .setParser(ParserType.ZOD, schema, {
+            const analysis = await promptRunner
+                .builder()
+                .setParser(ParserType.ZOD, schema as any, {
                     provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
                     fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
                 })
@@ -487,21 +474,25 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         prNumber: number,
         provider: LLMModelProvider,
         codeSuggestions: CodeSuggestion[],
+        byokConfig: BYOKConfig,
     ): Promise<Partial<CodeSuggestion>[]> {
         const fallbackProvider =
             provider === LLMModelProvider.OPENAI_GPT_4O
                 ? LLMModelProvider.NOVITA_DEEPSEEK_V3_0324
                 : LLMModelProvider.OPENAI_GPT_4O;
 
+        const promptRunner = new PromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            byokConfig,
+        );
+
         try {
             newSpan(`${LLMAnalysisService.name}::severityAnalysisAssignment`);
 
-            const result = await this.promptRunnerService
+            const result = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setPayload(codeSuggestions)
@@ -578,6 +569,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         suggestions: any[],
         languageResultPrompt: string,
         reviewMode: ReviewModeResponse,
+        byokConfig: BYOKConfig,
     ): Promise<ISafeguardResponse> {
         try {
             suggestions?.forEach((suggestion) => {
@@ -593,7 +585,15 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             });
 
             const provider = LLMModelProvider.GEMINI_2_5_PRO;
-            const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+            const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+
+            // Criar instância da nova PromptRunnerService
+            const promptRunner = new PromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
 
             const payload = {
                 fileContent: file?.fileContent,
@@ -638,12 +638,8 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
 
             newSpan(`${LLMAnalysisService.name}::filterSuggestionsSafeGuard`);
 
-            const filteredSuggestions = await this.promptRunnerService
+            const filteredSuggestions = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
                 .setParser(ParserType.ZOD, schema as any, {
                     provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
                     fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
@@ -853,6 +849,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         provider: LLMModelProvider,
         file: FileChange,
         codeDiff: string,
+        byokConfig: BYOKConfig,
     ): Promise<ReviewModeResponse> {
         const fallbackProvider =
             provider === LLMModelProvider.OPENAI_GPT_4O
@@ -867,12 +864,15 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         try {
             newSpan(`${LLMAnalysisService.name}::selectReviewMode`);
 
-            const result = await this.promptRunnerService
+            const promptRunner = new PromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
+
+            const result = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setTemperature(0)

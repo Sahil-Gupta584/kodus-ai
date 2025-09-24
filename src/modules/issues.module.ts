@@ -23,6 +23,9 @@ import { GenerateIssuesFromPrClosedUseCase } from '@/core/application/use-cases/
 import { CodebaseModule } from './codeBase.module';
 import { GlobalCacheModule } from './cache.module';
 import { GetIssuesUseCase } from '@/core/application/use-cases/issues/get-issues.use-case';
+import { LicenseModule } from '@/ee/license/license.module';
+import { BYOKDeterminationService } from '@/shared/infrastructure/services/byokDetermination.service';
+import { OrganizationParametersModule } from './organizationParameters.module';
 
 const UseCases = [
     GetIssuesByFiltersUseCase,
@@ -47,6 +50,8 @@ const UseCases = [
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
         GlobalCacheModule,
+        LicenseModule,
+        forwardRef(() => OrganizationParametersModule),
     ],
     providers: [
         ...UseCases,
@@ -66,6 +71,7 @@ const UseCases = [
             provide: KODY_ISSUES_ANALYSIS_SERVICE_TOKEN,
             useClass: KodyIssuesAnalysisService,
         },
+        BYOKDeterminationService,
     ],
     controllers: [IssuesController],
     exports: [

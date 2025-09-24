@@ -30,12 +30,14 @@ import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { TokenChunkingService } from '@/shared/utils/tokenChunking/tokenChunking.service';
 import {
     LLMModelProvider,
-    PromptRunnerService,
+    PromptRunnerService as BasePromptRunnerService,
     PromptRole,
     ParserType,
+    BYOKConfig,
     TokenUsage,
     TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
+import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
 import {
     endSpan,
     newSpan,
@@ -114,7 +116,7 @@ export class KodyRulesPrLevelAnalysisService
 
         private readonly tokenChunkingService: TokenChunkingService,
 
-        private readonly promptRunnerService: PromptRunnerService,
+        private readonly promptRunnerService: BasePromptRunnerService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
     }
@@ -300,7 +302,8 @@ export class KodyRulesPrLevelAnalysisService
                 return null;
             }
 
-            const parsedResponse = this.processLLMResponse(response);
+            const parse = this.processLLMResponse(response);
+            const parsedResponse = Array.isArray(parse) ? parse : [parse];
 
             if (!parsedResponse) {
                 this.logger.warn({
@@ -636,6 +639,7 @@ export class KodyRulesPrLevelAnalysisService
             organizationAndTeamData,
             prNumber,
             language,
+            context?.codeReviewConfig?.byokConfig,
         );
     }
 
@@ -920,17 +924,20 @@ export class KodyRulesPrLevelAnalysisService
             language,
         };
 
-        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+        const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+
+        const promptRunner = new PromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            context?.codeReviewConfig?.byokConfig,
+        );
 
         try {
             newSpan(`${KodyRulesPrLevelAnalysisService.name}::processChunk`);
 
-            const analysis = await this.promptRunnerService
+            const analysis = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setPayload(analyzerPayload)
@@ -1009,6 +1016,7 @@ export class KodyRulesPrLevelAnalysisService
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         language: string,
+        byokConfig: BYOKConfig,
     ): Promise<AIAnalysisResultPrLevel> {
         if (!allViolatedRules?.length) {
             this.logger.log({
@@ -1047,6 +1055,7 @@ export class KodyRulesPrLevelAnalysisService
             language,
             organizationAndTeamData,
             prNumber,
+            byokConfig,
         );
 
         // Adicionar severidade
@@ -1094,6 +1103,7 @@ export class KodyRulesPrLevelAnalysisService
         language: string,
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
+        byokConfig: BYOKConfig,
     ): Promise<ISuggestionByPR[]> {
         if (!suggestions?.length) {
             return suggestions;
@@ -1149,6 +1159,7 @@ export class KodyRulesPrLevelAnalysisService
                     language,
                     organizationAndTeamData,
                     prNumber,
+                    byokConfig,
                 );
 
                 groupedSuggestions.push(groupedSuggestion);
@@ -1215,6 +1226,7 @@ export class KodyRulesPrLevelAnalysisService
         language: string,
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
+        byokConfig: BYOKConfig,
     ): Promise<ISuggestionByPR> {
         // Validação de segurança
         if (!duplicatedSuggestions || duplicatedSuggestions.length === 0) {
@@ -1256,17 +1268,38 @@ export class KodyRulesPrLevelAnalysisService
         };
 
         try {
-            const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+            const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+
+            const promptRunner = new PromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
 
             newSpan(
                 `${KodyRulesPrLevelAnalysisService.name}::processRuleGrouping`,
             );
 
-            const grouping = await this.promptRunnerService
+            const grouping = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
+                .setParser(ParserType.STRING)
+                .setLLMJsonMode(true)
+                .setPayload(groupingPayload)
+                .addPrompt({
+                    prompt: prompt_kodyrules_prlevel_group_rules,
+                    role: PromptRole.SYSTEM,
+                })
+                .addPrompt({
+                    prompt: 'Please consolidate the provided violations into a single coherent comment following the instructions.',
+                    role: PromptRole.USER,
+                })
+                .addMetadata({
+                    organizationAndTeamData,
+                    prNumber,
+                    ruleId: rule?.uuid,
+                    provider: provider,
+                    fallbackProvider: fallbackProvider,
                 })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
