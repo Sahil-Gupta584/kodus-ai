@@ -927,9 +927,19 @@ export class KodyRulesSyncService {
                 fallback: false,
             });
 
-            if (!Array.isArray(result)) return [];
+            let normalizedResult: any[] = [];
 
-            return result.map((r) => ({
+            if (result) {
+                if (Array.isArray(result)) {
+                    normalizedResult = result;
+                } else if (typeof result === 'object') {
+                    normalizedResult = [result]; // Objeto único → array
+                }
+            }
+
+            if (normalizedResult.length === 0) return [];
+
+            return normalizedResult.map((r) => ({
                 ...r,
                 severity:
                     (r?.severity?.toString?.().toLowerCase?.() as any) ||
