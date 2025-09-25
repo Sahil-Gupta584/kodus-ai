@@ -1452,6 +1452,7 @@ ${reviewOptions}
         codeSuggestions?: Array<CommentResult>,
         codeReviewConfig?: CodeReviewConfig,
         endReviewMessage?: string,
+        pullRequestMessagesConfig?: IPullRequestMessages,
     ): Promise<void> {
         let commentBody;
 
@@ -1483,12 +1484,27 @@ ${reviewOptions}
             );
         }
 
-        await this.codeManagementService.createIssueComment({
+        const comment = await this.codeManagementService.createIssueComment({
             organizationAndTeamData,
             repository,
             prNumber,
             body: commentBody,
         });
+
+        if (
+            platformType === PlatformType.GITHUB &&
+            pullRequestMessagesConfig?.globalSettings?.hideComments
+        ) {
+            await this.codeManagementService.minimizeComment({
+                organizationAndTeamData,
+                commentId: comment?.node_id
+                    ? comment.node_id.toString()
+                    : comment.id.toString(),
+                reason: 'OUTDATED',
+            });
+        }
+
+        return comment;
     }
 
     private async getTemplateContext(

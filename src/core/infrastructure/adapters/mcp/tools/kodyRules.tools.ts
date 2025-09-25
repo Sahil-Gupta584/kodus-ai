@@ -98,7 +98,7 @@ export class KodyRulesTools {
                             updatedAt: z.date().optional(),
                             reason: z.string().nullable().optional(),
                             scope: z.nativeEnum(KodyRulesScope).optional(),
-                            directoryId: z.string().optional(),
+                            directoryId: z.string().nullable().optional(),
                         })
                         .passthrough(),
                 ),
@@ -182,7 +182,7 @@ export class KodyRulesTools {
                             updatedAt: z.date().optional(),
                             reason: z.string().nullable().optional(),
                             scope: z.nativeEnum(KodyRulesScope).optional(),
-                            directoryId: z.string().optional(),
+                            directoryId: z.string().nullable().optional(),
                         })
                         .passthrough(),
                 ),

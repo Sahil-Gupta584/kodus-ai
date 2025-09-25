@@ -157,6 +157,7 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 lineComments,
                 codeReviewConfig,
                 finalCommentBody,
+                context.pullRequestMessagesConfig,
             );
         }
 
