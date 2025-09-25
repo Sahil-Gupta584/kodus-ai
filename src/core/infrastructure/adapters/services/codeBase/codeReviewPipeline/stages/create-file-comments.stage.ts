@@ -106,7 +106,6 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
         // Verificar se há sugestões para processar
         const validSuggestions = context?.validSuggestions || [];
         const discardedSuggestions = context?.discardedSuggestions || [];
-        const overallComments = context?.overallComments || [];
         const changedFiles = context?.changedFiles || [];
 
         // Resolve comments that refer to suggestions partially or fully implemented
@@ -157,7 +156,6 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
                 metadata: {
                     validSuggestionsCount: validSuggestions.length,
                     discardedSuggestionsCount: discardedSuggestions.length,
-                    overallCommentsCount: overallComments.length,
                     organizationAndTeamData: context.organizationAndTeamData,
                     prNumber: context.pullRequest.number,
                 },
@@ -169,7 +167,6 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
                     changedFiles,
                     validSuggestions,
                     discardedSuggestions,
-                    overallComments,
                 );
 
             this.logger.log({
@@ -211,7 +208,6 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
      * @param changedFiles Files changed in the PR
      * @param validSuggestionsToAnalyze Valid suggestions found
      * @param discardedSuggestionsBySafeGuard Discarded suggestions
-     * @param overallComments General comments
      * @returns Processing result with comments and suggestions
      */
     private async finalizeReviewProcessing(
@@ -219,7 +215,6 @@ export class CreateFileCommentsStage extends BasePipelineStage<CodeReviewPipelin
         changedFiles: FileChange[],
         validSuggestionsToAnalyze: Partial<CodeSuggestion>[],
         discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[],
-        overallComments: { filepath: string; summary: string }[],
     ): Promise<{
         lineComments: Array<CommentResult>;
         lastAnalyzedCommit: any;

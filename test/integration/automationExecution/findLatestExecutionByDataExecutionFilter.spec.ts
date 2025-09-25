@@ -8,7 +8,9 @@ import { Repository } from 'typeorm';
 
 describe('AutomationExecutionRepository - Forward Compatibility', () => {
     let repository: AutomationExecutionRepository;
-    let mockTypeOrmRepository: jest.Mocked<Repository<AutomationExecutionModel>>;
+    let mockTypeOrmRepository: jest.Mocked<
+        Repository<AutomationExecutionModel>
+    >;
     let queryBuilder: any;
 
     const mockTeamAutomationId = 'team-456-uuid';
@@ -36,7 +38,9 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
             ],
         }).compile();
 
-        repository = module.get<AutomationExecutionRepository>(AutomationExecutionRepository);
+        repository = module.get<AutomationExecutionRepository>(
+            AutomationExecutionRepository,
+        );
     });
 
     afterEach(() => {
@@ -58,7 +62,6 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
                     noteId: null,
                     threadId: null,
                     commentId: 2960318631,
-                    overallComments: []
                 },
                 // Colunas separadas preenchidas (formato novo)
                 pullRequestNumber: pullRequestNumber,
@@ -75,13 +78,12 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
                 pullRequestNumber: pullRequestNumber,
                 repositoryId: repositoryId,
                 status: AutomationStatus.SUCCESS,
-                teamAutomation: { uuid: mockTeamAutomationId }
+                teamAutomation: { uuid: mockTeamAutomationId },
             };
 
             // Act
-            const result = await repository.findLatestExecutionByFilters(
-                filters
-            );
+            const result =
+                await repository.findLatestExecutionByFilters(filters);
 
             // Assert
             expect(result).toBeInstanceOf(AutomationExecutionEntity);
@@ -90,26 +92,28 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
             expect(result.repositoryId).toBe(repositoryId);
 
             // Verifica que fez apenas uma busca (primeira tentativa funcionou)
-            expect(mockTypeOrmRepository.createQueryBuilder).toHaveBeenCalledTimes(1);
+            expect(
+                mockTypeOrmRepository.createQueryBuilder,
+            ).toHaveBeenCalledTimes(1);
 
             // Verifica que usou as colunas separadas
             expect(queryBuilder.andWhere).toHaveBeenCalledWith(
                 'automation_execution.pullRequestNumber = :pullRequestNumber',
-                { pullRequestNumber }
+                { pullRequestNumber },
             );
             expect(queryBuilder.andWhere).toHaveBeenCalledWith(
                 'automation_execution.repositoryId = :repositoryId',
-                { repositoryId }
+                { repositoryId },
             );
             expect(queryBuilder.andWhere).toHaveBeenCalledWith(
                 'automation_execution.status = :status',
-                { status: AutomationStatus.SUCCESS }
+                { status: AutomationStatus.SUCCESS },
             );
 
             // Não deve tentar buscar no jsonB
             expect(queryBuilder.andWhere).not.toHaveBeenCalledWith(
                 'automation_execution.dataExecution @> :dataExecutionFilter',
-                expect.any(Object)
+                expect.any(Object),
             );
         });
 
@@ -122,7 +126,7 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
                 status: AutomationStatus.SUCCESS,
                 dataExecution: {
                     pullRequestNumber: 45,
-                    platformType: 'GITHUB'
+                    platformType: 'GITHUB',
                 },
                 pullRequestNumber: 45,
                 repositoryId: 'repo-1-uuid',
@@ -137,13 +141,12 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
                 pullRequestNumber: 45,
                 repositoryId: 'repo-1-uuid', // Específico para repo 1
                 status: AutomationStatus.SUCCESS,
-                teamAutomation: { uuid: mockTeamAutomationId }
+                teamAutomation: { uuid: mockTeamAutomationId },
             };
 
             // Act
-            const result = await repository.findLatestExecutionByFilters(
-                filters
-            );
+            const result =
+                await repository.findLatestExecutionByFilters(filters);
 
             // Assert
             expect(result).toBeInstanceOf(AutomationExecutionEntity);
@@ -154,7 +157,7 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
             // Verifica que filtrou pelo repositoryId específico
             expect(queryBuilder.andWhere).toHaveBeenCalledWith(
                 'automation_execution.repositoryId = :repositoryId',
-                { repositoryId: 'repo-1-uuid' }
+                { repositoryId: 'repo-1-uuid' },
             );
         });
 
@@ -167,7 +170,7 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
                 status: AutomationStatus.SUCCESS,
                 dataExecution: {
                     pullRequestNumber: pullRequestNumber,
-                    platformType: 'GITHUB'
+                    platformType: 'GITHUB',
                 },
                 pullRequestNumber: pullRequestNumber,
                 repositoryId: repositoryId,
@@ -182,13 +185,12 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
                 pullRequestNumber: pullRequestNumber,
                 repositoryId: repositoryId,
                 status: AutomationStatus.SUCCESS,
-                teamAutomation: { uuid: mockTeamAutomationId }
+                teamAutomation: { uuid: mockTeamAutomationId },
             };
 
             // Act
-            const result = await repository.findLatestExecutionByFilters(
-                filters
-            );
+            const result =
+                await repository.findLatestExecutionByFilters(filters);
 
             // Assert
             expect(result).toBeInstanceOf(AutomationExecutionEntity);
@@ -198,7 +200,7 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
             // Verifica que aplicou ordenação por data de criação DESC
             expect(queryBuilder.orderBy).toHaveBeenCalledWith(
                 'automation_execution.createdAt',
-                'DESC'
+                'DESC',
             );
         });
 
@@ -210,13 +212,12 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
                 pullRequestNumber: pullRequestNumber,
                 repositoryId: repositoryId,
                 status: AutomationStatus.SUCCESS, // Busca apenas SUCCESS
-                teamAutomation: { uuid: mockTeamAutomationId }
+                teamAutomation: { uuid: mockTeamAutomationId },
             };
 
             // Act
-            const result = await repository.findLatestExecutionByFilters(
-                filters
-            );
+            const result =
+                await repository.findLatestExecutionByFilters(filters);
 
             // Assert
             expect(result).toBeNull();
@@ -224,7 +225,7 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
             // Verifica que filtrou por status SUCCESS
             expect(queryBuilder.andWhere).toHaveBeenCalledWith(
                 'automation_execution.status = :status',
-                { status: AutomationStatus.SUCCESS }
+                { status: AutomationStatus.SUCCESS },
             );
         });
 
@@ -237,7 +238,7 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
                 status: AutomationStatus.SUCCESS,
                 dataExecution: {
                     pullRequestNumber: pullRequestNumber,
-                    platformType: 'GITHUB'
+                    platformType: 'GITHUB',
                 },
                 pullRequestNumber: pullRequestNumber,
                 repositoryId: repositoryId,
@@ -252,13 +253,12 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
                 pullRequestNumber: pullRequestNumber,
                 repositoryId: repositoryId,
                 status: AutomationStatus.SUCCESS,
-                teamAutomation: { uuid: mockTeamAutomationId }
+                teamAutomation: { uuid: mockTeamAutomationId },
             };
 
             // Act
-            const result = await repository.findLatestExecutionByFilters(
-                filters
-            );
+            const result =
+                await repository.findLatestExecutionByFilters(filters);
 
             // Assert
             expect(result).toBeInstanceOf(AutomationExecutionEntity);
@@ -267,7 +267,7 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
             // Verifica que filtrou pelo teamAutomationId correto
             expect(queryBuilder.andWhere).toHaveBeenCalledWith(
                 'automation_execution.teamAutomation = :teamAutomation',
-                { teamAutomation: mockTeamAutomationId }
+                { teamAutomation: mockTeamAutomationId },
             );
         });
 
@@ -280,7 +280,7 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
                 status: AutomationStatus.SUCCESS,
                 dataExecution: {
                     pullRequestNumber: pullRequestNumber,
-                    platformType: 'AZURE_REPOS' // Diferente plataforma
+                    platformType: 'AZURE_REPOS', // Diferente plataforma
                 },
                 pullRequestNumber: pullRequestNumber,
                 repositoryId: repositoryId,
@@ -295,13 +295,12 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
                 pullRequestNumber: pullRequestNumber,
                 repositoryId: repositoryId,
                 status: AutomationStatus.SUCCESS,
-                teamAutomation: { uuid: mockTeamAutomationId }
+                teamAutomation: { uuid: mockTeamAutomationId },
             };
 
             // Act
-            const result = await repository.findLatestExecutionByFilters(
-                filters
-            );
+            const result =
+                await repository.findLatestExecutionByFilters(filters);
 
             // Assert
             expect(result).toBeInstanceOf(AutomationExecutionEntity);
@@ -311,11 +310,11 @@ describe('AutomationExecutionRepository - Forward Compatibility', () => {
             // No formato novo, não filtramos por platformType, apenas pelas colunas
             expect(queryBuilder.andWhere).toHaveBeenCalledWith(
                 'automation_execution.pullRequestNumber = :pullRequestNumber',
-                { pullRequestNumber }
+                { pullRequestNumber },
             );
             expect(queryBuilder.andWhere).toHaveBeenCalledWith(
                 'automation_execution.repositoryId = :repositoryId',
-                { repositoryId }
+                { repositoryId },
             );
         });
     });

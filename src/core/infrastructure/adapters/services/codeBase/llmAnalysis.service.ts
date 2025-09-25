@@ -257,7 +257,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                         rankScore: z.number().optional(),
                     }),
                 ),
-                overallSummary: z.string(),
             });
 
             newSpan(`${LLMAnalysisService.name}::analyzeCodeWithAI_v2`);
@@ -323,7 +322,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
 
             const analysisResult: AIAnalysisResult = {
                 codeSuggestions: analysis.codeSuggestions,
-                overallSummary: analysis.overallSummary,
                 codeReviewModelUsed: {
                     generateSuggestions: defaultProvider,
                 },

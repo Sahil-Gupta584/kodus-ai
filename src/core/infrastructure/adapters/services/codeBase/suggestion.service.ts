@@ -174,7 +174,6 @@ export class SuggestionService implements ISuggestionService {
         );
 
         return {
-            overallSummary: codeReviewComments.overallSummary,
             codeSuggestions: filteredSuggestions,
         };
     }

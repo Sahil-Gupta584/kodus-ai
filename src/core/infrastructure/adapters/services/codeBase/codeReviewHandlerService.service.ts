@@ -98,7 +98,6 @@ export class CodeReviewHandlerService {
                 preparedFileContexts: [],
                 validSuggestions: [],
                 discardedSuggestions: [],
-                overallComments: [],
                 lastAnalyzedCommit: null,
                 validSuggestionsByPR: [],
                 validCrossFileSuggestions: [],
@@ -131,7 +130,6 @@ export class CodeReviewHandlerService {
                 context: CodeReviewHandlerService.name,
                 serviceName: CodeReviewHandlerService.name,
                 metadata: {
-                    overallCommentsCount: result?.overallComments?.length,
                     suggestionsCount: result?.lineComments?.length || 0,
                     organizationAndTeamData,
                     pullRequestNumber: pullRequest.number,
@@ -147,7 +145,6 @@ export class CodeReviewHandlerService {
                     : result.statusInfo;
 
             return {
-                overallComments: result?.overallComments,
                 lastAnalyzedCommit: result?.lastAnalyzedCommit,
                 commentId: result?.initialCommentData?.commentId,
                 noteId: result?.initialCommentData?.noteId,

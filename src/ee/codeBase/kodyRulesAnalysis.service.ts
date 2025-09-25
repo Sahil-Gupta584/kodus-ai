@@ -403,7 +403,6 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
 
             return {
                 codeSuggestions: [],
-                overallSummary: '',
             };
         }
 
@@ -469,7 +468,6 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
 
                 return {
                     codeSuggestions: [],
-                    overallSummary: '',
                 };
             }
 
@@ -509,10 +507,6 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 codeSuggestions: [
                     ...generatedKodyRulesSuggestions?.codeSuggestions,
                 ],
-                overallSummary:
-                    updatedSuggestions?.overallSummary ||
-                    generatedKodyRulesSuggestions?.overallSummary ||
-                    '',
             };
 
             if (updatedSuggestions) {
@@ -968,7 +962,6 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
 
             return {
                 codeSuggestions: parsedResponse.codeSuggestions || [],
-                overallSummary: parsedResponse.overallSummary || '',
             };
         } catch (error) {
             this.logger.error({
@@ -999,7 +992,6 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
     ): AIAnalysisResult | null {
         // Tipo específico para a resposta do UPDATE
         interface KodyRulesUpdateResponse {
-            overallSummary?: string;
             codeSuggestions?: Array<{
                 id?: string;
                 relevantFile?: string;
@@ -1101,7 +1093,6 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
 
             return {
                 codeSuggestions: processedSuggestions,
-                overallSummary: parsedResponse.overallSummary || '',
             };
         } catch (error) {
             this.logger.error({

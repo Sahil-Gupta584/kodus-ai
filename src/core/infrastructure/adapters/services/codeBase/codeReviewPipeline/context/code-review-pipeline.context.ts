@@ -76,7 +76,6 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     fileAnalysisResults?: Array<{
         validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
         discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[];
-        overallComment: { filepath: string; summary: string };
         file: FileChange;
     }>;
 
@@ -87,7 +86,6 @@ export interface CodeReviewPipelineContext extends PipelineContext {
 
     validSuggestions: Partial<CodeSuggestion>[];
     discardedSuggestions: Partial<CodeSuggestion>[];
-    overallComments: { filepath: string; summary: string }[];
     lastAnalyzedCommit?: any;
 
     validSuggestionsByPR?: ISuggestionByPR[];

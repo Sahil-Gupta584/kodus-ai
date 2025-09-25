@@ -17,7 +17,6 @@ import { ObservabilitySystem } from '@kodus/flow/dist/observability';
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
     discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[];
-    overallComment?: { filepath: string; summary: string };
     reviewMode?: ReviewModeResponse;
     codeReviewModelUsed?: {
         generateSuggestions?: string;
@@ -94,12 +93,10 @@ export type CombinedAnalysisResult = {
     lintingAnalysis?: any;
     securityAnalysis?: any;
     codeSuggestions: CodeSuggestion[]; // Aggregation of all suggestions
-    overallSummary: string; // Combined summary of the analyses
 };
 
 export type AIAnalysisResult = {
     codeSuggestions: Partial<CodeSuggestion>[];
-    overallSummary: string;
     codeReviewModelUsed?: {
         generateSuggestions?: string;
         safeguard?: string;
