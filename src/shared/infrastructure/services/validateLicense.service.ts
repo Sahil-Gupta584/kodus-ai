@@ -84,7 +84,7 @@ export class ValidateLicenseService {
                         return true;
                     }
                 }
-            }
+            } else return true;
         } catch (error) {
             this.logger.error({
                 message: 'Error validating license',
