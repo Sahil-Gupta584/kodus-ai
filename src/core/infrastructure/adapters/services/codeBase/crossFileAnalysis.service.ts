@@ -4,6 +4,8 @@ import { TokenChunkingService } from '@/shared/utils/tokenChunking/tokenChunking
 import { RunnableSequence } from '@langchain/core/runnables';
 import {
     CrossFileAnalysisPayload,
+    CrossFileAnalysisSchema,
+    CrossFileAnalysisSchemaType,
     prompt_codereview_cross_file_analysis,
 } from '@/shared/utils/langchainCommon/prompts/codeReviewCrossFileAnalysis';
 import {
@@ -121,7 +123,7 @@ export class CrossFileAnalysisService {
 
         const language =
             context.codeReviewConfig.languageResultPrompt || 'en-US';
-        const provider = LLMModelProvider.GEMINI_2_5_PRO;
+        const provider = LLMModelProvider.OPENAI_GPT_4O_MINI;
 
         this.tokenTracker.reset();
 
@@ -463,7 +465,7 @@ export class CrossFileAnalysisService {
                 main: provider,
                 fallback: fallbackProvider,
             })
-            .setParser(ParserType.STRING)
+            .setParser(ParserType.ZOD, CrossFileAnalysisSchema)
             .setLLMJsonMode(true)
             .setPayload(payload)
             .addPrompt({
@@ -526,13 +528,17 @@ export class CrossFileAnalysisService {
      * Processa resposta do LLM baseada no tipo de análise
      */
     private processLLMResponse(
-        response: string,
+        response: CrossFileAnalysisSchemaType,
         analysisType: AnalysisType,
         prNumber: number,
         organizationAndTeamData: OrganizationAndTeamData,
     ): CodeSuggestion[] | null {
         try {
-            if (!response) {
+            if (
+                !response ||
+                !response.suggestions ||
+                !Array.isArray(response.suggestions)
+            ) {
                 this.logger.warn({
                     message: `Empty response from LLM for ${analysisType}`,
                     context: CrossFileAnalysisService.name,
@@ -545,42 +551,8 @@ export class CrossFileAnalysisService {
                 return null;
             }
 
-            let cleanResponse = response;
-            if (response?.startsWith('```')) {
-                cleanResponse = response
-                    .replace(/^```json\n/, '')
-                    .replace(/\n```(\n)?$/, '')
-                    .trim();
-            }
-
-            const parsedResponse = tryParseJSONObject(cleanResponse);
-
-            if (!parsedResponse) {
-                this.logger.warn({
-                    message: `Failed to parse LLM response for ${analysisType}`,
-                    context: CrossFileAnalysisService.name,
-                    metadata: {
-                        prNumber,
-                        organizationAndTeamData,
-                        analysisType,
-                        responseLength: response.length,
-                    },
-                });
-                return null;
-            }
-
-            // Normalizar resposta para array
-            let suggestions: CodeSuggestion[] = [];
-            if (Array.isArray(parsedResponse)) {
-                suggestions = parsedResponse;
-            } else if (parsedResponse && typeof parsedResponse === 'object') {
-                suggestions = [parsedResponse];
-            } else {
-                return null;
-            }
-
             // Validar e enriquecer sugestões
-            const validSuggestions = suggestions
+            const validSuggestions = response.suggestions
                 .filter((suggestion) =>
                     this.validateSuggestion(suggestion, analysisType),
                 )
@@ -593,7 +565,7 @@ export class CrossFileAnalysisService {
                     prNumber,
                     organizationAndTeamData,
                     analysisType,
-                    rawSuggestions: suggestions.length,
+                    rawSuggestions: response.suggestions.length,
                     validSuggestions: validSuggestions.length,
                 },
             });
@@ -608,7 +580,7 @@ export class CrossFileAnalysisService {
                     prNumber,
                     organizationAndTeamData,
                     analysisType,
-                    responseLength: response?.length || 0,
+                    responseLength: response?.suggestions?.length || 0,
                 },
             });
             return null;
@@ -654,7 +626,7 @@ export class CrossFileAnalysisService {
             relevantLinesEnd: suggestion.relevantLinesEnd,
             label: LabelType.CROSS_FILE,
             severity: suggestion.severity,
-            rankScore: suggestion?.rankScore || 0,
+            rankScore: 0,
             type: SuggestionType.CROSS_FILE,
             ...suggestion, // Preserva outros campos que podem existir
         };

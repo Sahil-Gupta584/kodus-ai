@@ -1,3 +1,5 @@
+import z from 'zod';
+
 export interface CrossFileAnalysisPayload {
     files: {
         file: {
@@ -7,6 +9,26 @@ export interface CrossFileAnalysisPayload {
     }[];
     language: string;
 }
+
+export const CrossFileAnalysisSchema = z.object({
+    suggestions: z.array(
+        z.object({
+            relevantFile: z.string().min(1),
+            relatedFile: z.string().min(1),
+            language: z.string().min(1),
+            suggestionContent: z.string().min(1),
+            existingCode: z.string().min(1),
+            improvedCode: z.string().min(1),
+            oneSentenceSummary: z.string().min(1),
+            relevantLinesStart: z.number().min(1),
+            relevantLinesEnd: z.number().min(1),
+        }),
+    ),
+});
+
+export type CrossFileAnalysisSchemaType = z.infer<
+    typeof CrossFileAnalysisSchema
+>;
 
 export const prompt_codereview_cross_file_analysis = (
     payload: CrossFileAnalysisPayload,
@@ -109,17 +131,17 @@ Generate suggestions in JSON format:
 
 \`\`\`json
 {
-  "relevantFile": "primary affected file where suggestion will be posted",
-  "relatedFile": "secondary file that shows the pattern/inconsistency",
-  "language": "detected language",
-  "suggestionContent": "concise description with affected files and line numbers"
-  "existingCode": "problematic code pattern from multiple files",
-  "improvedCode": "proposed consolidated/consistent solution",
-  "oneSentenceSummary": "brief description of the cross-file issue",
-  "relevantLinesStart": number,
-  "relevantLinesEnd": number,
-  "label": "cross_file",
-  "rankScore": 0,
+    "suggestions": [
+        "relevantFile": "primary affected file where suggestion will be posted",
+        "relatedFile": "secondary file that shows the pattern/inconsistency",
+        "language": "detected language",
+        "suggestionContent": "concise description with affected files and line numbers"
+        "existingCode": "problematic code pattern from multiple files",
+        "improvedCode": "proposed consolidated/consistent solution",
+        "oneSentenceSummary": "brief description of the cross-file issue",
+        "relevantLinesStart": number,
+        "relevantLinesEnd": number,
+    ]
 }
 \`\`\`
 
