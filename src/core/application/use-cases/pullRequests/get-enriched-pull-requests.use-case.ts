@@ -367,9 +367,14 @@ export class GetEnrichedPullRequestsUseCase implements IUseCase {
         };
     }
 
-    private extractSuggestionsCount(pullRequest: IPullRequests) {
+    private extractSuggestionsCount(
+        pullRequest: IPullRequests,
+    ): { sent: number; filtered: number } {
         return (pullRequest.files ?? []).reduce(
-            (acc, file) => {
+            (
+                acc: { sent: number; filtered: number },
+                file: IPullRequests['files'][number],
+            ) => {
                 for (const { deliveryStatus } of file.suggestions ?? []) {
                     if (deliveryStatus === DeliveryStatus.SENT) acc.sent += 1;
                     else if (deliveryStatus === DeliveryStatus.NOT_SENT)

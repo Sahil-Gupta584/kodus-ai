@@ -3,6 +3,7 @@ import { AutomationExecutionEntity } from '@/core/domain/automation/entities/aut
 import { IAutomationExecution } from '@/core/domain/automation/interfaces/automation-execution.interface';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { AutomationExecutionModel } from './schema/automationExecution.model';
 import {
     FindManyOptions,
@@ -23,6 +24,7 @@ export class AutomationExecutionRepository
     constructor(
         @InjectRepository(AutomationExecutionModel)
         private readonly automationExecutionRepository: Repository<AutomationExecutionModel>,
+        private readonly logger: PinoLoggerService,
     ) {}
 
     async create(
@@ -64,7 +66,11 @@ export class AutomationExecutionRepository
                 );
             }
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to create automation execution',
+                context: AutomationExecutionRepository.name,
+                error,
+            });
         }
     }
 
@@ -85,11 +91,10 @@ export class AutomationExecutionRepository
                 );
 
             if (updateResult.affected === 0) {
-                console.warn({
-                    message: `No automation execution found for update with filter ${JSON.stringify(
-                        filter,
-                    )}`,
+                this.logger.warn({
+                    message: 'No automation execution found for update',
                     context: AutomationExecutionRepository.name,
+                    metadata: { filter },
                 });
                 return null;
             }
@@ -105,7 +110,12 @@ export class AutomationExecutionRepository
                 AutomationExecutionEntity,
             );
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to update automation execution',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { filter },
+            });
         }
     }
 
@@ -113,7 +123,12 @@ export class AutomationExecutionRepository
         try {
             await this.automationExecutionRepository.delete(uuid);
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to delete automation execution',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { uuid },
+            });
         }
     }
 
@@ -133,7 +148,12 @@ export class AutomationExecutionRepository
                 AutomationExecutionEntity,
             );
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to find automation execution by id',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { uuid },
+            });
         }
     }
 
@@ -168,7 +188,12 @@ export class AutomationExecutionRepository
                 AutomationExecutionEntity,
             );
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to find automation executions',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { filter },
+            });
         }
     }
 
@@ -194,13 +219,27 @@ export class AutomationExecutionRepository
                 );
 
             queryBuilder
-                .leftJoinAndSelect(
+                .select([
+                    'automation_execution.uuid',
+                    'automation_execution.createdAt',
+                    'automation_execution.updatedAt',
+                    'automation_execution.status',
+                    'automation_execution.errorMessage',
+                    'automation_execution.origin',
+                    'automation_execution.pullRequestNumber',
+                    'automation_execution.repositoryId',
+                    'automation_execution.dataExecution',
+                    'teamAutomation.uuid',
+                    'team.name',
+                    'codeReviewExecutions.uuid',
+                ])
+                .leftJoin(
                     'automation_execution.teamAutomation',
                     'teamAutomation',
                 )
-                .leftJoinAndSelect('teamAutomation.team', 'team')
+                .leftJoin('teamAutomation.team', 'team')
                 .leftJoin('team.organization', 'organization')
-                .leftJoinAndSelect(
+                .leftJoin(
                     'automation_execution.codeReviewExecutions',
                     'codeReviewExecutions',
                 )
@@ -244,7 +283,12 @@ export class AutomationExecutionRepository
 
             return { data: mapped, total };
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to find pull request executions by organization',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { params },
+            });
             return { data: [], total: 0 };
         }
     }
@@ -280,7 +324,12 @@ export class AutomationExecutionRepository
 
             return mapSimpleModelToEntity(result, AutomationExecutionEntity);
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to find latest execution by filters',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { filters },
+            });
         }
     }
 
@@ -305,7 +354,12 @@ export class AutomationExecutionRepository
             const result = await queryBuilder.getMany();
             return mapSimpleModelsToEntities(result, AutomationExecutionEntity);
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to find automation executions by period and team automation id',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { startDate, endDate, teamAutomationId },
+            });
         }
     }
 
