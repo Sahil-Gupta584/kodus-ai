@@ -122,5 +122,6 @@ export interface ICommentManagerService {
         codeSuggestions?: Array<CommentResult>,
         codeReviewConfig?: CodeReviewConfig,
         endReviewMessage?: string,
+        pullRequestMessagesConfig?: IPullRequestMessages,
     ): Promise<void>;
 }
