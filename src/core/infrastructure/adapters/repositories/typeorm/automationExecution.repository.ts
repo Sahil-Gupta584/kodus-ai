@@ -3,13 +3,13 @@ import { AutomationExecutionEntity } from '@/core/domain/automation/entities/aut
 import { IAutomationExecution } from '@/core/domain/automation/interfaces/automation-execution.interface';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { AutomationExecutionModel } from './schema/automationExecution.model';
 import {
     FindManyOptions,
     FindOneOptions,
     FindOptionsWhere,
     Repository,
-    UpdateQueryBuilder,
 } from 'typeorm';
 import {
     mapSimpleModelToEntity,
@@ -24,6 +24,7 @@ export class AutomationExecutionRepository
     constructor(
         @InjectRepository(AutomationExecutionModel)
         private readonly automationExecutionRepository: Repository<AutomationExecutionModel>,
+        private readonly logger: PinoLoggerService,
     ) {}
 
     async create(
@@ -65,7 +66,11 @@ export class AutomationExecutionRepository
                 );
             }
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to create automation execution',
+                context: AutomationExecutionRepository.name,
+                error,
+            });
         }
     }
 
@@ -86,11 +91,10 @@ export class AutomationExecutionRepository
                 );
 
             if (updateResult.affected === 0) {
-                console.warn({
-                    message: `No automation execution found for update with filter ${JSON.stringify(
-                        filter,
-                    )}`,
+                this.logger.warn({
+                    message: 'No automation execution found for update',
                     context: AutomationExecutionRepository.name,
+                    metadata: { filter },
                 });
                 return null;
             }
@@ -106,7 +110,12 @@ export class AutomationExecutionRepository
                 AutomationExecutionEntity,
             );
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to update automation execution',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { filter },
+            });
         }
     }
 
@@ -114,7 +123,12 @@ export class AutomationExecutionRepository
         try {
             await this.automationExecutionRepository.delete(uuid);
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to delete automation execution',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { uuid },
+            });
         }
     }
 
@@ -134,7 +148,12 @@ export class AutomationExecutionRepository
                 AutomationExecutionEntity,
             );
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to find automation execution by id',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { uuid },
+            });
         }
     }
 
@@ -169,7 +188,108 @@ export class AutomationExecutionRepository
                 AutomationExecutionEntity,
             );
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to find automation executions',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { filter },
+            });
+        }
+    }
+
+    async findPullRequestExecutionsByOrganization(params: {
+        organizationId: string;
+        repositoryIds?: string[];
+        skip?: number;
+        take?: number;
+        order?: 'ASC' | 'DESC';
+    }): Promise<{ data: AutomationExecutionEntity[]; total: number }> {
+        const {
+            organizationId,
+            repositoryIds,
+            skip = 0,
+            take = 30,
+            order = 'DESC',
+        } = params;
+
+        try {
+            const queryBuilder =
+                this.automationExecutionRepository.createQueryBuilder(
+                    'automation_execution',
+                );
+
+            queryBuilder
+                .select([
+                    'automation_execution.uuid',
+                    'automation_execution.createdAt',
+                    'automation_execution.updatedAt',
+                    'automation_execution.status',
+                    'automation_execution.errorMessage',
+                    'automation_execution.origin',
+                    'automation_execution.pullRequestNumber',
+                    'automation_execution.repositoryId',
+                    'automation_execution.dataExecution',
+                    'teamAutomation.uuid',
+                    'team.name',
+                    'codeReviewExecutions.uuid',
+                ])
+                .leftJoin(
+                    'automation_execution.teamAutomation',
+                    'teamAutomation',
+                )
+                .leftJoin('teamAutomation.team', 'team')
+                .leftJoin('team.organization', 'organization')
+                .leftJoin(
+                    'automation_execution.codeReviewExecutions',
+                    'codeReviewExecutions',
+                )
+                .where('automation_execution.pullRequestNumber IS NOT NULL')
+                .andWhere('automation_execution.repositoryId IS NOT NULL')
+                .andWhere('organization.uuid = :organizationId', {
+                    organizationId,
+                });
+
+            if (repositoryIds?.length) {
+                if (repositoryIds.length === 1) {
+                    queryBuilder.andWhere(
+                        'automation_execution.repositoryId = :repositoryId',
+                        { repositoryId: repositoryIds[0] },
+                    );
+                } else {
+                    queryBuilder.andWhere(
+                        'automation_execution.repositoryId IN (:...repositoryIds)',
+                        { repositoryIds },
+                    );
+                }
+            }
+
+            const total = await queryBuilder.getCount();
+
+            if (total === 0) {
+                return { data: [], total: 0 };
+            }
+
+            const executions = await queryBuilder
+                .orderBy('automation_execution.createdAt', order)
+                .skip(skip)
+                .take(take)
+                .getMany();
+
+            const mapped =
+                (mapSimpleModelsToEntities(
+                    executions,
+                    AutomationExecutionEntity,
+                ) as AutomationExecutionEntity[]) ?? [];
+
+            return { data: mapped, total };
+        } catch (error) {
+            this.logger.error({
+                message: 'Failed to find pull request executions by organization',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { params },
+            });
+            return { data: [], total: 0 };
         }
     }
 
@@ -204,7 +324,12 @@ export class AutomationExecutionRepository
 
             return mapSimpleModelToEntity(result, AutomationExecutionEntity);
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to find latest execution by filters',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { filters },
+            });
         }
     }
 
@@ -229,7 +354,12 @@ export class AutomationExecutionRepository
             const result = await queryBuilder.getMany();
             return mapSimpleModelsToEntities(result, AutomationExecutionEntity);
         } catch (error) {
-            console.log(error);
+            this.logger.error({
+                message: 'Failed to find automation executions by period and team automation id',
+                context: AutomationExecutionRepository.name,
+                error,
+                metadata: { startDate, endDate, teamAutomationId },
+            });
         }
     }
 
