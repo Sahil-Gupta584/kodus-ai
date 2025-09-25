@@ -217,11 +217,7 @@ export class ParametersController {
     @Post('/preview-pr-summary')
     @UseGuards(PolicyGuard)
     @CheckPolicies(
-        checkRepoPermissions(Action.Read, ResourceType.CodeReviewSettings, {
-            key: {
-                body: 'repository.id',
-            },
-        }),
+        checkPermissions(Action.Read, ResourceType.CodeReviewSettings),
     )
     public async previewPrSummary(
         @Body()
