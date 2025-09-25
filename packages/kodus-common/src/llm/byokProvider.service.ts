@@ -4,6 +4,7 @@ import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatGoogle } from '@langchain/google-gauth';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { Callbacks } from '@langchain/core/callbacks/manager';
+import { supportsTemperature } from './modelCapabilities';
 
 export enum BYOKProvider {
     OPENAI = 'openai',
@@ -47,19 +48,21 @@ export class BYOKProviderService {
     ): BaseChatModel {
         const { provider, apiKey, model, baseURL } = config.main;
         const defaultOptions = {
-            temperature: options?.temperature ?? 0,
             maxTokens: options?.maxTokens ?? -1,
             callbacks: options?.callbacks ?? [],
+            temperature: options?.temperature ?? 0,
         };
+
+        if (!supportsTemperature(model)) {
+            delete (defaultOptions as any).temperature;
+        }
 
         switch (provider) {
             case BYOKProvider.OPENAI:
                 return new ChatOpenAI({
                     modelName: model,
                     openAIApiKey: apiKey,
-                    //temperature: defaultOptions.temperature,
-                    maxTokens: defaultOptions.maxTokens,
-                    callbacks: defaultOptions.callbacks,
+                    ...defaultOptions,
                     configuration: {
                         apiKey: apiKey,
                     },
@@ -74,9 +77,7 @@ export class BYOKProviderService {
                 return new ChatOpenAI({
                     modelName: model,
                     openAIApiKey: apiKey,
-                    //temperature: defaultOptions.temperature,
-                    maxTokens: defaultOptions.maxTokens,
-                    callbacks: defaultOptions.callbacks,
+                    ...defaultOptions,
                     configuration: {
                         baseURL: baseURL,
                         apiKey: apiKey,
@@ -87,9 +88,7 @@ export class BYOKProviderService {
                 return new ChatOpenAI({
                     modelName: model,
                     openAIApiKey: apiKey,
-                    //temperature: defaultOptions.temperature,
-                    maxTokens: defaultOptions.maxTokens,
-                    callbacks: defaultOptions.callbacks,
+                    ...defaultOptions,
                     configuration: {
                         baseURL: 'https://openrouter.ai/api/v1',
                         apiKey: apiKey,

@@ -28,6 +28,7 @@ import { PullRequestsModule } from './pullRequests.module';
 import { LicenseModule } from '@/ee/license/license.module';
 import { CodeReviewExecutionModule } from './codeReviewExecution.module';
 import { OrganizationParametersModule } from './organizationParameters.module';
+import { BYOKDeterminationService } from '@/shared/infrastructure/services/byokDetermination.service';
 
 @Module({
     imports: [
@@ -59,6 +60,7 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         GetConnectionsUseCase,
         AutomationCodeReviewService,
         PromptService,
+        BYOKDeterminationService,
         {
             provide: EXECUTE_AUTOMATION_SERVICE_TOKEN,
             useClass: ExecuteAutomationService,

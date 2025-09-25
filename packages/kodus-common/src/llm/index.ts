@@ -4,8 +4,10 @@
 
 export * from './builder';
 export * from './byokProvider.service';
+export * from './callback';
 export * from './helper';
 export * from './llm.module';
 export * from './llmModelProvider.service';
+export * from './modelCapabilities';
 export * from './parser';
 export * from './promptRunner.service';

@@ -23,6 +23,7 @@ import { CodebaseModule } from './codeBase.module';
 import { LicenseModule } from '@/ee/license/license.module';
 import { OrganizationParametersModule } from './organizationParameters.module';
 import { WebhookLogModule } from './webhookLog.module';
+import { BYOKDeterminationService } from '@/shared/infrastructure/services/byokDetermination.service';
 
 @Module({
     imports: [
@@ -49,6 +50,7 @@ import { WebhookLogModule } from './webhookLog.module';
         ...UseCases,
         RunCodeReviewAutomationUseCase,
         PromptService,
+        BYOKDeterminationService,
         {
             provide: GITHUB_SERVICE_TOKEN,
             useClass: GithubService,

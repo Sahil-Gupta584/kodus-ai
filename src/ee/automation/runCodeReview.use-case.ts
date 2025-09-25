@@ -29,14 +29,12 @@ import {
     OrganizationLicenseValidationResult,
 } from '@/ee/license/interfaces/license.interface';
 import { environment } from '@/ee/configs/environment';
-import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
-import { decrypt } from '@/shared/utils/crypto';
 import { BYOKConfig } from '@kodus/kodus-common/llm';
-import { BYOKProvider } from '@kodus/kodus-common/llm';
 import {
     IOrganizationParametersService,
     ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/organizationParameters/contracts/organizationParameters.service.contract';
+import { BYOKDeterminationService } from '@/shared/infrastructure/services/byokDetermination.service';
 
 @Injectable()
 export class RunCodeReviewAutomationUseCase {
@@ -64,10 +62,13 @@ export class RunCodeReviewAutomationUseCase {
 
         private readonly codeManagement: CodeManagementService,
 
+        private readonly byokDeterminationService: BYOKDeterminationService,
+
         private logger: PinoLoggerService,
     ) {
         this.isCloud = environment.API_CLOUD_MODE;
-        this.isDevelopment = environment.API_DEVELOPMENT_MODE;
+        //this.isDevelopment = environment.API_DEVELOPMENT_MODE;
+        this.isDevelopment = false;
     }
 
     async execute(params: {
@@ -135,8 +136,11 @@ export class RunCodeReviewAutomationUseCase {
                 return;
             }
 
-            const { organizationAndTeamData: teamData, automationId, byokConfig } =
-                teamWithAutomation;
+            const {
+                organizationAndTeamData: teamData,
+                automationId,
+                byokConfig,
+            } = teamWithAutomation;
             organizationAndTeamData = teamData;
 
             if (!pullRequest) {
@@ -437,6 +441,24 @@ export class RunCodeReviewAutomationUseCase {
                                     organizationAndTeamData,
                                     validation,
                                 );
+
+                                const planType = validation.planType;
+                                const needsBYOK =
+                                    planType?.includes('byok') ||
+                                    planType?.includes('free');
+
+                                if (needsBYOK && !byokConfig) {
+                                    await this.createNoActiveSubscriptionComment(
+                                        {
+                                            organizationAndTeamData,
+                                            repository: params.repository,
+                                            prNumber: params?.prNumber,
+                                            noActiveSubscriptionType:
+                                                'byok_required',
+                                        },
+                                    );
+                                    return null;
+                                }
                             } catch (error) {
                                 if (error.message === 'BYOK_NOT_CONFIGURED') {
                                     const planType = validation.planType;
@@ -508,8 +530,7 @@ export class RunCodeReviewAutomationUseCase {
                                     );
 
                                     return null;
-                                }
-                                else {
+                                } else {
                                     return null;
                                 }
                     }
@@ -581,85 +602,12 @@ export class RunCodeReviewAutomationUseCase {
         organizationAndTeamData: OrganizationAndTeamData,
         validation: OrganizationLicenseValidationResult,
     ): Promise<BYOKConfig | null> {
-        try {
-            // Self-hosted sempre usa config das env vars (não usa BYOK)
-            if (!this.isCloud) {
-                return null;
-            }
-
-            if (!validation) {
-                return null;
-            }
-
-            if (!validation?.valid) {
-                return null;
-            }
-
-            const planType = validation?.planType;
-
-            const isBYOKPlan = planType?.includes('byok');
-            const isFreePlan = planType?.includes('free');
-            const isManagedPlan = planType?.includes('managed') && !isBYOKPlan;
-
-            // Managed plans (sem byok) usam nossas keys
-            if (isManagedPlan) {
-                this.logger.log({
-                    message: 'Using managed keys for review',
-                    context: RunCodeReviewAutomationUseCase.name,
-                    metadata: { organizationAndTeamData, planType },
-                });
-                return null;
-            }
-
-            // Free plan ou BYOK plan precisam de BYOK config
-            if (isFreePlan || isBYOKPlan) {
-                const byokData =
-                    await this.organizationParametersService.findByKey(
-                        OrganizationParametersKey.BYOK_CONFIG,
-                        organizationAndTeamData,
-                    );
-
-                if (!byokData?.configValue) {
-                    this.logger.warn({
-                        message: `BYOK required but not configured for plan ${planType}`,
-                        context: RunCodeReviewAutomationUseCase.name,
-                        metadata: { organizationAndTeamData, planType },
-                    });
-
-                    throw new Error('BYOK_NOT_CONFIGURED');
-                }
-
-                this.logger.log({
-                    message: 'Using BYOK configuration for review',
-                    context: RunCodeReviewAutomationUseCase.name,
-                    metadata: {
-                        organizationAndTeamData,
-                        planType,
-                        provider: byokData.configValue?.provider,
-                        model: byokData.configValue?.model,
-                    },
-                });
-
-                return byokData.configValue;
-            }
-
-            // Caso não identificado, usar keys gerenciadas
-            return null;
-        } catch (error) {
-            if (error.message === 'BYOK_NOT_CONFIGURED') {
-                throw error; // Re-throw para ser tratado no findTeamWithActiveCodeReview
-            }
-
-            this.logger.error({
-                message: 'Error determining BYOK usage',
-                context: RunCodeReviewAutomationUseCase.name,
-                error: error,
-                metadata: { organizationAndTeamData },
-            });
-
-            // Em caso de erro, falhar seguramente sem usar BYOK
-            return null;
-        }
+        return this.byokDeterminationService.determineBYOKUsage(
+            organizationAndTeamData,
+            validation,
+            this.isCloud,
+            RunCodeReviewAutomationUseCase.name,
+        );
     }
 
     private async noActiveSubscriptionGeneralMessage(): Promise<string> {
@@ -684,7 +632,6 @@ export class RunCodeReviewAutomationUseCase {
             '## BYOK Configuration Required! 🔑\n\n' +
             'Your plan requires a Bring Your Own Key (BYOK) configuration to perform code reviews.\n\n' +
             'Please configure your API keys in [Settings > BYOK Configuration](https://app.kodus.io/settings/byok).\n\n' +
-            'Supported providers: OpenAI, Anthropic, Google Gemini, and more.\n\n' +
             '<!-- kody-codereview -->'
         );
     }

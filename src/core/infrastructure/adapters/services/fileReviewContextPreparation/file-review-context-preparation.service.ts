@@ -12,6 +12,7 @@ import { PinoLoggerService } from '../logger/pino.service';
 import { BaseFileReviewContextPreparation } from './base-file-review-context-preparation.service';
 import { ReviewModeOptions } from '@/shared/interfaces/file-review-context-preparation.interface';
 import { TaskStatus } from '@kodus/kodus-proto/task';
+import { BYOKConfig } from '@kodus/kodus-common/llm';
 
 @Injectable()
 export class FileReviewContextPreparation extends BaseFileReviewContextPreparation {
@@ -21,6 +22,7 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
 
     protected async determineReviewMode(
         options?: ReviewModeOptions,
+        byokConfig?: BYOKConfig,
     ): Promise<ReviewModeResponse> {
         return ReviewModeResponse.LIGHT_MODE;
     }

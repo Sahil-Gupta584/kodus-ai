@@ -24,6 +24,5 @@ export interface IFileAnalysisRule {
     ): Promise<{
         validSuggestions: CodeSuggestion[];
         discardedSuggestions: CodeSuggestion[];
-        overallComments: { filepath: string; summary: string }[];
     }>;
 }

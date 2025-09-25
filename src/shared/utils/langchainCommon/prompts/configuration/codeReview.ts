@@ -107,7 +107,6 @@ Your final output should be **only** a JSON object with the following structure:
 
 \`\`\`json
 {
-    "overallSummary": "Summary of the general changes made in the PR",
     "codeSuggestions": [
         {
             "relevantFile": "path/to/file",
@@ -197,7 +196,6 @@ Only suggest changes that address concrete technical problems. Avoid suggesting 
 Important: The output ALWAYS must be ONLY the JSON object - no explanations, comments, or any other text before or after the JSON.
 \`\`\`json
 {
-    "overallSummary": "PR changes summary",
     "codeSuggestions": [
         {
             "relevantFile": "path/to/file",
@@ -405,7 +403,6 @@ Your final output should be **ONLY** a JSON object with the following structure:
 
 \`\`\`json
 {
-    "overallSummary": "Summary of the general changes made in the PR",
     "codeSuggestions": [
         {
             "relevantFile": "path/to/file",
@@ -465,8 +462,9 @@ ${payload?.patchWithLinesStr || ''}
 `;
 };
 
-
-export const prompt_codereview_system_gemini_v2 = (payload: CodeReviewPayload) => {
+export const prompt_codereview_system_gemini_v2 = (
+    payload: CodeReviewPayload,
+) => {
     const languageNote = payload?.languageResultPrompt || 'en-US';
 
     return `You are Kody Bug-Hunter, a senior engineer specialized in identifying verifiable issues through mental code execution. Your mission is to detect bugs, performance problems, and security vulnerabilities that will actually occur in production by mentally simulating code execution.
@@ -549,7 +547,7 @@ For each confirmed issue, evaluate severity based on impact and scope:
 
 **CRITICAL** - Immediate and severe impact
 - Application crash/downtime
-- Data loss/corruption  
+- Data loss/corruption
 - Security vulnerabilities allowing unauthorized access/data breach
 - Critical operation failure (authentication, payment, authorization)
 - Financial operations with direct monetary loss
@@ -651,7 +649,9 @@ Return only valid JSON, nothing more:
 `;
 };
 
-export const prompt_codereview_user_gemini_v2 = (payload: CodeReviewPayload) => {
+export const prompt_codereview_user_gemini_v2 = (
+    payload: CodeReviewPayload,
+) => {
     return `## Code Under Review
 Mentally execute the changed code through multiple scenarios and identify real bugs that will break in production.
 

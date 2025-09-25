@@ -14,6 +14,7 @@ import { ProviderService } from '@/core/infrastructure/adapters/services/provide
 import {
     Body,
     Controller,
+    Delete,
     Get,
     Post,
     Put,
@@ -25,6 +26,7 @@ import {
     CheckPolicies,
 } from '../../adapters/services/permissions/policy.guard';
 import { checkPermissions } from '../../adapters/services/permissions/policy.handlers';
+import { DeleteByokConfigUseCase } from '@/core/application/use-cases/organizationParameters/delete-byok-config.use-case';
 
 @Controller('organization-parameters')
 export class OrgnizationParametersController {
@@ -33,6 +35,7 @@ export class OrgnizationParametersController {
         private readonly findByKeyOrganizationParametersUseCase: FindByKeyOrganizationParametersUseCase,
         private readonly getModelsByProviderUseCase: GetModelsByProviderUseCase,
         private readonly providerService: ProviderService,
+        private readonly deleteByokConfigUseCase: DeleteByokConfigUseCase,
     ) {}
 
     @Post('/create-or-update')
@@ -98,5 +101,13 @@ export class OrgnizationParametersController {
         @Query('provider') provider: string,
     ): Promise<ModelResponse> {
         return await this.getModelsByProviderUseCase.execute(provider);
+    }
+
+    @Delete('/delete-byok-config')
+    public async deleteByokConfig(
+        @Query('organizationId') organizationId: string,
+        @Query('configType') configType: 'main' | 'fallback',
+    ) {
+        return await this.deleteByokConfigUseCase.execute(organizationId, configType);
     }
 }

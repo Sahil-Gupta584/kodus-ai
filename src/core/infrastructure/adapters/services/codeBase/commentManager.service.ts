@@ -33,8 +33,11 @@ import {
     LLMProviderService,
     ParserType,
     PromptRole,
-    PromptRunnerService,
+    PromptRunnerService as BasePromptRunnerService,
+    BYOKConfig,
+    TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
+import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
 
 interface ClusteredSuggestion {
     id: string;
@@ -50,10 +53,13 @@ import {
     MessageTemplateProcessor,
     PlaceholderContext,
 } from './utils/services/messageTemplateProcessor.service';
+import { ValidateLicenseService } from '@/shared/infrastructure/services/validateLicense.service';
+import { endSpan, newSpan } from './utils/span.utils';
 
 @Injectable()
 export class CommentManagerService implements ICommentManagerService {
     private readonly llmResponseProcessor: LLMResponseProcessor;
+    private readonly tokenTracker: TokenTrackingHandler;
 
     constructor(
         private readonly codeManagementService: CodeManagementService,
@@ -62,10 +68,12 @@ export class CommentManagerService implements ICommentManagerService {
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
         private readonly messageProcessor: MessageTemplateProcessor,
+        private readonly promptRunnerService: BasePromptRunnerService,
 
-        private readonly promptRunnerService: PromptRunnerService,
+        private readonly validateLicenseService: ValidateLicenseService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
+        this.tokenTracker = new TokenTrackingHandler();
     }
 
     async generateSummaryPR(
@@ -75,10 +83,29 @@ export class CommentManagerService implements ICommentManagerService {
         organizationAndTeamData: OrganizationAndTeamData,
         languageResultPrompt: string,
         summaryConfig: SummaryConfig,
-        isCommitRun: boolean,
+        byokConfig?: BYOKConfig,
+        isCommitRun?: boolean,
+        prPreview?: boolean,
     ): Promise<string> {
+        let byokConfigValue: BYOKConfig | null = byokConfig ?? null;
+
         if (!summaryConfig?.generatePRSummary) {
             return null;
+        }
+
+        if (prPreview) {
+            const validLicense =
+                await this.validateLicenseService.validateLicense(
+                    organizationAndTeamData,
+                );
+
+            if (!validLicense) {
+                return null;
+            }
+
+            byokConfigValue = await this.validateLicenseService.getBYOKConfig(
+                organizationAndTeamData,
+            );
         }
 
         const maxRetries = 2;
@@ -160,12 +187,17 @@ export class CommentManagerService implements ICommentManagerService {
 
                 const userPrompt = `<changedFilesContext>${JSON.stringify(baseContext?.changedFiles, null, 2) || 'No files changed'}</changedFilesContext>`;
 
-                const result = await this.promptRunnerService
+                newSpan(`${CommentManagerService.name}::generateSummaryPR`);
+
+                const promptRunner = new PromptRunnerService(
+                    this.promptRunnerService,
+                    LLMModelProvider.GEMINI_2_5_FLASH,
+                    fallbackProvider,
+                    byokConfigValue,
+                );
+
+                const result = await promptRunner
                     .builder()
-                    .setProviders({
-                        main: LLMModelProvider.GEMINI_2_5_FLASH,
-                        fallback: fallbackProvider,
-                    })
                     .setParser(ParserType.STRING)
                     .setLLMJsonMode(false)
                     .setPayload(baseContext)
@@ -185,9 +217,16 @@ export class CommentManagerService implements ICommentManagerService {
                         provider: LLMModelProvider.GEMINI_2_5_FLASH,
                         fallbackProvider,
                     })
+                    .addCallbacks([this.tokenTracker])
                     .setRunName('generateSummaryPR')
                     .setTemperature(0)
                     .execute();
+
+                endSpan(this.tokenTracker, {
+                    organizationId: organizationAndTeamData?.organizationId,
+                    prNumber: pullRequest?.number,
+                    repositoryId: repository?.id,
+                });
 
                 if (!result) {
                     throw new Error(
@@ -868,6 +907,7 @@ ${reviewOptions}
         prNumber: number,
         provider: LLMModelProvider,
         codeSuggestions: any[],
+        byokConfig?: BYOKConfig,
     ) {
         const language = (
             await this.parametersService.findByKey(
@@ -891,12 +931,19 @@ ${reviewOptions}
 
             const userPrompt = `<codeSuggestionsContext>${JSON.stringify(baseContext?.codeSuggestions, null, 2) || 'No code suggestions provided'}</codeSuggestionsContext>`;
 
-            const result = await this.promptRunnerService
+            newSpan(
+                `${CommentManagerService.name}::repeatedCodeReviewSuggestionClustering`,
+            );
+
+            const promptRunner = new PromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
+
+            const result = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setPayload(baseContext)
@@ -915,9 +962,15 @@ ${reviewOptions}
                     provider,
                     fallbackProvider,
                 })
+                .addCallbacks([this.tokenTracker])
                 .setRunName('repeatedCodeReviewSuggestionClustering')
                 .setTemperature(0)
                 .execute();
+
+            endSpan(this.tokenTracker, {
+                organizationId: organizationAndTeamData?.organizationId,
+                prNumber,
+            });
 
             if (!result) {
                 const message =

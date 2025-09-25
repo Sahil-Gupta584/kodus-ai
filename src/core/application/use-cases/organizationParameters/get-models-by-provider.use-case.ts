@@ -1,7 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import axios from 'axios';
 import { ProviderService } from '@/core/infrastructure/adapters/services/providers/provider.service';
-import { BYOKProvider } from '@kodus/kodus-common/llm';
+import {
+    BYOKProvider,
+    getModelCapabilities,
+    ModelCapabilities,
+    ReasoningConfig,
+} from '@kodus/kodus-common/llm';
 
 // Interfaces para as respostas das APIs
 interface OpenAIModel {
@@ -64,6 +69,8 @@ export interface ModelResponse {
     models: Array<{
         id: string;
         name: string;
+        supportsReasoning?: boolean;
+        reasoningConfig?: ReasoningConfig;
     }>;
 }
 
@@ -131,10 +138,19 @@ export class GetModelsByProviderUseCase {
 
             return {
                 provider: BYOKProvider.OPENAI,
-                models: response.data.data.map((model: OpenAIModel) => ({
-                    id: model.id,
-                    name: model.id,
-                })),
+                models: response.data.data.map((model: OpenAIModel) => {
+                    const capabilities = getModelCapabilities(model.id);
+                    const modelResult = {
+                        id: model.id,
+                        name: model.id,
+                        ...(capabilities.supportsReasoning && {
+                            supportsReasoning: true,
+                            reasoningConfig: capabilities.reasoningConfig,
+                        }),
+                    };
+
+                    return modelResult;
+                }),
             };
         } catch (error) {
             throw new BadRequestException(
@@ -182,10 +198,18 @@ export class GetModelsByProviderUseCase {
                     .filter((model: GeminiModel) =>
                         model.name.includes('gemini'),
                     )
-                    .map((model: GeminiModel) => ({
-                        id: model.name.split('/')[1],
-                        name: model.displayName || model.name,
-                    })),
+                    .map((model: GeminiModel) => {
+                        const modelId = model.name.split('/')[1];
+                        const capabilities = getModelCapabilities(modelId);
+                        return {
+                            id: modelId,
+                            name: model.displayName || model.name,
+                            ...(capabilities.supportsReasoning && {
+                                supportsReasoning: true,
+                                reasoningConfig: capabilities.reasoningConfig,
+                            }),
+                        };
+                    }),
             };
         } catch (error) {
             throw new BadRequestException(
@@ -193,7 +217,6 @@ export class GetModelsByProviderUseCase {
             );
         }
     }
-
     private async getOpenRouterModels(apiKey?: string): Promise<ModelResponse> {
         try {
             const response = await axios.get<OpenAIResponse>(

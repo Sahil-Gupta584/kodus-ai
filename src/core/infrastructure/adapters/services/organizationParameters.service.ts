@@ -251,4 +251,56 @@ export class OrganizationParametersService
     }): Promise<OrganizationParametersEntity[]> {
         return this.organizationParametersRepository.findByKeyAndValue(filter);
     }
+
+    async deleteByokConfig(
+        organizationId: string,
+        configType: 'main' | 'fallback',
+    ): Promise<boolean> {
+        try {
+            // Primeiro, buscar a configuração atual
+            const organizationAndTeamData = { organizationId };
+            const currentConfig = await this.findByKey(
+                OrganizationParametersKey.BYOK_CONFIG,
+                organizationAndTeamData,
+            );
+
+            if (!currentConfig || !currentConfig.configValue) {
+                throw new BadRequestException(
+                    'BYOK configuration not found',
+                );
+            }
+
+            const configValue = currentConfig.configValue;
+
+            if (!configValue[configType]) {
+                throw new BadRequestException(
+                    `config ${configType} not found`,
+                );
+            }
+
+            // Se for para deletar main e não houver fallback, ou deletar fallback quando só existe fallback
+            if (configType === 'main' && !configValue.fallback) {
+                // delete the entire configuration if there is only main
+                await this.organizationParametersRepository.delete(
+                    currentConfig.uuid,
+                );
+                return true;
+            }
+
+            // Criar nova configuração sem a parte deletada
+            const newConfigValue = { ...configValue };
+            delete newConfigValue[configType];
+
+            // Atualizar no repository
+            const updatedConfig =
+                await this.organizationParametersRepository.update(
+                    { uuid: currentConfig.uuid },
+                    { configValue: newConfigValue },
+                );
+
+            return !!updatedConfig;
+        } catch (err) {
+            throw new BadRequestException(err);
+        }
+    }
 }

@@ -13,10 +13,10 @@ import z from 'zod';
 import { CodeReviewPipelineContext } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/context/code-review-pipeline.context';
 import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { IClusterizedSuggestion } from '@/core/infrastructure/adapters/services/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
+import { ObservabilitySystem } from '@kodus/flow/dist/observability';
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
     discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[];
-    overallComment?: { filepath: string; summary: string };
     reviewMode?: ReviewModeResponse;
     codeReviewModelUsed?: {
         generateSuggestions?: string;
@@ -78,6 +78,7 @@ export type AnalysisContext = {
             status?: TaskStatus;
         };
     };
+    correlationId: string;
 };
 
 export type ASTAnalysisResult = {
@@ -92,12 +93,10 @@ export type CombinedAnalysisResult = {
     lintingAnalysis?: any;
     securityAnalysis?: any;
     codeSuggestions: CodeSuggestion[]; // Aggregation of all suggestions
-    overallSummary: string; // Combined summary of the analyses
 };
 
 export type AIAnalysisResult = {
     codeSuggestions: Partial<CodeSuggestion>[];
-    overallSummary: string;
     codeReviewModelUsed?: {
         generateSuggestions?: string;
         safeguard?: string;

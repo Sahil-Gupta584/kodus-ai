@@ -54,7 +54,6 @@ export class LLMResponseProcessor {
 
             return {
                 codeSuggestions: parsedResponse?.codeSuggestions || [],
-                overallSummary: parsedResponse?.overallSummary || '',
             };
         } catch (error) {
             this.logger.error({
