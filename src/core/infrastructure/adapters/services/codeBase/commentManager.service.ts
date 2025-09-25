@@ -42,7 +42,10 @@ interface ClusteredSuggestion {
     problemDescription?: string;
     actionStatement?: string;
 }
-import { IPullRequestMessageContent } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
+import {
+    IPullRequestMessageContent,
+    IPullRequestMessages,
+} from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import {
     MessageTemplateProcessor,
     PlaceholderContext,
@@ -366,12 +369,12 @@ export class CommentManagerService implements ICommentManagerService {
         language: string,
         platformType: PlatformType,
         codeReviewConfig?: CodeReviewConfig,
-        startReviewMessage?: string,
+        pullRequestMessages?: IPullRequestMessages,
     ): Promise<{ commentId: number; noteId: number; threadId?: number }> {
         try {
             let commentBody;
 
-            if (startReviewMessage?.length > 0) {
+            if (pullRequestMessages?.startReviewMessage?.content?.length > 0) {
                 const placeholderContext = await this.getTemplateContext(
                     changedFiles,
                     organizationAndTeamData,
@@ -382,7 +385,7 @@ export class CommentManagerService implements ICommentManagerService {
                 );
 
                 const rawBody = await this.messageProcessor.processTemplate(
-                    startReviewMessage,
+                    pullRequestMessages?.startReviewMessage?.content,
                     placeholderContext,
                 );
                 commentBody = this.sanitizeBitbucketMarkdown(
@@ -413,6 +416,32 @@ export class CommentManagerService implements ICommentManagerService {
                     body: commentBody,
                 },
             );
+
+            if (
+                PlatformType.GITHUB === platformType &&
+                pullRequestMessages?.globalSettings?.hideComments
+            ) {
+                try {
+                    await this.codeManagementService.minimizeComment({
+                        organizationAndTeamData,
+                        commentId: comment?.node_id
+                            ? comment.node_id.toString()
+                            : comment.id.toString(),
+                        reason: 'OUTDATED',
+                    });
+                } catch (error) {
+                    this.logger.warn({
+                        message: `Comment created but failed to minimize for PR#${prNumber}: ${error.message}`,
+                        context: CommentManagerService.name,
+                        metadata: {
+                            organizationAndTeamData,
+                            prNumber,
+                            repository: repository.name,
+                            commentId: comment?.id,
+                        },
+                    });
+                }
+            }
 
             const commentId = Number(comment?.id) || null;
 
@@ -472,15 +501,20 @@ export class CommentManagerService implements ICommentManagerService {
         codeSuggestions?: Array<CommentResult>,
         codeReviewConfig?: CodeReviewConfig,
         threadId?: number,
+        finalCommentBody?: string,
     ): Promise<void> {
         try {
-            const commentBody = await this.generateLastReviewCommenBody(
-                organizationAndTeamData,
-                prNumber,
-                platformType,
-                codeSuggestions,
-                codeReviewConfig,
-            );
+            let commentBody = finalCommentBody;
+
+            if (!commentBody || commentBody === '') {
+                commentBody = await this.generateLastReviewCommenBody(
+                    organizationAndTeamData,
+                    prNumber,
+                    platformType,
+                    codeSuggestions,
+                    codeReviewConfig,
+                );
+            }
 
             await this.codeManagementService.updateIssueComment({
                 organizationAndTeamData,
@@ -1417,12 +1451,12 @@ ${reviewOptions}
         language?: string,
         codeSuggestions?: Array<CommentResult>,
         codeReviewConfig?: CodeReviewConfig,
-        endReviewMessage?: IPullRequestMessageContent,
+        endReviewMessage?: string,
     ): Promise<void> {
         let commentBody;
 
         if (endReviewMessage) {
-            commentBody = endReviewMessage.content;
+            commentBody = endReviewMessage;
 
             const placeholderContext = await this.getTemplateContext(
                 changedFiles,
@@ -1434,7 +1468,7 @@ ${reviewOptions}
             );
 
             const rawBody = await this.messageProcessor.processTemplate(
-                endReviewMessage.content,
+                endReviewMessage,
                 placeholderContext,
             );
 

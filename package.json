@@ -36,6 +36,7 @@
         "migration:run:prod": "node ./node_modules/typeorm/cli.js migration:run -d ./dist/config/database/typeorm/ormconfig.js",
         "migration:revert:prod": "node ./node_modules/typeorm/cli.js migration:revert -d ./dist/config/database/typeorm/ormconfig.js",
         "seed": "ts-node -r tsconfig-paths/register src/config/database/typeorm/seed/seed.ts",
+        "seed:enriched-prs": "ts-node -r tsconfig-paths/register scripts/seed-enriched-pull-requests.ts",
         "seed:prod": "node dist/config/database/typeorm/seed/seed.js",
         "script": "ts-node -r tsconfig-paths/register src/config/scripts/main.script.ts",
         "docker:build": "yarn docker:cache:clean && docker compose -f docker-compose.dev.small.yml build",

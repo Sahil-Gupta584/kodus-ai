@@ -31,6 +31,7 @@ export interface EnrichedPullRequestResponse {
         name?: string;
     };
     isDraft: boolean;
+    suggestionsCount: { sent: number; filtered: number };
 
     // Dados da execução de automação (do PostgreSQL)
     automationExecution: {
@@ -66,4 +67,3 @@ export interface EnrichedPullRequestResponse {
         };
     };
 }
-

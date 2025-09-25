@@ -28,7 +28,6 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
         const {
             lastExecution,
             codeReviewConfig,
-            overallComments,
             repository,
             pullRequest,
             organizationAndTeamData,
@@ -64,10 +63,10 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 message: `Generating summary for PR#${pullRequest.number}`,
                 context: this.stageName,
                 metadata: {
-                        organizationAndTeamData,
-                        prNumber: context.pullRequest.number,
-                        repository: context.repository,
-                    },
+                    organizationAndTeamData,
+                    prNumber: context.pullRequest.number,
+                    repository: context.repository,
+                },
             });
 
             const changedFiles = context.changedFiles.map((file) => ({
@@ -95,13 +94,12 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
             );
         }
 
+        const startReviewMessage =
+            context.pullRequestMessagesConfig?.startReviewMessage;
         const endReviewMessage =
             context.pullRequestMessagesConfig?.endReviewMessage;
 
-        if (
-            !context.pullRequestMessagesConfig?.startReviewMessage &&
-            !endReviewMessage
-        ) {
+        if (!endReviewMessage) {
             await this.commentManagerService.updateOverallComment(
                 organizationAndTeamData,
                 pullRequest.number,
@@ -113,22 +111,41 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 codeReviewConfig,
                 initialCommentData.threadId,
             );
-        } else {
-            if (
-                endReviewMessage &&
-                endReviewMessage.status === PullRequestMessageStatus.INACTIVE
-            ) {
-                this.logger.log({
-                    message: `Skipping comment for PR#${context.pullRequest.number} with finish review message because it is inactive`,
-                    context: UpdateCommentsAndGenerateSummaryStage.name,
-                    metadata: {
-                        organizationAndTeamData,
-                        prNumber: context.pullRequest.number,
-                        repository: context.repository,
-                    },
-                });
-                return context;
-            }
+            return context;
+        }
+
+        if (endReviewMessage.status === PullRequestMessageStatus.INACTIVE) {
+            return context;
+        }
+
+        if (
+            endReviewMessage.status === PullRequestMessageStatus.ACTIVE &&
+            startReviewMessage &&
+            startReviewMessage.status === PullRequestMessageStatus.ACTIVE
+        ) {
+            const finalCommentBody = endReviewMessage.content;
+
+            await this.commentManagerService.updateOverallComment(
+                organizationAndTeamData,
+                pullRequest.number,
+                repository,
+                initialCommentData.commentId,
+                initialCommentData.noteId,
+                platformType,
+                lineComments,
+                codeReviewConfig,
+                initialCommentData.threadId,
+                finalCommentBody,
+            );
+            return context;
+        }
+
+        if (
+            endReviewMessage.status === PullRequestMessageStatus.ACTIVE &&
+            (!startReviewMessage ||
+                startReviewMessage.status === PullRequestMessageStatus.INACTIVE)
+        ) {
+            const finalCommentBody = endReviewMessage.content;
 
             await this.commentManagerService.createComment(
                 organizationAndTeamData,
@@ -139,7 +156,7 @@ export class UpdateCommentsAndGenerateSummaryStage extends BasePipelineStage<Cod
                 context.codeReviewConfig?.languageResultPrompt ?? 'en-US',
                 lineComments,
                 codeReviewConfig,
-                endReviewMessage,
+                finalCommentBody,
             );
         }
 
