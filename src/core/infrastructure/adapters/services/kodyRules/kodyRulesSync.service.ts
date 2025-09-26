@@ -33,7 +33,7 @@ import {
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import * as path from 'path';
 import { endSpan, newSpan } from '../codeBase/utils/span.utils';
-import { ValidateLicenseService } from '@/shared/infrastructure/services/validateLicense.service';
+import { ValidateLicenseService } from '@/ee/byok/validateLicense.service';
 import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
 
 type SyncTarget = {

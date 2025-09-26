@@ -30,7 +30,7 @@ import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
 import { GlobalCacheModule } from './cache.module';
 import { RuleLikeModule } from './ruleLike.module';
 import { LicenseModule } from '@/ee/license/license.module';
-import { ValidateLicenseService } from '@/shared/infrastructure/services/validateLicense.service';
+import { ValidateLicenseService } from '@/ee/byok/validateLicense.service';
 import { LicenseService } from '@/ee/license/license.service';
 import { OrganizationParametersModule } from './organizationParameters.module';
 

@@ -131,9 +131,7 @@ export class ValidateLicenseService {
 
                     const planType = validation?.planType;
 
-                    const limitResources =
-                        planType?.includes('byok') ||
-                        planType?.includes('free');
+                    const limitResources = planType?.includes('free');
 
                     if (limitResources) {
                         return true;
@@ -145,7 +143,7 @@ export class ValidateLicenseService {
                     ) {
                         return false;
                     }
-                }
+                } else return true;
             } else return false;
         } catch (error) {
             this.logger.error({

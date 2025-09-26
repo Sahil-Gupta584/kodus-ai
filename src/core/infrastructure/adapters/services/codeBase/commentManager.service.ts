@@ -53,7 +53,7 @@ import {
     MessageTemplateProcessor,
     PlaceholderContext,
 } from './utils/services/messageTemplateProcessor.service';
-import { ValidateLicenseService } from '@/shared/infrastructure/services/validateLicense.service';
+import { ValidateLicenseService } from '@/ee/byok/validateLicense.service';
 import { endSpan, newSpan } from './utils/span.utils';
 
 @Injectable()
