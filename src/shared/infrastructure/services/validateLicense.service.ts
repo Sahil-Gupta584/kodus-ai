@@ -105,4 +105,55 @@ export class ValidateLicenseService {
 
         return byokConfig?.configValue;
     }
+
+    public async limitResources(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<boolean> {
+        try {
+            if (!this.isDevelopment) {
+                if (this.isCloud) {
+                    const validation =
+                        await this.licenseService.validateOrganizationLicense(
+                            organizationAndTeamData,
+                        );
+
+                    if (!validation?.valid) {
+                        this.logger.warn({
+                            message: `License not active`,
+                            context: ValidateLicenseService.name,
+                            metadata: {
+                                organizationAndTeamData,
+                            },
+                        });
+
+                        return true;
+                    }
+
+                    const planType = validation?.planType;
+
+                    const limitResources =
+                        planType?.includes('byok') ||
+                        planType?.includes('free');
+
+                    if (limitResources) {
+                        return true;
+                    }
+
+                    if (
+                        validation?.valid &&
+                        validation?.subscriptionStatus === 'trial'
+                    ) {
+                        return false;
+                    }
+                }
+            } else return false;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error limiting resources',
+                context: ValidateLicenseService.name,
+                error: error,
+            });
+            return true;
+        }
+    }
 }
