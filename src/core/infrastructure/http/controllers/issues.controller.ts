@@ -7,6 +7,7 @@ import {
     Get,
     Param,
     Patch,
+    Post,
     Query,
     UseGuards,
 } from '@nestjs/common';
@@ -28,6 +29,8 @@ import {
     Action,
     ResourceType,
 } from '@/core/domain/permissions/enums/permissions.enum';
+import { CreateIssueManuallyDto } from '../dtos/create-issue-manually.dto';
+import { CreateIssueManuallyUseCase } from '@/core/application/use-cases/issues/create-issue-manually.use-case';
 
 @Controller('issues')
 export class IssuesController {

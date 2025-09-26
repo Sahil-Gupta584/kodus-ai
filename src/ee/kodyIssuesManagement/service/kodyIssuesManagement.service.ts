@@ -60,11 +60,12 @@ export class KodyIssuesManagementService
                 context: KodyIssuesManagementService.name,
                 metadata: params,
             });
+console.log('aaaaaaa');
 
-            // 1. Buscar suggestions não implementadas do PR
+// 1. Buscar suggestions não implementadas do PR
             const allSuggestions =
-                await this.filterValidSuggestionsFromPrByStatus(params.prFiles);
-
+            await this.filterValidSuggestionsFromPrByStatus(params.prFiles);
+            
             if (allSuggestions.length === 0) {
                 this.logger.log({
                     message: `No suggestions found for PR#${params.pullRequest.number}`,
@@ -72,14 +73,15 @@ export class KodyIssuesManagementService
                     metadata: params,
                 });
             }
-
+            
             // 2. Agrupar por arquivo
             const suggestionsByFile =
-                this.groupSuggestionsByFile(allSuggestions);
-
+            this.groupSuggestionsByFile(allSuggestions);
+            
             // 3. Para cada arquivo, fazer merge com issues existentes
             const changedFiles = Object.keys(suggestionsByFile);
-
+            
+            console.log('bbbbbb');
             for (const filePath of changedFiles) {
                 await this.mergeSuggestionsIntoIssues(
                     params,
@@ -87,10 +89,12 @@ export class KodyIssuesManagementService
                     suggestionsByFile[filePath],
                 );
             }
-
+            
+            console.log('cccccccc');
             // 4. Resolver issues que podem ter sido corrigidas
             await this.resolveExistingIssues(params, params.prFiles);
-
+            console.log('dddddd');
+            
             await this.pullRequestsService.updateSyncedWithIssuesFlag(
                 params.pullRequest.number,
                 params.repository.id,
@@ -107,7 +111,7 @@ export class KodyIssuesManagementService
             return;
         }
     }
-
+    
     async mergeSuggestionsIntoIssues(
         context: contextToGenerateIssues,
         filePath: string,
@@ -222,32 +226,35 @@ export class KodyIssuesManagementService
                 });
                 return;
             }
+console.log('dddddddd');
 
-            const pullRequest =
-                await this.pullRequestsService.findByNumberAndRepositoryName(
-                    context.pullRequest.number,
-                    context.repository.name,
-                    context.organizationAndTeamData,
-                );
-                
-            const filteredSuggestions = (unmatchedSuggestions || []).filter((suggestion) => {
-                if (!cfg) return true;
+const pullRequest =
+await this.pullRequestsService.findByNumberAndRepositoryName(
+    context.pullRequest.number,
+    context.repository.name,
+    context.organizationAndTeamData,
+);
+console.log('eeeee');
 
-                const severity = suggestion?.severity as any;
-                if (cfg.severityFilters?.minimumSeverity) {
-                    const order = ['low', 'medium', 'high', 'critical'] as const;
-                    const idx = order.indexOf((severity || 'low') as any);
-                    const minIdx = order.indexOf(cfg.severityFilters.minimumSeverity as any);
-                    if (idx < minIdx) return false;
-                }
-                if (cfg.severityFilters?.allowedSeverities?.length) {
-                    if (!cfg.severityFilters.allowedSeverities.includes(severity)) return false;
-                }
-
-                if (!cfg.sourceFilters?.includeCodeReviewEngine && suggestion?.source === 'code_review_engine') return false
-                if (!cfg.sourceFilters?.includeKodyRules && suggestion?.source === 'kody_rules') return false
+const filteredSuggestions = (unmatchedSuggestions || []).filter((suggestion) => {
+    if (!cfg) return true;
+    
+    const severity = suggestion?.severity as any;
+    if (cfg.severityFilters?.minimumSeverity) {
+        const order = ['low', 'medium', 'high', 'critical'] as const;
+        const idx = order.indexOf((severity || 'low') as any);
+        const minIdx = order.indexOf(cfg.severityFilters.minimumSeverity as any);
+        if (idx < minIdx) return false;
+    }
+    if (cfg.severityFilters?.allowedSeverities?.length) {
+        if (!cfg.severityFilters.allowedSeverities.includes(severity)) return false;
+    }
+    
+    if (!cfg.sourceFilters?.includeCodeReviewEngine && suggestion?.source === 'code_review_engine') return false
+    if (!cfg.sourceFilters?.includeKodyRules && suggestion?.source === 'kody_rules') return false
                 return true;
             });
+console.log('filteredSuggestions',JSON.stringify(filteredSuggestions));
 
             for (const suggestion of filteredSuggestions) {
                 await this.issuesService.create({

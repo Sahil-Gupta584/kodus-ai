@@ -56,8 +56,8 @@ export class RunCodeReviewAutomationUseCase {
 
         private logger: PinoLoggerService,
     ) {
-        this.isCloud = false;
-        this.isDevelopment = true;
+        this.isCloud = true;
+        this.isDevelopment =false;
     }
 
     async execute(params: {
@@ -287,7 +287,7 @@ export class RunCodeReviewAutomationUseCase {
             await this.automationService.find({
                 automationType: AutomationType.AUTOMATION_CODE_REVIEW,
             })
-        )[0];
+        )?.[0];
 
         if (!automation) {
             this.logger.warn({
@@ -309,6 +309,7 @@ export class RunCodeReviewAutomationUseCase {
             status: true,
             team: { uuid: teamId },
         });
+console.log('getTeamAutomations',teamAutomations);
 
         if (!teamAutomations || teamAutomations?.length <= 0) {
             this.logger.warn({
@@ -338,34 +339,39 @@ export class RunCodeReviewAutomationUseCase {
             if (!params?.repository?.id) {
                 return null;
             }
+console.log('aaaaaaa');
 
-            const configs =
-                await this.integrationConfigService.findIntegrationConfigWithTeams(
-                    IntegrationConfigKey.REPOSITORIES,
-                    params.repository.id,
-                    params.platformType,
-                );
+const configs =
+await this.integrationConfigService.findIntegrationConfigWithTeams(
+    IntegrationConfigKey.REPOSITORIES,
+    params.repository.id,
+    params.platformType,
+);
 
-            if (!configs?.length) {
-                this.logger.warn({
-                    message: 'No repository configuration found',
-                    context: RunCodeReviewAutomationUseCase.name,
-                    metadata: {
-                        repositoryName: params.repository?.name,
+if (!configs?.length) {
+    this.logger.warn({
+        message: 'No repository configuration found',
+        context: RunCodeReviewAutomationUseCase.name,
+        metadata: {
+            repositoryName: params.repository?.name,
                     },
                 });
-
+                
                 return null;
             }
-
+            console.log('bbbbb');
+            
             const automation = await this.getAutomation();
-
+            console.log('ccccccc');
+            console.log('configs', JSON.stringify(configs));
+            
             for (const config of configs) {
                 const automations = await this.getTeamAutomations(
                     automation.uuid,
                     config.team.uuid,
                 );
-
+                console.log({automations});
+                
                 if (!automations?.length) {
                     this.logger.warn({
                         message: `No automations configuration found. Organization: ${config?.team?.organization?.uuid} - Team: ${config?.team?.uuid}`,
@@ -375,11 +381,11 @@ export class RunCodeReviewAutomationUseCase {
                             organizationAndTeamData: {
                                 organizationId:
                                     config?.team?.organization?.uuid,
-                                teamId: config?.team?.uuid,
+                                    teamId: config?.team?.uuid,
+                                },
+                                automationId: automation.uuid,
                             },
-                            automationId: automation.uuid,
-                        },
-                    });
+                        });
                 } else {
                     const { organizationAndTeamData, automationId } = {
                         organizationAndTeamData: {
@@ -478,8 +484,12 @@ export class RunCodeReviewAutomationUseCase {
                 }
             }
 
+                        console.log('ddddddd');
+
             return null;
         } catch (error) {
+            console.log('abc',error);
+            
             this.logger.error({
                 message: 'Automation, Repository OR License not Active',
                 context: RunCodeReviewAutomationUseCase.name,
