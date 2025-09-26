@@ -45,6 +45,7 @@ import {
     ILicenseService,
     LICENSE_SERVICE_TOKEN,
 } from '@/ee/license/interfaces/license.interface';
+import { KodyRulesValidationService } from './kody-rules-validation.service';
 
 @Injectable()
 export class KodyRulesService implements IKodyRulesService {
@@ -62,6 +63,8 @@ export class KodyRulesService implements IKodyRulesService {
         private readonly licenseService: ILicenseService,
 
         private readonly logger: PinoLoggerService,
+
+        private readonly kodyRulesValidationService: KodyRulesValidationService,
     ) {}
 
     getNativeCollection() {
@@ -541,21 +544,14 @@ export class KodyRulesService implements IKodyRulesService {
 
         try {
             const validation =
-                await this.licenseService.validateOrganizationLicense(
+                await this.kodyRulesValidationService.validateRulesLimit(
                     organizationAndTeamData,
+                    totalRulesAfterOperation,
                 );
 
-            const planType = validation?.planType?.toLowerCase();
-
-            if (!planType || !planType.includes('free')) {
-                return;
-            }
-
-            const limit = 10;
-
-            if (totalRulesAfterOperation > limit) {
+            if (!validation) {
                 throw new BadRequestException(
-                    `Plano free permite no máximo ${limit} regras personalizadas.`,
+                    `Free plan's limit of Kody Rules reached.`,
                 );
             }
         } catch (error) {

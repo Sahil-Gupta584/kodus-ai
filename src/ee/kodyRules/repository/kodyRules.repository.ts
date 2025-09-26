@@ -40,22 +40,6 @@ export class KodyRulesRepository implements IKodyRulesRepository {
         kodyRules: Omit<IKodyRules, 'uuid'>,
     ): Promise<KodyRulesEntity> {
         try {
-            const count = await this.kodyRulesModel.countDocuments({
-                organizationId: kodyRules.organizationId,
-            });
-
-            const totalRules = count + (kodyRules?.rules?.length || 0);
-
-            if (
-                !this.kodyRulesValidationService.validateRulesLimit(totalRules)
-            ) {
-                throw new Error(
-                    this.kodyRulesValidationService.getExceededLimitErrorMessage(
-                        kodyRules.organizationId,
-                    ),
-                );
-            }
-
             const saved = await this.kodyRulesModel.create(kodyRules);
             return mapSimpleModelToEntity(saved, KodyRulesEntity);
         } catch (error) {
@@ -71,12 +55,11 @@ export class KodyRulesRepository implements IKodyRulesRepository {
                 { $match: { 'rules.uuid': uuid } },
                 { $unwind: '$rules' },
                 { $match: { 'rules.uuid': uuid } },
-                { $replaceRoot: { newRoot: '$rules' } }
+                { $replaceRoot: { newRoot: '$rules' } },
             ];
 
             const result = await this.kodyRulesModel.aggregate(pipeline).exec();
             return result.length > 0 ? result[0] : null;
-
         } catch (error) {
             throw error;
         }
@@ -313,8 +296,8 @@ export class KodyRulesRepository implements IKodyRulesRepository {
                     {
                         $set: {
                             'rules.$[elem].status': newStatus,
-                            'rules.$[elem].updatedAt': new Date()
-                        }
+                            'rules.$[elem].updatedAt': new Date(),
+                        },
                     },
                     {
                         new: true,
@@ -323,12 +306,11 @@ export class KodyRulesRepository implements IKodyRulesRepository {
                                 'elem.repositoryId': repositoryId,
                                 ...(directoryId
                                     ? { 'elem.directoryId': directoryId }
-                                    : { 'elem.directoryId': null }
-                                ),
-                                'elem.status': KodyRulesStatus.ACTIVE
-                            }
-                        ]
-                    }
+                                    : { 'elem.directoryId': null }),
+                                'elem.status': KodyRulesStatus.ACTIVE,
+                            },
+                        ],
+                    },
                 )
                 .exec();
 

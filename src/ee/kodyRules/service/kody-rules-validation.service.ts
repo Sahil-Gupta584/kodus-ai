@@ -3,10 +3,12 @@
  * Kodus Tech. All rights reserved.
  */
 
+import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import {
     IKodyRule,
     KodyRulesStatus,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
+import { ValidateLicenseService } from '@/ee/byok/validateLicense.service';
 import { environment } from '@/ee/configs/environment';
 import { Injectable } from '@nestjs/common';
 
@@ -18,7 +20,9 @@ export class KodyRulesValidationService {
     public readonly MAX_KODY_RULES = 10;
     public readonly isCloud: boolean;
 
-    constructor() {
+    constructor(
+        private readonly validateLicenseService: ValidateLicenseService,
+    ) {
         this.isCloud = environment.API_CLOUD_MODE;
     }
 
@@ -27,8 +31,19 @@ export class KodyRulesValidationService {
      * @param totalRules Total number of rules.
      * @returns True if the number of rules is within the limit, false otherwise.
      */
-    validateRulesLimit(totalRules: number): boolean {
-        return this.isCloud ? true : totalRules <= this.MAX_KODY_RULES;
+    async validateRulesLimit(
+        organizationAndTeamData: OrganizationAndTeamData,
+        totalRules: number,
+    ): Promise<boolean> {
+        const limited = await this.validateLicenseService.limitResources(
+            organizationAndTeamData,
+        );
+
+        if (!limited) {
+            return true;
+        }
+
+        return totalRules <= this.MAX_KODY_RULES;
     }
 
     /**
