@@ -9,6 +9,10 @@ import {
     IOrganizationParametersService,
     ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/organizationParameters/contracts/organizationParameters.service.contract';
+import {
+    ILicenseService,
+    LICENSE_SERVICE_TOKEN,
+} from '../license/interfaces/license.interface';
 
 @Injectable()
 export class ValidateLicenseService {
@@ -16,7 +20,9 @@ export class ValidateLicenseService {
     public readonly isDevelopment: boolean;
 
     constructor(
-        private readonly licenseService: LicenseService,
+        @Inject(LICENSE_SERVICE_TOKEN)
+        private readonly licenseService: ILicenseService,
+
         private logger: PinoLoggerService,
 
         @Inject(ORGANIZATION_PARAMETERS_SERVICE_TOKEN)
@@ -110,7 +116,7 @@ export class ValidateLicenseService {
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<boolean> {
         try {
-            if (!this.isDevelopment) {
+            if (this.isDevelopment) {
                 if (this.isCloud) {
                     const validation =
                         await this.licenseService.validateOrganizationLicense(
@@ -137,12 +143,7 @@ export class ValidateLicenseService {
                         return true;
                     }
 
-                    if (
-                        validation?.valid &&
-                        validation?.subscriptionStatus === 'trial'
-                    ) {
-                        return false;
-                    }
+                    return false;
                 } else return true;
             } else return false;
         } catch (error) {

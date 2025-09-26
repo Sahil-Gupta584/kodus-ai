@@ -1,9 +1,10 @@
 import { AxiosMCPManagerService } from '@/config/axios/microservices/mcpManager.axios';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { MCPServerConfig } from '@kodus/flow';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PinoLoggerService } from '../../services/logger/pino.service';
+import { ValidateLicenseService } from '@/ee/byok/validateLicense.service';
 
 type MCPConnection = {
     id: string;
@@ -46,6 +47,7 @@ export class MCPManagerService {
     constructor(
         private readonly jwt: JwtService,
         private readonly logger: PinoLoggerService,
+        private readonly validateLicenseService: ValidateLicenseService,
     ) {
         this.axiosMCPManagerService = new AxiosMCPManagerService();
     }
@@ -91,6 +93,10 @@ export class MCPManagerService {
         },
     ): Promise<MCPItem[] | MCPServerConfig[]> {
         try {
+            const limited = await this.validateLicenseService.limitResources(
+                organizationAndTeamData,
+            );
+
             const { provider, status = 'ACTIVE' } = filters || {};
 
             const data: MCPData = await this.axiosMCPManagerService.get(
@@ -105,13 +111,15 @@ export class MCPManagerService {
                 return [];
             }
 
+            const limitedData = limited ? data.items.slice(0, 3) : data.items;
+
             if (format) {
-                return data.items.map((connection) =>
+                return limitedData.map((connection) =>
                     this.formatConnection(connection),
                 );
             }
 
-            return data.items;
+            return limitedData;
         } catch (error) {
             this.logger.error({
                 message: 'Error fetching MCP connections',
@@ -120,58 +128,6 @@ export class MCPManagerService {
                 metadata: { organizationAndTeamData },
             });
             return [];
-        }
-    }
-
-    public async getConnectionById(
-        organizationAndTeamData: OrganizationAndTeamData,
-        connectionId: string,
-        format?: true,
-    ): Promise<MCPServerConfig | null>;
-
-    public async getConnectionById(
-        organizationAndTeamData: OrganizationAndTeamData,
-        connectionId: string,
-        format?: false,
-    ): Promise<MCPItem | null>;
-
-    public async getConnectionById(
-        organizationAndTeamData: OrganizationAndTeamData,
-        connectionId: string,
-        format: boolean = true,
-        filters?: {
-            provider?: string;
-            status?: string;
-        },
-    ): Promise<MCPItem | MCPServerConfig | null> {
-        try {
-            const { provider, status = 'ACTIVE' } = filters || {};
-
-            const data: MCPItem = await this.axiosMCPManagerService.get(
-                `mcp/connections/${connectionId}`,
-                {
-                    headers: this.getAuthHeaders(organizationAndTeamData),
-                    params: { provider, status },
-                },
-            );
-
-            if (!data) {
-                return null;
-            }
-
-            if (format) {
-                return this.formatConnection(data);
-            }
-
-            return data || null;
-        } catch (error) {
-            this.logger.error({
-                message: 'Error fetching MCP connection by id',
-                context: MCPManagerService.name,
-                error: error,
-                metadata: { organizationAndTeamData, connectionId },
-            });
-            return null;
         }
     }
 
