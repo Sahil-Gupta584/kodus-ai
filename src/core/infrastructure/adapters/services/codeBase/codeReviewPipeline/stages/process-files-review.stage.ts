@@ -979,5 +979,8 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 context.prAnalysisResults?.validCrossFileSuggestions || [],
             tasks: context.tasks,
         };
+        this.collectFileProcessingResult
     }
+    
 }
+

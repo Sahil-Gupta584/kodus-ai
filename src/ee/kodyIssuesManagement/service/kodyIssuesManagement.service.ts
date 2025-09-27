@@ -60,12 +60,12 @@ export class KodyIssuesManagementService
                 context: KodyIssuesManagementService.name,
                 metadata: params,
             });
-console.log('aaaaaaa');
+            console.log('aaaaaaa', JSON.stringify(params.prFiles));
 
-// 1. Buscar suggestions não implementadas do PR
+            // 1. Buscar suggestions não implementadas do PR
             const allSuggestions =
-            await this.filterValidSuggestionsFromPrByStatus(params.prFiles);
-            
+                await this.filterValidSuggestionsFromPrByStatus(params.prFiles);
+
             if (allSuggestions.length === 0) {
                 this.logger.log({
                     message: `No suggestions found for PR#${params.pullRequest.number}`,
@@ -73,15 +73,15 @@ console.log('aaaaaaa');
                     metadata: params,
                 });
             }
-            
+
             // 2. Agrupar por arquivo
             const suggestionsByFile =
-            this.groupSuggestionsByFile(allSuggestions);
-            
+                this.groupSuggestionsByFile(allSuggestions);
+
             // 3. Para cada arquivo, fazer merge com issues existentes
             const changedFiles = Object.keys(suggestionsByFile);
-            
-            console.log('bbbbbb');
+
+            console.log('bbbbbb', allSuggestions);
             for (const filePath of changedFiles) {
                 await this.mergeSuggestionsIntoIssues(
                     params,
@@ -89,12 +89,12 @@ console.log('aaaaaaa');
                     suggestionsByFile[filePath],
                 );
             }
-            
+
             console.log('cccccccc');
             // 4. Resolver issues que podem ter sido corrigidas
             await this.resolveExistingIssues(params, params.prFiles);
             console.log('dddddd');
-            
+
             await this.pullRequestsService.updateSyncedWithIssuesFlag(
                 params.pullRequest.number,
                 params.repository.id,
@@ -111,13 +111,14 @@ console.log('aaaaaaa');
             return;
         }
     }
-    
+
     async mergeSuggestionsIntoIssues(
         context: contextToGenerateIssues,
         filePath: string,
         newSuggestions: any[],
     ): Promise<any> {
         const { organizationAndTeamData, repository, pullRequest } = context;
+        console.log('newSuggestions', JSON.stringify(newSuggestions));
 
         try {
             // 1. Buscar issues abertas para o arquivo
@@ -127,8 +128,11 @@ console.log('aaaaaaa');
                 filePath,
                 IssueStatus.OPEN,
             );
+console.log('existingIssues',existingIssues);
 
             if (!existingIssues || existingIssues?.length === 0) {
+                console.log('inside');
+                
                 // Se não há issues existentes, todas as suggestions são novas
                 await this.createNewIssues(context, newSuggestions);
                 return;
@@ -175,6 +179,7 @@ console.log('aaaaaaa');
                     label: suggestion.label,
                 })),
             };
+            console.log('pullRequestinmerge', JSON.stringify(pullRequest));
 
             // 3. Chamar LLM para fazer o merge
             const mergeResult =
@@ -210,51 +215,79 @@ console.log('aaaaaaa');
         unmatchedSuggestions: Partial<CodeSuggestion>[],
     ): Promise<void> {
         try {
-            const cfg: IssueCreationConfig | null = await this.issueCreationConfigService.get(
+            console.log('11111');
+            
+            const cfg: IssueCreationConfig | null =
+            await this.issueCreationConfigService.get(
                 context.organizationAndTeamData.organizationId,
                 context.organizationAndTeamData.teamId,
-            );
-
+            );            
             if (cfg && cfg.automaticCreationEnabled === false) {
                 this.logger.log({
                     message: 'Automatic issue creation disabled by config',
                     context: KodyIssuesManagementService.name,
                     metadata: {
-                        organizationId: context.organizationAndTeamData.organizationId,
+                        organizationId:
+                            context.organizationAndTeamData.organizationId,
                         teamId: context.organizationAndTeamData.teamId,
                     },
                 });
                 return;
             }
-console.log('dddddddd');
+            console.log('dddddddd');
 
-const pullRequest =
-await this.pullRequestsService.findByNumberAndRepositoryName(
-    context.pullRequest.number,
-    context.repository.name,
-    context.organizationAndTeamData,
-);
-console.log('eeeee');
+            const pullRequest =
+                await this.pullRequestsService.findByNumberAndRepositoryName(
+                    context.pullRequest.number,
+                    context.repository.name,
+                    context.organizationAndTeamData,
+                );
+            console.log('eeeee', JSON.stringify(pullRequest));
 
-const filteredSuggestions = (unmatchedSuggestions || []).filter((suggestion) => {
-    if (!cfg) return true;
-    
-    const severity = suggestion?.severity as any;
-    if (cfg.severityFilters?.minimumSeverity) {
-        const order = ['low', 'medium', 'high', 'critical'] as const;
-        const idx = order.indexOf((severity || 'low') as any);
-        const minIdx = order.indexOf(cfg.severityFilters.minimumSeverity as any);
-        if (idx < minIdx) return false;
-    }
-    if (cfg.severityFilters?.allowedSeverities?.length) {
-        if (!cfg.severityFilters.allowedSeverities.includes(severity)) return false;
-    }
-    
-    if (!cfg.sourceFilters?.includeCodeReviewEngine && suggestion?.source === 'code_review_engine') return false
-    if (!cfg.sourceFilters?.includeKodyRules && suggestion?.source === 'kody_rules') return false
-                return true;
-            });
-console.log('filteredSuggestions',JSON.stringify(filteredSuggestions));
+            const filteredSuggestions = (unmatchedSuggestions || []).filter(
+                (suggestion) => {
+                    if (!cfg) return true;
+
+                    const severity = suggestion?.severity as any;
+                    if (cfg.severityFilters?.minimumSeverity) {
+                        const order = [
+                            'low',
+                            'medium',
+                            'high',
+                            'critical',
+                        ] as const;
+                        const idx = order.indexOf((severity || 'low') as any);
+                        const minIdx = order.indexOf(
+                            cfg.severityFilters.minimumSeverity as any,
+                        );
+                        if (idx < minIdx) return false;
+                    }
+                    if (cfg.severityFilters?.allowedSeverities?.length) {
+                        if (
+                            !cfg.severityFilters.allowedSeverities.includes(
+                                severity,
+                            )
+                        )
+                            return false;
+                    }
+
+                    if (
+                        !cfg.sourceFilters?.includeCodeReviewEngine &&
+                        suggestion?.source === 'code_review_engine'
+                    )
+                        return false;
+                    if (
+                        !cfg.sourceFilters?.includeKodyRules &&
+                        suggestion?.source === 'kody_rules'
+                    )
+                        return false;
+                    return true;
+                },
+            );
+            console.log(
+                'filteredSuggestions',
+                JSON.stringify(filteredSuggestions),
+            );
 
             for (const suggestion of filteredSuggestions) {
                 await this.issuesService.create({
@@ -459,7 +492,7 @@ console.log('filteredSuggestions',JSON.stringify(filteredSuggestions));
         if (!mergeResult?.matches) {
             return;
         }
-        
+
         const unmatchedSuggestions: Partial<CodeSuggestion>[] = [];
 
         for (const match of mergeResult.matches) {

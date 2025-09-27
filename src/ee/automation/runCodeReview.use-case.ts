@@ -56,8 +56,8 @@ export class RunCodeReviewAutomationUseCase {
 
         private logger: PinoLoggerService,
     ) {
-        this.isCloud = true;
-        this.isDevelopment =false;
+        this.isCloud = false;
+        this.isDevelopment =true;
     }
 
     async execute(params: {
