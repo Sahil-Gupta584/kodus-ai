@@ -81,6 +81,7 @@ export class KodyIssuesAnalysisService {
                 ])
                 .setTemperature(0)
                 .execute();
+console.log('resultmerge',result);
 
             if (!result) {
                 const message = `No response from LLM for PR#${pullRequest.number}`;

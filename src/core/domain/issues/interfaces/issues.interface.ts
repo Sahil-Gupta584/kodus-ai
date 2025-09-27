@@ -1,5 +1,8 @@
 import { IssueStatus } from '@/config/types/general/issues.type';
-import { IContributingSuggestion, IRepositoryToIssues } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
+import {
+    IContributingSuggestion,
+    IRepositoryToIssues,
+} from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 
@@ -19,4 +22,14 @@ export interface IIssue {
     createdAt: string;
     updatedAt: string;
     prNumbers?: string[];
+    owner?: {
+        id: string;
+        name: string;
+        email: string;
+    };
+    reporter?: {
+        id: string;
+        name?: string;
+        email: string;
+    };
 }

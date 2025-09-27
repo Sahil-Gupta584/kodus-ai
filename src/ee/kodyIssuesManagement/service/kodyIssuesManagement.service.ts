@@ -27,6 +27,8 @@ import { ISuggestion } from '@/core/domain/pullRequests/interfaces/pullRequests.
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { CacheService } from '@/shared/utils/cache/cache.service';
+import { IssueCreationConfigService } from '@/core/infrastructure/adapters/services/issues/issue-creation-config.service';
+import { IssueCreationConfig } from '@/core/domain/issues/entities/issue-creation-config.entity';
 
 @Injectable()
 export class KodyIssuesManagementService
@@ -48,6 +50,7 @@ export class KodyIssuesManagementService
         private pullRequestHandlerService: IPullRequestManagerService,
 
         private readonly cacheService: CacheService,
+        private readonly issueCreationConfigService: IssueCreationConfigService,
     ) {}
 
     async processClosedPr(params: contextToGenerateIssues): Promise<void> {
@@ -57,6 +60,7 @@ export class KodyIssuesManagementService
                 context: KodyIssuesManagementService.name,
                 metadata: params,
             });
+            console.log('aaaaaaa', JSON.stringify(params.prFiles));
 
             // 1. Buscar suggestions não implementadas do PR
             const allSuggestions =
@@ -77,6 +81,7 @@ export class KodyIssuesManagementService
             // 3. Para cada arquivo, fazer merge com issues existentes
             const changedFiles = Object.keys(suggestionsByFile);
 
+            console.log('bbbbbb', allSuggestions);
             for (const filePath of changedFiles) {
                 await this.mergeSuggestionsIntoIssues(
                     params,
@@ -85,8 +90,10 @@ export class KodyIssuesManagementService
                 );
             }
 
+            console.log('cccccccc');
             // 4. Resolver issues que podem ter sido corrigidas
             await this.resolveExistingIssues(params, params.prFiles);
+            console.log('dddddd');
 
             await this.pullRequestsService.updateSyncedWithIssuesFlag(
                 params.pullRequest.number,
@@ -111,6 +118,7 @@ export class KodyIssuesManagementService
         newSuggestions: any[],
     ): Promise<any> {
         const { organizationAndTeamData, repository, pullRequest } = context;
+        console.log('newSuggestions', JSON.stringify(newSuggestions));
 
         try {
             // 1. Buscar issues abertas para o arquivo
@@ -120,8 +128,11 @@ export class KodyIssuesManagementService
                 filePath,
                 IssueStatus.OPEN,
             );
+console.log('existingIssues',existingIssues);
 
             if (!existingIssues || existingIssues?.length === 0) {
+                console.log('inside');
+                
                 // Se não há issues existentes, todas as suggestions são novas
                 await this.createNewIssues(context, newSuggestions);
                 return;
@@ -168,6 +179,7 @@ export class KodyIssuesManagementService
                     label: suggestion.label,
                 })),
             };
+            console.log('pullRequestinmerge', JSON.stringify(pullRequest));
 
             // 3. Chamar LLM para fazer o merge
             const mergeResult =
@@ -203,14 +215,81 @@ export class KodyIssuesManagementService
         unmatchedSuggestions: Partial<CodeSuggestion>[],
     ): Promise<void> {
         try {
+            console.log('11111');
+            
+            const cfg: IssueCreationConfig | null =
+            await this.issueCreationConfigService.get(
+                context.organizationAndTeamData.organizationId,
+                context.organizationAndTeamData.teamId,
+            );            
+            if (cfg && cfg.automaticCreationEnabled === false) {
+                this.logger.log({
+                    message: 'Automatic issue creation disabled by config',
+                    context: KodyIssuesManagementService.name,
+                    metadata: {
+                        organizationId:
+                            context.organizationAndTeamData.organizationId,
+                        teamId: context.organizationAndTeamData.teamId,
+                    },
+                });
+                return;
+            }
+            console.log('dddddddd');
+
             const pullRequest =
                 await this.pullRequestsService.findByNumberAndRepositoryName(
                     context.pullRequest.number,
                     context.repository.name,
                     context.organizationAndTeamData,
                 );
+            console.log('eeeee', JSON.stringify(pullRequest));
 
-            for (const suggestion of unmatchedSuggestions) {
+            const filteredSuggestions = (unmatchedSuggestions || []).filter(
+                (suggestion) => {
+                    if (!cfg) return true;
+
+                    const severity = suggestion?.severity as any;
+                    if (cfg.severityFilters?.minimumSeverity) {
+                        const order = [
+                            'low',
+                            'medium',
+                            'high',
+                            'critical',
+                        ] as const;
+                        const idx = order.indexOf((severity || 'low') as any);
+                        const minIdx = order.indexOf(
+                            cfg.severityFilters.minimumSeverity as any,
+                        );
+                        if (idx < minIdx) return false;
+                    }
+                    if (cfg.severityFilters?.allowedSeverities?.length) {
+                        if (
+                            !cfg.severityFilters.allowedSeverities.includes(
+                                severity,
+                            )
+                        )
+                            return false;
+                    }
+
+                    if (
+                        !cfg.sourceFilters?.includeCodeReviewEngine &&
+                        suggestion?.source === 'code_review_engine'
+                    )
+                        return false;
+                    if (
+                        !cfg.sourceFilters?.includeKodyRules &&
+                        suggestion?.source === 'kody_rules'
+                    )
+                        return false;
+                    return true;
+                },
+            );
+            console.log(
+                'filteredSuggestions',
+                JSON.stringify(filteredSuggestions),
+            );
+
+            for (const suggestion of filteredSuggestions) {
                 await this.issuesService.create({
                     title: suggestion.oneSentenceSummary,
                     description: suggestion.suggestionContent,
@@ -239,6 +318,11 @@ export class KodyIssuesManagementService
                     status: IssueStatus.OPEN,
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString(),
+                    owner: {
+                        email: pullRequest.user.email,
+                        id: pullRequest.user.id,
+                        name: pullRequest.user.name,
+                    },
                 });
             }
         } catch (error) {

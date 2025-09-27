@@ -68,7 +68,7 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
             if (!pr) {
                 return;
             }
-
+pr.files[0].suggestions[0].implementationStatus
             const prFiles = pr.files;
 
             if (prFiles.length === 0) {

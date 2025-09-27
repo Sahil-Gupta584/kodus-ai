@@ -66,6 +66,7 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
 
     public async execute(params: IWebhookEventParams): Promise<void> {
         const { event } = params;
+console.log('eventss',event,params?.payload?.comment?.body);
 
         switch (event) {
             case 'pull_request':
@@ -233,6 +234,7 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
 
             const comment = mappedPlatform.mapComment({ payload });
 
+
             if (!comment || !comment.body || payload?.action === 'deleted') {
                 this.logger.debug({
                     message:
@@ -369,13 +371,17 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
                 this.runCodeReviewAutomationUseCase.execute(updatedParams);
                 return;
             }
+            console.log('mappedPlatform',mappedPlatform);
+            
+            console.log({hasReviewMarker,isStartCommand,kodyMentionPattern:kodyMentionPattern.test(comment.body),event:params.event,body:comment.body,payloads:JSON.stringify(params?.payload?.comment?.body)});
+
 
             if (
                 (event === 'pull_request_review_comment' ||
                     event === 'issue_comment') &&
                 !hasReviewMarker &&
                 !isStartCommand &&
-                kodyMentionPattern.test(comment.body)
+                kodyMentionPattern.test(params?.payload?.comment?.body)
             ) {
                 this.chatWithKodyFromGitUseCase.execute(params);
                 return;
