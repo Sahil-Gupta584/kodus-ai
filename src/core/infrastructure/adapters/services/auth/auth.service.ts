@@ -173,6 +173,44 @@ export class AuthService implements IAuthService {
         }
     }
 
+    async createEmailToken(uuid: string, email: string) {
+        try {
+            const user = await this.validateUser({
+                email,
+            });
+            if (!user || !user.uuid) {
+                throw new UnauthorizedException('api.users.unauthorized');
+            }
+            if (user.uuid !== uuid) {
+                throw new UnauthorizedException(
+                    'User ID does not match the provided email.',
+                );
+            }
+            const token = await this.jwtService.signAsync(
+                { uuid, email },
+                {
+                    secret: this.jwtConfig.secret,
+                    expiresIn: '24h',
+                },
+            );
+            return token;
+        } catch (e) {
+            throw new InternalServerErrorException('Failed to create token');
+        }
+    }
+
+    async verifyEmailToken(token: string) {
+        try {
+            return this.jwtService.verify(token, {
+                secret: this.jwtConfig.secret,
+            });
+        } catch (e) {
+            throw new UnauthorizedException(
+                'Email token is invalid or has expired',
+            );
+        }
+    }
+
     private async createToken(
         user: Partial<UserEntity>,
         teamMember?: Partial<TeamMemberEntity>,

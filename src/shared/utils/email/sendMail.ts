@@ -1,7 +1,14 @@
 import { MailerSend, EmailParams, Sender, Recipient } from 'mailersend';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { IUser } from '@/core/domain/user/interfaces/user.interface';
+import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 
-const sendInvite = async (user, adminUserEmail, invite, logger?: PinoLoggerService) => {
+const sendInvite = async (
+    user,
+    adminUserEmail,
+    invite,
+    logger?: PinoLoggerService,
+) => {
     try {
         const mailersend = new MailerSend({
             apiKey: process.env.API_MAILSEND_API_TOKEN,
@@ -44,7 +51,8 @@ const sendInvite = async (user, adminUserEmail, invite, logger?: PinoLoggerServi
         if (logger) {
             logger.error({
                 message: `Error in sendInvite for user ${user?.email}`,
-                error: error instanceof Error ? error : new Error(String(error)),
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
                 context: 'sendInvite',
                 metadata: {
                     userEmail: user?.email,
@@ -101,7 +109,8 @@ const sendForgotPasswordEmail = async (
         if (logger) {
             logger.error({
                 message: `Error in sendForgotPasswordEmail for ${email}`,
-                error: error instanceof Error ? error : new Error(String(error)),
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
                 context: 'sendForgotPasswordEmail',
                 metadata: {
                     email,
@@ -136,7 +145,7 @@ const sendKodyRulesNotification = async (
         // Enviar email para cada usuário individualmente para personalização
         const emailPromises = users.map(async (user) => {
             const recipients = [new Recipient(user.email, user.name)];
-            
+
             const personalization = [
                 {
                     email: user.email,
@@ -168,7 +177,8 @@ const sendKodyRulesNotification = async (
         if (logger) {
             logger.error({
                 message: `Error in sendKodyRulesNotification for organization ${organizationName}`,
-                error: error instanceof Error ? error : new Error(String(error)),
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
                 context: 'sendKodyRulesNotification',
                 metadata: {
                     organizationName,
@@ -183,4 +193,66 @@ const sendKodyRulesNotification = async (
     }
 };
 
-export { sendInvite, sendForgotPasswordEmail, sendKodyRulesNotification };
+const sendConfirmationEmail = async (
+    token: string,
+    email: string,
+    organizationName: string,
+    organizationAndTeamData: OrganizationAndTeamData,
+    logger?: PinoLoggerService,
+) => {
+    try {
+        const webUrl = process.env.API_USER_INVITE_BASE_URL;
+
+        const mailersend = new MailerSend({
+            apiKey: process.env.API_MAILSEND_API_TOKEN,
+        });
+
+        const sentFrom = new Sender(
+            'kody@notifications.kodus.io',
+            'Kody from Kodus',
+        );
+
+        const recipients = [new Recipient(email)];
+
+        const personalization = [
+            {
+                email: email,
+                data: {
+                    organizatioName: organizationName,
+                    confirmLink: `${webUrl}/confirm-email?token=${token}`,
+                },
+            },
+        ];
+
+        const emailParams = new EmailParams()
+            .setFrom(sentFrom)
+            .setTo(recipients)
+            .setSubject('Confirm your email')
+            .setTemplateId('7dnvo4dzko6l5r86')
+            .setPersonalization(personalization);
+
+        return await mailersend.email.send(emailParams);
+    } catch (error) {
+        if (logger) {
+            logger.error({
+                message: `Error in sendConfirmationEmail for user ${email}`,
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
+                context: 'sendConfirmationEmail',
+                metadata: {
+                    email,
+                    organizationName,
+                    organizationAndTeamData,
+                },
+            });
+        }
+        console.error('sendConfirmationEmail error:', error);
+    }
+};
+
+export {
+    sendInvite,
+    sendForgotPasswordEmail,
+    sendKodyRulesNotification,
+    sendConfirmationEmail,
+};

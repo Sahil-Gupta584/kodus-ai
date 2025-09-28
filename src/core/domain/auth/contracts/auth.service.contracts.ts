@@ -18,4 +18,6 @@ export interface IAuthService {
     match(enteredPassword: string, hashedPassword: string): Promise<boolean>;
     createForgotPassToken(userId: string, email: string): Promise<string>;
     verifyForgotPassToken(token: string): Promise<any>;
+    verifyEmailToken(token: string): Promise<any>;
+    createEmailToken(userId: string, email: string): Promise<string>;
 }
