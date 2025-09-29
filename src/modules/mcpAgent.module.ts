@@ -4,9 +4,10 @@ import { ConversationAgentUseCase } from '@/core/application/use-cases/agent/con
 import { BusinessRulesValidationAgentProvider } from '@/core/infrastructure/adapters/services/agent/kodus-flow/businessRulesValidationAgent';
 import { BusinessRulesValidationAgentUseCase } from '@/core/application/use-cases/agent/business-rules-validation-agent.use-case';
 import { ParametersModule } from './parameters.module';
+import { McpModule } from '@/core/infrastructure/adapters/mcp/mcp.module';
 
 @Module({
-    imports: [forwardRef(() => ParametersModule)],
+    imports: [forwardRef(() => ParametersModule), McpModule.forRoot()],
     providers: [
         ConversationAgentProvider,
         ConversationAgentUseCase,
