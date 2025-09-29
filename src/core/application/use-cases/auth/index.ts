@@ -5,6 +5,8 @@ import { RefreshTokenUseCase } from './refresh-toke.use-case';
 import { ForgotPasswordUseCase } from './forgotPasswordUseCase';
 import { ResetPasswordUseCase } from './resetPasswordUseCase';
 import { SignUpUseCase } from './signup.use-case';
+import { ConfirmEmailUseCase } from './confirm-email.use-case';
+import { ResendEmailUseCase } from './resend-email.use-case';
 
 export const UseCases = [
     LoginUseCase,
@@ -14,4 +16,6 @@ export const UseCases = [
     ForgotPasswordUseCase,
     ResetPasswordUseCase,
     SignUpUseCase,
+    ConfirmEmailUseCase,
+    ResendEmailUseCase,
 ];

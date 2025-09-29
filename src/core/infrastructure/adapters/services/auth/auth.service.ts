@@ -32,6 +32,7 @@ import {
 import { TeamMemberEntity } from '@/core/domain/teamMembers/entities/teamMember.entity';
 import { AuthProvider } from '@/shared/domain/enums/auth-provider.enum';
 import axios, { AxiosResponse } from 'axios';
+import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 
 @Injectable()
 export class AuthService implements IAuthService {
@@ -46,6 +47,7 @@ export class AuthService implements IAuthService {
         private readonly userRepository: IUserRepository,
         @Inject(TEAM_MEMBERS_SERVICE_TOKEN)
         private readonly teamMemberService: ITeamMemberService,
+        private readonly logger: PinoLoggerService,
     ) {
         this.jwtConfig = this.configService.get<JWT>('jwtConfig');
     }
@@ -158,6 +160,15 @@ export class AuthService implements IAuthService {
             );
             return token;
         } catch (e) {
+            this.logger.error({
+                message: 'Failed to create email token',
+                context: AuthService.name,
+                metadata: {
+                    uuid,
+                    email,
+                },
+                error: e,
+            });
             throw new InternalServerErrorException('Failed to create token');
         }
     }
@@ -169,6 +180,58 @@ export class AuthService implements IAuthService {
         } catch (e) {
             throw new UnauthorizedException(
                 'Reset password token is invalid or has expired',
+            );
+        }
+    }
+
+    async createEmailToken(uuid: string, email: string): Promise<string> {
+        try {
+            const user = await this.validateUser({
+                email,
+            });
+            if (!user || !user.uuid) {
+                throw new UnauthorizedException('api.users.unauthorized');
+            }
+            if (user.uuid !== uuid) {
+                throw new UnauthorizedException(
+                    'User ID does not match the provided email.',
+                );
+            }
+            const token = await this.jwtService.signAsync(
+                { uuid, email },
+                {
+                    secret: this.jwtConfig.secret,
+                    expiresIn: '24h',
+                },
+            );
+            return token;
+        } catch (e) {
+            this.logger.error({
+                message: 'Failed to generate email confirmation token',
+                context: AuthService.name,
+                metadata: {
+                    uuid,
+                    email,
+                },
+                error: e,
+            });
+            throw new InternalServerErrorException('Failed to create token');
+        }
+    }
+
+    async verifyEmailToken(token: string): Promise<any> {
+        try {
+            return this.jwtService.verify(token, {
+                secret: this.jwtConfig.secret,
+            });
+        } catch (e) {
+            this.logger.error({
+                message: 'Email token verification failed',
+                context: AuthService.name,
+                error: e,
+            });
+            throw new UnauthorizedException(
+                'Email token is invalid or has expired',
             );
         }
     }
