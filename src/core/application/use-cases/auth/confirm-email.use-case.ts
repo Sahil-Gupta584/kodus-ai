@@ -13,6 +13,7 @@ import {
     USER_SERVICE_TOKEN,
 } from '@/core/domain/user/contracts/user.service.contract';
 import { STATUS } from '@/config/types/database/status.type';
+import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 
 interface DecodedPayload {
     readonly email: string;
@@ -25,9 +26,10 @@ export class ConfirmEmailUseCase {
         private readonly authService: IAuthService,
         @Inject(USER_SERVICE_TOKEN)
         private readonly usersService: IUsersService,
+        private readonly logger: PinoLoggerService,
     ) {}
 
-    async execute(token: string) {
+    async execute(token: string): Promise<{ message: string }> {
         try {
             const decoded: DecodedPayload =
                 await this.authService.verifyEmailToken(token);
@@ -56,6 +58,11 @@ export class ConfirmEmailUseCase {
 
             return { message: 'Email confirmed successfully' };
         } catch (error) {
+            this.logger.error({
+                message: 'Something went wrong while confirming email',
+                context: ConfirmEmailUseCase.name,
+                error,
+            });
             throw new InternalServerErrorException(
                 'Something went wrong while confirming email',
             );

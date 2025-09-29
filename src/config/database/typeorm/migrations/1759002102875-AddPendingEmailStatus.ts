@@ -82,6 +82,9 @@ export class AddPendingEmailStatus1759002102875 implements MigrationInterface {
             ALTER COLUMN "status" DROP DEFAULT
         `);
         await queryRunner.query(`
+            UPDATE "teams" SET "status" = 'pending' WHERE "status" = 'pending_email'
+        `);
+        await queryRunner.query(`
             ALTER TABLE "teams"
             ALTER COLUMN "status" TYPE "public"."teams_status_enum_old" USING "status"::"text"::"public"."teams_status_enum_old"
         `);
@@ -110,6 +113,9 @@ export class AddPendingEmailStatus1759002102875 implements MigrationInterface {
         await queryRunner.query(`
             ALTER TABLE "users"
             ALTER COLUMN "status" DROP DEFAULT
+        `);
+        await queryRunner.query(`
+            UPDATE "users" SET "status" = 'pending' WHERE "status" = 'pending_email'
         `);
         await queryRunner.query(`
             ALTER TABLE "users"

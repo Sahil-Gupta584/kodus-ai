@@ -218,7 +218,7 @@ const sendConfirmationEmail = async (
             {
                 email: email,
                 data: {
-                    organizatioName: organizationName,
+                    organizationName: organizationName,
                     confirmLink: `${webUrl}/confirm-email?token=${token}`,
                 },
             },
@@ -246,7 +246,6 @@ const sendConfirmationEmail = async (
                 },
             });
         }
-        console.error('sendConfirmationEmail error:', error);
     }
 };
 
