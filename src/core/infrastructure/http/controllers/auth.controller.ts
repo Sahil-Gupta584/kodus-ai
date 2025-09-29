@@ -8,6 +8,8 @@ import { CreateUserOrganizationOAuthDto } from '../dtos/create-user-organization
 import { ForgotPasswordUseCase } from '@/core/application/use-cases/auth/forgotPasswordUseCase';
 import { ResetPasswordUseCase } from '@/core/application/use-cases/auth/resetPasswordUseCase';
 import { SignUpUseCase } from '@/core/application/use-cases/auth/signup.use-case';
+import { ConfirmEmailUseCase } from '@/core/application/use-cases/auth/confirm-email.use-case';
+import { ResendEmailUseCase } from '@/core/application/use-cases/auth/resend-email.use-case';
 
 @Controller('auth')
 export class AuthController {
@@ -19,6 +21,8 @@ export class AuthController {
         private readonly oAuthLoginUseCase: OAuthLoginUseCase,
         private readonly forgotPasswordUseCase: ForgotPasswordUseCase,
         private readonly resetPasswordUseCase: ResetPasswordUseCase,
+        private readonly confirmEmailUseCase: ConfirmEmailUseCase,
+        private readonly resendEmailUseCase: ResendEmailUseCase,
     ) {}
 
     @Post('login')
@@ -51,6 +55,16 @@ export class AuthController {
             body.token,
             body.newPassword,
         );
+    }
+
+    @Post('confirm-email')
+    async confirmEmail(@Body() body: { token: string }) {
+        return await this.confirmEmailUseCase.execute(body.token);
+    }
+
+    @Post('resend-email')
+    async resendEmail(@Body() body: { email: string }) {
+        return await this.resendEmailUseCase.execute(body.email);
     }
 
     @Post('oauth')

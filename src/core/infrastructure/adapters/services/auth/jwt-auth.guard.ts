@@ -78,6 +78,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
             '/user-log/status-change',
             '/kody-rules/find-library-kody-rules',
             '/kody-rules/find-library-kody-rules-buckets',
+            '/auth/resend-email',
         ];
 
         // Allow access to public routes

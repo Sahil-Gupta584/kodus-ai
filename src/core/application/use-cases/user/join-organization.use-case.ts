@@ -26,6 +26,11 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
 import { JoinOrganizationDto } from '@/core/infrastructure/http/dtos/join-organization.dto';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { Inject, Injectable } from '@nestjs/common';
+import { sendConfirmationEmail } from '@/shared/utils/email/sendMail';
+import {
+    AUTH_SERVICE_TOKEN,
+    IAuthService,
+} from '@/core/domain/auth/contracts/auth.service.contracts';
 
 @Injectable()
 export class JoinOrganizationUseCase implements IUseCase {
@@ -44,6 +49,9 @@ export class JoinOrganizationUseCase implements IUseCase {
 
         @Inject(PROFILE_SERVICE_TOKEN)
         private readonly profileService: IProfileService,
+
+        @Inject(AUTH_SERVICE_TOKEN)
+        private readonly authService: IAuthService,
 
         private readonly logger: PinoLoggerService,
     ) {}
@@ -120,7 +128,7 @@ export class JoinOrganizationUseCase implements IUseCase {
                 },
                 {
                     role: Role.CONTRIBUTOR,
-                    status: STATUS.AWAITING_APPROVAL,
+                    status: STATUS.PENDING_EMAIL,
                     organization,
                 },
             );
@@ -128,6 +136,22 @@ export class JoinOrganizationUseCase implements IUseCase {
             if (!updatedUser) {
                 throw new Error('Failed to update user with new organization');
             }
+
+            const token = await this.authService.createEmailToken(
+                user.uuid,
+                user.email,
+            );
+
+            // send confirmation email
+            await sendConfirmationEmail(
+                token,
+                user.email,
+                organization.name,
+                {
+                    organizationId,
+                    teamId: team.uuid,
+                },
+            );
 
             this.logger.log({
                 message: 'User joined organization',
