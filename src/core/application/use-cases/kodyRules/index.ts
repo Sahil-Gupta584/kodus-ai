@@ -13,6 +13,7 @@ import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from './find-rule
 import { GenerateKodyRulesUseCase } from './generate-kody-rules.use-case';
 import { SendRulesNotificationUseCase } from './send-rules-notification.use-case';
 import { SyncSelectedRepositoriesKodyRulesUseCase } from './sync-selected-repositories.use-case';
+import { GetInheritedRulesKodyRulesUseCase } from './get-inherited-kody-rules.use-case';
 
 export const UseCases = [
     CreateOrUpdateKodyRulesUseCase,
@@ -30,4 +31,5 @@ export const UseCases = [
     SendRulesNotificationUseCase,
     SyncSelectedRepositoriesKodyRulesUseCase,
     CheckSyncStatusUseCase,
+    GetInheritedRulesKodyRulesUseCase,
 ];

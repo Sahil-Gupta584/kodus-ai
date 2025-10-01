@@ -10,6 +10,7 @@ import {
 import {
     IKodyRule,
     IKodyRulesExample,
+    IKodyRulesInheritance,
     KodyRulesOrigin,
     KodyRulesScope,
     KodyRulesStatus,
@@ -291,6 +292,28 @@ export class KodyRulesTools {
                         .describe(
                             'Directory unique identifier - used with FILE scope to target specific directory',
                         ),
+                    inheritance: z
+                        .object({
+                            inheritable: z
+                                .boolean()
+                                .describe(
+                                    'Whether this rule can be inherited by sub-repositories or directories',
+                                ),
+                            exclude: z
+                                .array(z.string())
+                                .optional()
+                                .describe(
+                                    'List of repository or directory IDs that should NOT inherit this rule',
+                                ),
+                            include: z
+                                .array(z.string())
+                                .optional()
+                                .describe(
+                                    'List of repository or directory IDs that SHOULD inherit this rule (if empty, all can inherit)',
+                                ),
+                        })
+                        .optional()
+                        .describe('Rule inheritance settings'),
                 })
                 .describe(
                     'Complete rule definition with title, description, scope, and examples',
@@ -343,6 +366,11 @@ export class KodyRulesTools {
                                 (args.kodyRule.scope === KodyRulesScope.FILE
                                     ? args.kodyRule.directoryId
                                     : '') || '',
+                            inheritance: (args.kodyRule.inheritance || {
+                                inheritable: true,
+                                exclude: [],
+                                include: [],
+                            }) as IKodyRulesInheritance,
                         },
                     };
 

@@ -37,7 +37,12 @@ import {
     PolicyGuard,
     CheckPolicies,
 } from '../../adapters/services/permissions/policy.guard';
-import { checkPermissions } from '../../adapters/services/permissions/policy.handlers';
+import {
+    checkPermissions,
+    checkRepoPermissions,
+} from '../../adapters/services/permissions/policy.handlers';
+import { GetInheritedRulesKodyRulesUseCase } from '@/core/application/use-cases/kodyRules/get-inherited-kody-rules.use-case';
+import { UserRequest } from '@/config/types/http/user-request.type';
 
 @Controller('kody-rules')
 export class KodyRulesController {
@@ -57,11 +62,10 @@ export class KodyRulesController {
         private readonly checkSyncStatusUseCase: CheckSyncStatusUseCase,
         private readonly cacheService: CacheService,
         private readonly syncSelectedReposKodyRulesUseCase: SyncSelectedRepositoriesKodyRulesUseCase,
+        private readonly getInheritedRulesKodyRulesUseCase: GetInheritedRulesKodyRulesUseCase,
 
         @Inject(REQUEST)
-        private readonly request: Request & {
-            user: { organization: { uuid: string } };
-        },
+        private readonly request: UserRequest,
     ) {}
 
     @Post('/create-or-update')
@@ -278,5 +282,41 @@ export class KodyRulesController {
             teamId: body.teamId,
             repositoriesIds: respositories,
         });
+    }
+
+    @Get('/inherited-rules')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkRepoPermissions(Action.Read, ResourceType.KodyRules, {
+            key: {
+                query: 'repositoryId',
+            },
+        }),
+    )
+    public async getInheritedRules(
+        @Query('teamId') teamId: string,
+        @Query('repositoryId') repositoryId: string,
+        @Query('directoryId') directoryId?: string,
+    ) {
+        if (!this.request.user.organization.uuid) {
+            throw new Error('Organization ID not found');
+        }
+
+        if (!teamId) {
+            throw new Error('Team ID is required');
+        }
+
+        if (!repositoryId) {
+            throw new Error('Repository ID is required');
+        }
+
+        return this.getInheritedRulesKodyRulesUseCase.execute(
+            {
+                organizationId: this.request.user.organization.uuid,
+                teamId,
+            },
+            repositoryId,
+            directoryId,
+        );
     }
 }

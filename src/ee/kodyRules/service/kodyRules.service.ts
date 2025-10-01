@@ -174,6 +174,11 @@ export class KodyRulesService implements IKodyRulesService {
                 examples: kodyRule?.examples,
                 origin: kodyRule?.origin ?? KodyRulesOrigin.USER,
                 scope: kodyRule?.scope ?? KodyRulesScope.FILE,
+                inheritance: {
+                    inheritable: kodyRule?.inheritance?.inheritable ?? true,
+                    exclude: kodyRule?.inheritance?.exclude ?? [],
+                    include: kodyRule?.inheritance?.include ?? [],
+                },
                 createdAt: new Date(),
                 updatedAt: new Date(),
             };
@@ -230,6 +235,11 @@ export class KodyRulesService implements IKodyRulesService {
                 examples: kodyRule?.examples,
                 origin: kodyRule?.origin,
                 scope: kodyRule?.scope ?? KodyRulesScope.FILE,
+                inheritance: {
+                    inheritable: kodyRule?.inheritance?.inheritable ?? true,
+                    exclude: kodyRule?.inheritance?.exclude ?? [],
+                    include: kodyRule?.inheritance?.include ?? [],
+                },
                 createdAt: new Date(),
                 updatedAt: new Date(),
             };

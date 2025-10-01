@@ -33,4 +33,11 @@ export interface ICodeBaseConfigService {
     ): Promise<{ hasConfigs: boolean; repoConfig?: any; parameters?: any }>;
 
     extractUniqueDirectoryPaths(files: { filename: string }[]): string[];
+
+    resolveMostSpecificConfigForPath(
+        organizationAndTeamData: OrganizationAndTeamData,
+        repository: { name: string; id: string },
+        affectedPath: string,
+        repoConfig: any,
+    ): Promise<CodeReviewConfig>;
 }
