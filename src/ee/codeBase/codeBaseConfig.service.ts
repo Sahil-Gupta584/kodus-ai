@@ -1211,6 +1211,92 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
     }
 
     /**
+     * Resolves the most specific configuration for a single file path based on directory hierarchy.
+     * It finds all matching parent directories for the given path and selects the one with the longest,
+     * most specific path. Falls back to the repository-level config if no directory config matches.
+     *
+     * @param organizationAndTeamData - Data for the organization and team.
+     * @param repository - The repository details.
+     * @param affectedPath - The single file path to resolve the config for.
+     * @param repoConfig - The repository's configuration object, including directory configs.
+     * @returns A promise that resolves to the most specific CodeReviewConfig.
+     */
+    async resolveMostSpecificConfigForPath(
+        organizationAndTeamData: OrganizationAndTeamData,
+        repository: { name: string; id: string },
+        affectedPath: string,
+        repoConfig: any,
+    ): Promise<CodeReviewConfig> {
+        try {
+            // If no directories are configured, use the default repository config immediately.
+            if (
+                !repoConfig?.directories ||
+                repoConfig.directories.length === 0
+            ) {
+                return this.getConfig(organizationAndTeamData, repository);
+            }
+
+            const normalizePath = (path: string): string => {
+                return path.startsWith('/') ? path.substring(1) : path;
+            };
+
+            const normalizedAffectedPath = normalizePath(affectedPath);
+
+            // 1. Find all configured directories that are a parent of (or match) the affected path.
+            const matchingDirectories = repoConfig.directories.filter(
+                (dir: any) => {
+                    const normalizedDirPath = normalizePath(dir.path);
+
+                    // The root directory ('/' or '') is always a potential match.
+                    if (normalizedDirPath === '') {
+                        return true;
+                    }
+
+                    // A directory matches if it's identical to the path or is a prefix.
+                    // e.g., 'foo/bar' matches 'foo/bar' and 'foo/bar/baz.ts'.
+                    return (
+                        normalizedAffectedPath === normalizedDirPath ||
+                        normalizedAffectedPath.startsWith(
+                            normalizedDirPath + '/',
+                        )
+                    );
+                },
+            );
+
+            // 2. If no directories match, fall back to the repository-level config.
+            if (matchingDirectories.length === 0) {
+                return this.getConfig(organizationAndTeamData, repository);
+            }
+
+            // 3. From the matches, find the most specific one (i.e., the one with the longest path).
+            const mostSpecificDirectory = matchingDirectories.reduce(
+                (bestMatch, currentDir) => {
+                    return currentDir.path.length > bestMatch.path.length
+                        ? currentDir
+                        : bestMatch;
+                },
+            );
+
+            // 4. Build and return the configuration from the most specific directory found.
+            return this.buildConfigFromDirectory(
+                mostSpecificDirectory,
+                organizationAndTeamData,
+                repository,
+            );
+        } catch (error) {
+            this.logger.error({
+                message: 'Error resolving the most specific config for a path',
+                context: CodeBaseConfigService.name,
+                error,
+                metadata: { organizationAndTeamData, affectedPath, repository },
+            });
+
+            // Fallback to the default repository config in case of any error.
+            return this.getConfig(organizationAndTeamData, repository);
+        }
+    }
+
+    /**
      * Constrói a configuração baseada na config de um diretório específico
      * Hierarquia: 1º arquivo yml no diretório → 2º config do banco → 3º default
      */

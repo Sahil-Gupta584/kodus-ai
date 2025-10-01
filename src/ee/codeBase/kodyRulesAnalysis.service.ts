@@ -12,7 +12,6 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import Anthropic from '@anthropic-ai/sdk';
-import { getKodyRulesForFile } from '@/shared/utils/glob-utils';
 import {
     KodyRulesClassifierSchema,
     kodyRulesClassifierSchema,
@@ -48,11 +47,17 @@ import {
     BYOKConfig,
     TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
-import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
+import { z } from 'zod';
+import { KodyRulesValidationService } from '../kodyRules/service/kody-rules-validation.service';
+import {
+    CODE_BASE_CONFIG_SERVICE_TOKEN,
+    ICodeBaseConfigService,
+} from '@/core/domain/codeBase/contracts/CodeBaseConfigService.contract';
 import {
     endSpan,
     newSpan,
 } from '@/core/infrastructure/adapters/services/codeBase/utils/span.utils';
+import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
 
 // Interface for extended context used in Kody Rules analysis
 interface KodyRulesExtendedContext {
@@ -91,6 +96,9 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
     constructor(
         private readonly logger: PinoLoggerService,
         private readonly promptRunnerService: BasePromptRunnerService,
+        private readonly kodyRulesValidationService: KodyRulesValidationService,
+        @Inject(CODE_BASE_CONFIG_SERVICE_TOKEN)
+        private readonly codeBaseConfigService: ICodeBaseConfigService,
     ) {
         this.anthropic = new Anthropic({
             apiKey: process.env.API_ANTHROPIC_API_KEY,
@@ -765,10 +773,41 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         fileContext: FileChangeContext,
         context: AnalysisContext,
     ) {
-        const kodyRulesFiltered = getKodyRulesForFile(
-            fileContext.file.filename,
-            context?.codeReviewConfig?.kodyRules || [],
-        )
+        let directoryId = context?.codeReviewConfig?.directoryId;
+        if (!directoryId) {
+            const configs =
+                await this.codeBaseConfigService.getDirectoryConfigs(
+                    context?.organizationAndTeamData,
+                    {
+                        id: context?.repository?.id || '',
+                        name: context?.repository?.name || '',
+                    },
+                );
+
+            if (configs.hasConfigs) {
+                const config =
+                    await this.codeBaseConfigService.resolveMostSpecificConfigForPath(
+                        context?.organizationAndTeamData,
+                        {
+                            id: context?.repository?.id || '',
+                            name: context?.repository?.name || '',
+                        },
+                        fileContext?.file?.filename || '',
+                        configs.repoConfig,
+                    );
+
+                directoryId = config?.directoryId;
+            }
+        }
+
+        const kodyRulesFiltered = this.kodyRulesValidationService
+            .getKodyRulesForFile(
+                fileContext.file.filename,
+                context?.codeReviewConfig?.kodyRules || [],
+                {
+                    directoryId,
+                },
+            )
             ?.filter(
                 (rule) => !rule.scope || rule.scope === KodyRulesScope.FILE,
             )

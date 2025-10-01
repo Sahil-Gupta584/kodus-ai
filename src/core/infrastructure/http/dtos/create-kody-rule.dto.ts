@@ -22,6 +22,29 @@ export enum KodyRuleSeverity {
     CRITICAL = 'critical',
 }
 
+export class KodyRulesExampleDto implements IKodyRulesExample {
+    @IsString()
+    snippet: string;
+
+    @IsBoolean()
+    isCorrect: boolean;
+}
+
+export class KodyRulesInheritanceDto {
+    @IsBoolean()
+    inheritable: boolean;
+
+    @IsArray()
+    @IsString({ each: true })
+    @IsOptional()
+    exclude: string[];
+
+    @IsArray()
+    @IsString({ each: true })
+    @IsOptional()
+    include: string[];
+}
+
 export class CreateKodyRuleDto {
     @IsOptional()
     @IsString()
@@ -75,12 +98,9 @@ export class CreateKodyRuleDto {
     @ValidateNested({ each: true })
     @Type(() => KodyRulesExampleDto)
     examples: KodyRulesExampleDto[];
-}
 
-export class KodyRulesExampleDto implements IKodyRulesExample {
-    @IsString()
-    snippet: string;
-
-    @IsBoolean()
-    isCorrect: boolean;
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => KodyRulesInheritanceDto)
+    inheritance?: KodyRulesInheritanceDto;
 }
