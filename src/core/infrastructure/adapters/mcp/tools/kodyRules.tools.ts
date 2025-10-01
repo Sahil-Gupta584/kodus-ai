@@ -366,11 +366,15 @@ export class KodyRulesTools {
                                 (args.kodyRule.scope === KodyRulesScope.FILE
                                     ? args.kodyRule.directoryId
                                     : '') || '',
-                            inheritance: (args.kodyRule.inheritance || {
-                                inheritable: true,
-                                exclude: [],
-                                include: [],
-                            }) as IKodyRulesInheritance,
+                            inheritance: {
+                                inheritable:
+                                    args.kodyRule.inheritance?.inheritable ??
+                                    true,
+                                exclude:
+                                    args.kodyRule.inheritance?.exclude || [],
+                                include:
+                                    args.kodyRule.inheritance?.include || [],
+                            },
                         },
                     };
 
