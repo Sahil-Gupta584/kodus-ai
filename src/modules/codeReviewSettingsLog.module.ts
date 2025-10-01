@@ -17,7 +17,6 @@ import { RegisterUserStatusLogUseCase } from '@/core/application/use-cases/user/
 import { FindCodeReviewSettingsLogsUseCase } from '@/core/application/use-cases/codeReviewSettingsLog/find-code-review-settings-logs.use-case';
 import { UserStatusLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/userStatusLog.handler';
 import { IntegrationLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/integrationLog.handler';
-import { LogModule } from './log.module';
 import { PullRequestMessagesLogHandler } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/pullRequestMessageLog.handler';
 import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
 import { IntegrationModule } from './integration.module';
@@ -31,7 +30,6 @@ import { ParametersModule } from './parameters.module';
         forwardRef(() => TeamsModule),
         forwardRef(() => ParametersModule),
         forwardRef(() => IntegrationModule),
-        LogModule,
     ],
     providers: [
         {

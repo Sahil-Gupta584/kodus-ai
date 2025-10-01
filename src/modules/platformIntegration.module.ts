@@ -52,7 +52,7 @@ import { PullRequestMessagesModule } from './pullRequestMessages.module';
         forwardRef(() => IntegrationModule),
         forwardRef(() => IntegrationConfigModule),
         forwardRef(() => AuthIntegrationModule),
-        forwardRef(() => JiraModule),
+        // forwardRef(() => JiraModule),
         forwardRef(() => GithubModule),
         forwardRef(() => GitlabModule),
         forwardRef(() => TeamMembersModule),
@@ -79,14 +79,14 @@ import { PullRequestMessagesModule } from './pullRequestMessages.module';
         PromptService,
         PlatformIntegrationFactory,
         CodeManagementService,
-        ProjectManagementService,
-        CommunicationService,
+        // ProjectManagementService,
+        // CommunicationService,
 
         //Integrations tools
         MSTeamsService,
         GitlabService,
-        DiscordService,
-        AzureBoardsService,
+        // DiscordService,
+        // AzureBoardsService,
 
         // Webhook handlers
         GitHubPullRequestHandler,
@@ -119,8 +119,8 @@ import { PullRequestMessagesModule } from './pullRequestMessages.module';
     exports: [
         PlatformIntegrationFactory,
         CodeManagementService,
-        ProjectManagementService,
-        CommunicationService,
+        // ProjectManagementService,
+        // CommunicationService,
         ReceiveWebhookUseCase,
         FinishProjectConfigUseCase,
     ],
@@ -151,17 +151,18 @@ export class PlatformIntegrationModule implements OnModuleInit {
                         type,
                         instance as ICodeManagementService,
                     );
-                } else if (serviceType === 'projectManagement') {
-                    this.integrationFactory.registerProjectManagementService(
-                        type,
-                        instance as IProjectManagementService,
-                    );
-                } else if (serviceType === 'communication') {
-                    this.integrationFactory.registerCommunicationService(
-                        type,
-                        instance as ICommunicationService,
-                    );
                 }
+                // else if (serviceType === 'projectManagement') {
+                //     this.integrationFactory.registerProjectManagementService(
+                //         type,
+                //         instance as IProjectManagementService,
+                //     );
+                // } else if (serviceType === 'communication') {
+                //     this.integrationFactory.registerCommunicationService(
+                //         type,
+                //         instance as ICommunicationService,
+                //     );
+                // }
             }
         });
     }

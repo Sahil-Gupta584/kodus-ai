@@ -6,12 +6,13 @@ import { PermissionsModel } from '@/core/infrastructure/adapters/repositories/ty
 import { PermissionsService } from '@/core/infrastructure/adapters/services/permissions/permissions.service';
 import { PermissionsAbilityFactory } from '@/core/infrastructure/adapters/services/permissions/permissionsAbility.factory';
 import { PermissionsController } from '@/core/infrastructure/http/controllers/permissions.controller';
-import { forwardRef, Module } from '@nestjs/common';
+import { forwardRef, Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersModule } from './user.module';
 import { IntegrationConfigModule } from './integrationConfig.module';
 import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
 
+@Global()
 @Module({
     imports: [
         TypeOrmModule.forFeature([PermissionsModel]),

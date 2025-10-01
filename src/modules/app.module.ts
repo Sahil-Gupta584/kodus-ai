@@ -19,7 +19,6 @@ import { TeamAutomationModule } from './teamAutomation.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AutomationStrategyModule } from './automationStrategy.module';
 import { AgentModule } from './agent.module';
-import { LoggerModule } from 'nestjs-pino';
 import { LogModule } from './log.module';
 import { AuthIntegrationModule } from './authIntegration.module';
 import { IntegrationModule } from './integration.module';
@@ -63,7 +62,6 @@ import { ByokModule } from '@/ee/byok/byok.module';
         GlobalCacheModule,
         RabbitMQWrapperModule.register(),
         ScheduleModule.forRoot(),
-        LoggerModule.forRoot(),
         KodyASTModule,
         PlatformIntegrationModule,
         LogModule,
@@ -113,10 +111,7 @@ import { ByokModule } from '@/ee/byok/byok.module';
             global: true,
         }),
         CodeReviewExecutionModule,
-        {
-            module: PermissionsModule,
-            global: true,
-        },
+        PermissionsModule,
         WebhookLogModule,
         ByokModule,
     ],

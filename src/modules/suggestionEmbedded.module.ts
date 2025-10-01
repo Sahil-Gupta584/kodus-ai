@@ -10,7 +10,6 @@ import { KodyFineTuningService } from '@/core/infrastructure/adapters/services/k
 import { SuggestionEmbeddedService } from '@/core/infrastructure/adapters/services/kodyFineTuning/suggestionEmbedded/suggestionEmbedded.service';
 import { SUGGESTION_EMBEDDED_REPOSITORY_TOKEN } from '@/core/infrastructure/adapters/services/kodyFineTuning/domain/suggestionEmbedded/contracts/suggestionEmbedded.repository.contract';
 import { SUGGESTION_EMBEDDED_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/kodyFineTuning/domain/suggestionEmbedded/contracts/suggestionEmbedded.service.contract';
-import { LogModule } from './log.module';
 
 @Module({
     imports: [
@@ -18,7 +17,6 @@ import { LogModule } from './log.module';
         forwardRef(() => PullRequestsModule),
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => GlobalParametersModule),
-        LogModule,
     ],
     providers: [
         SuggestionEmbeddedDatabaseRepository,

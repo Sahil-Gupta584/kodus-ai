@@ -37,7 +37,6 @@ import {
     KodyRulesAnalysisService,
 } from '@/ee/codeBase/kodyRulesAnalysis.service';
 import { GlobalParametersModule } from './global-parameters.module';
-import { LogModule } from './log.module';
 import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeBase.controller';
 import {
     KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN,
@@ -77,7 +76,6 @@ import { LicenseService } from '@/ee/license/license.service';
         forwardRef(() => GlobalParametersModule),
         forwardRef(() => TokenChunkingModule),
         forwardRef(() => LicenseModule),
-        LogModule,
     ],
     providers: [
         {

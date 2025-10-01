@@ -51,21 +51,21 @@ import { INTEGRATION_SERVICE_TOKEN } from '@/core/domain/integrations/contracts/
             provide: TEAM_AUTOMATION_SERVICE_TOKEN,
             useClass: TeamAutomationService,
         },
-        {
-            provide: INTEGRATION_SERVICE_TOKEN,
-            useClass: IntegrationService,
-        },
-        {
-            provide: INTEGRATION_CONFIG_SERVICE_TOKEN,
-            useClass: IntegrationConfigService,
-        },
+        // {
+        //     provide: INTEGRATION_SERVICE_TOKEN,
+        //     useClass: IntegrationService,
+        // },
+        // {
+        //     provide: INTEGRATION_CONFIG_SERVICE_TOKEN,
+        //     useClass: IntegrationConfigService,
+        // },
     ],
     controllers: [TeamAutomationController],
     exports: [
         TEAM_AUTOMATION_REPOSITORY_TOKEN,
         TEAM_AUTOMATION_SERVICE_TOKEN,
-        INTEGRATION_SERVICE_TOKEN,
-        INTEGRATION_CONFIG_SERVICE_TOKEN,
+        // INTEGRATION_SERVICE_TOKEN,
+        // INTEGRATION_CONFIG_SERVICE_TOKEN,
         ActiveCodeManagementTeamAutomationsUseCase,
         ActiveProjectManagementTeamAutomationsUseCase,
         ActiveCommunicationManagementTeamAutomationsUseCase,
