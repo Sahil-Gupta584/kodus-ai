@@ -1,30 +1,32 @@
-import { CodeReviewSettingsLogRepository } from '@/core/infrastructure/adapters/repositories/mongoose/codeReviewSettingsLog.repository';
+import { CodeReviewSettingsLogRepository } from '@/ee/codeReviewSettingsLog/repository/codeReviewSettingsLog.repository';
 import { CodeReviewSettingsLogModelInstance } from '@/core/infrastructure/adapters/repositories/mongoose/schema';
-import { CodeReviewSettingsLogService } from '@/ee/codeReviewSettingsLog/codeReviewSettingsLog.service';
-import { KodyRulesLogHandler } from '@/ee/codeReviewSettingsLog/kodyRulesLog.handler';
+import { CodeReviewSettingsLogService } from '@/ee/codeReviewSettingsLog/services/codeReviewSettingsLog.service';
+import { KodyRulesLogHandler } from '@/ee/codeReviewSettingsLog/services/kodyRulesLog.handler';
 import { CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN } from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.repository.contract';
 import { CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN } from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import { MongooseModule } from '@nestjs/mongoose';
 import { forwardRef, Module } from '@nestjs/common';
 import { UsersModule } from './user.module';
-import { CodeReviewConfigLogHandler } from '@/ee/codeReviewSettingsLog/codeReviewConfigLog.handler';
-import { RepositoriesLogHandler } from '@/ee/codeReviewSettingsLog/repositoriesLog.handler';
-import { UnifiedLogHandler } from '@/ee/codeReviewSettingsLog/unifiedLog.handler';
+import { CodeReviewConfigLogHandler } from '@/ee/codeReviewSettingsLog/services/codeReviewConfigLog.handler';
+import { RepositoriesLogHandler } from '@/ee/codeReviewSettingsLog/services/repositoriesLog.handler';
+import { UnifiedLogHandler } from '@/ee/codeReviewSettingsLog/services/unifiedLog.handler';
 import { IntegrationConfigModule } from './integrationConfig.module';
 import { TeamsModule } from './team.module';
 import { CodeReviewSettingLogController } from '@/core/infrastructure/http/controllers/codeReviewSettingLog.controller';
 import { RegisterUserStatusLogUseCase } from '@/core/application/use-cases/user/register-user-status-log.use-case';
 import { FindCodeReviewSettingsLogsUseCase } from '@/core/application/use-cases/codeReviewSettingsLog/find-code-review-settings-logs.use-case';
-import { UserStatusLogHandler } from '@/ee/codeReviewSettingsLog/userStatusLog.handler';
-import { IntegrationLogHandler } from '@/ee/codeReviewSettingsLog/integrationLog.handler';
-import { PullRequestMessagesLogHandler } from '@/ee/codeReviewSettingsLog/pullRequestMessageLog.handler';
+import { UserStatusLogHandler } from '@/ee/codeReviewSettingsLog/services/userStatusLog.handler';
+import { IntegrationLogHandler } from '@/ee/codeReviewSettingsLog/services/integrationLog.handler';
+import { PullRequestMessagesLogHandler } from '@/ee/codeReviewSettingsLog/services/pullRequestMessageLog.handler';
 import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
 import { IntegrationModule } from './integration.module';
 import { ParametersModule } from './parameters.module';
+import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
 
 @Module({
     imports: [
         MongooseModule.forFeature([CodeReviewSettingsLogModelInstance]),
+        PermissionValidationModule,
         forwardRef(() => UsersModule),
         forwardRef(() => IntegrationConfigModule),
         forwardRef(() => TeamsModule),

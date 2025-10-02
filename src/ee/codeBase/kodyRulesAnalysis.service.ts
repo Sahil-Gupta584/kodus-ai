@@ -9,9 +9,8 @@ import {
     SuggestionControlConfig,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
-import Anthropic from '@anthropic-ai/sdk';
+// import Anthropic from '@anthropic-ai/sdk';
 import {
     KodyRulesClassifierSchema,
     kodyRulesClassifierSchema,
@@ -30,7 +29,6 @@ import {
     IKodyRule,
     KodyRulesScope,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
-import { IAIAnalysisService } from '@/core/domain/codeBase/contracts/AIAnalysisService.contract';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 import { KodyRulesService } from '../kodyRules/service/kodyRules.service';
@@ -39,7 +37,6 @@ import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { IKodyRulesAnalysisService } from '@/core/domain/codeBase/contracts/KodyRulesAnalysisService.contract';
 import {
-    LLMProviderService,
     LLMModelProvider,
     PromptRunnerService as BasePromptRunnerService,
     ParserType,
@@ -47,7 +44,6 @@ import {
     BYOKConfig,
     TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
-import { z } from 'zod';
 import { KodyRulesValidationService } from '../kodyRules/service/kody-rules-validation.service';
 import {
     CODE_BASE_CONFIG_SERVICE_TOKEN,
@@ -87,22 +83,21 @@ export const KODY_RULES_ANALYSIS_SERVICE_TOKEN = Symbol(
 
 @Injectable()
 export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
-    private readonly anthropic: Anthropic;
+    // private readonly anthropic: Anthropic;
     private readonly tokenTracker: TokenTrackingHandler;
 
-    @Inject(KODY_RULES_SERVICE_TOKEN)
-    private readonly kodyRulesService: KodyRulesService;
-
     constructor(
-        private readonly logger: PinoLoggerService,
-        private readonly promptRunnerService: BasePromptRunnerService,
-        private readonly kodyRulesValidationService: KodyRulesValidationService,
+        @Inject(KODY_RULES_SERVICE_TOKEN)
+        private readonly kodyRulesService: KodyRulesService,
         @Inject(CODE_BASE_CONFIG_SERVICE_TOKEN)
         private readonly codeBaseConfigService: ICodeBaseConfigService,
+        private readonly promptRunnerService: BasePromptRunnerService,
+        private readonly kodyRulesValidationService: KodyRulesValidationService,
+        private readonly logger: PinoLoggerService,
     ) {
-        this.anthropic = new Anthropic({
-            apiKey: process.env.API_ANTHROPIC_API_KEY,
-        });
+        // this.anthropic = new Anthropic({
+        //     apiKey: process.env.API_ANTHROPIC_API_KEY,
+        // });
         this.tokenTracker = new TokenTrackingHandler();
     }
 

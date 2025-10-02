@@ -15,7 +15,7 @@ import {
 
 import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { PullRequestMessagesLogParams } from '@/ee/codeReviewSettingsLog/pullRequestMessageLog.handler';
+import { PullRequestMessagesLogParams } from '@/ee/codeReviewSettingsLog/services/pullRequestMessageLog.handler';
 
 @Injectable()
 export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {

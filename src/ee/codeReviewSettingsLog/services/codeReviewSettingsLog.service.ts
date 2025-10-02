@@ -6,6 +6,8 @@ import {
 } from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.repository.contract';
 import { CodeReviewSettingsLogEntity } from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/entities/codeReviewSettingsLog.entity';
 import { ICodeReviewSettingsLog } from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/interfaces/codeReviewSettingsLog.interface';
+import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
 
 // Handlers
 import { KodyRuleLogParams, KodyRulesLogHandler } from './kodyRulesLog.handler';
@@ -40,6 +42,7 @@ export class CodeReviewSettingsLogService
         @Inject(CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN)
         private readonly codeReviewSettingsLogRepository: ICodeReviewSettingsLogRepository,
 
+        private readonly permissionValidationService: PermissionValidationService,
         private readonly kodyRulesLogHandler: KodyRulesLogHandler,
         private readonly codeReviewConfigLogHandler: CodeReviewConfigLogHandler,
         private readonly repositoriesLogHandler: RepositoriesLogHandler,
@@ -47,6 +50,25 @@ export class CodeReviewSettingsLogService
         private readonly userStatusLogHandler: UserStatusLogHandler,
         private readonly pullRequestMessagesLogHandler: PullRequestMessagesLogHandler,
     ) {}
+
+    /**
+     * Verifica se a organização tem permissão para usar audit logs (feature enterprise)
+     * Audit logs só estão disponíveis para planos MANAGED/ENTERPRISE
+     * NÃO disponível para: FREE, BYOK, Self-hosted
+     */
+    private async shouldAllowAuditLogs(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<boolean> {
+        const shouldLimit =
+            await this.permissionValidationService.shouldLimitResources(
+                organizationAndTeamData,
+                CodeReviewSettingsLogService.name,
+            );
+
+        // Se limita recursos (FREE/BYOK/sem licença) = NÃO permite audit logs
+        // Se NÃO limita (MANAGED/ENTERPRISE) = PERMITE audit logs
+        return !shouldLimit;
+    }
 
     async create(
         codeReviewSettingsLog: Omit<ICodeReviewSettingsLog, 'uuid'>,
@@ -66,6 +88,13 @@ export class CodeReviewSettingsLogService
     public async registerKodyRulesLog(
         params: KodyRuleLogParams,
     ): Promise<void> {
+        const canAudit = await this.shouldAllowAuditLogs(
+            params.organizationAndTeamData,
+        );
+        if (!canAudit) {
+            return;
+        }
+
         await this.kodyRulesLogHandler.logKodyRuleAction(params);
     }
 
@@ -73,6 +102,13 @@ export class CodeReviewSettingsLogService
     public async registerCodeReviewConfigLog(
         params: CodeReviewConfigLogParams,
     ): Promise<void> {
+        const canAudit = await this.shouldAllowAuditLogs(
+            params.organizationAndTeamData,
+        );
+        if (!canAudit) {
+            return;
+        }
+
         await this.codeReviewConfigLogHandler.logCodeReviewConfig(params);
     }
 
@@ -80,12 +116,26 @@ export class CodeReviewSettingsLogService
     public async registerRepositoriesLog(
         params: RepositoriesLogParams,
     ): Promise<void> {
+        const canAudit = await this.shouldAllowAuditLogs(
+            params.organizationAndTeamData,
+        );
+        if (!canAudit) {
+            return;
+        }
+
         await this.repositoriesLogHandler.logRepositoriesAction(params);
     }
 
     public async registerRepositoryConfigurationRemoval(
         params: RepositoryConfigRemovalParams,
     ): Promise<void> {
+        const canAudit = await this.shouldAllowAuditLogs(
+            params.organizationAndTeamData,
+        );
+        if (!canAudit) {
+            return;
+        }
+
         await this.repositoriesLogHandler.logRepositoryConfigurationRemoval(
             params,
         );
@@ -94,6 +144,13 @@ export class CodeReviewSettingsLogService
     public async registerDirectoryConfigurationRemoval(
         params: DirectoryConfigRemovalParams,
     ): Promise<void> {
+        const canAudit = await this.shouldAllowAuditLogs(
+            params.organizationAndTeamData,
+        );
+        if (!canAudit) {
+            return;
+        }
+
         await this.repositoriesLogHandler.logDirectoryConfigurationRemoval(
             params,
         );
@@ -103,6 +160,13 @@ export class CodeReviewSettingsLogService
     public async registerIntegrationLog(
         params: IntegrationLogParams,
     ): Promise<void> {
+        const canAudit = await this.shouldAllowAuditLogs(
+            params.organizationAndTeamData,
+        );
+        if (!canAudit) {
+            return;
+        }
+
         await this.integrationLogHandler.logIntegrationAction(params);
     }
 
@@ -110,6 +174,13 @@ export class CodeReviewSettingsLogService
     public async registerUserStatusLog(
         params: UserStatusLogParams,
     ): Promise<void> {
+        const canAudit = await this.shouldAllowAuditLogs(
+            params.organizationAndTeamData,
+        );
+        if (!canAudit) {
+            return;
+        }
+
         await this.userStatusLogHandler.logUserStatusChanges(params);
     }
 
@@ -117,6 +188,13 @@ export class CodeReviewSettingsLogService
     public async registerPullRequestMessagesLog(
         params: PullRequestMessagesLogParams,
     ): Promise<void> {
+        const canAudit = await this.shouldAllowAuditLogs(
+            params.organizationAndTeamData,
+        );
+        if (!canAudit) {
+            return;
+        }
+
         await this.pullRequestMessagesLogHandler.logPullRequestMessagesAction(
             params,
         );

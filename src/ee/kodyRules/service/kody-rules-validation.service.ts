@@ -50,17 +50,6 @@ export class KodyRulesValidationService {
     }
 
     /**
-     * Returns the error message for exceeded rules limit.
-     * @param organizationId Organization identifier.
-     * @returns Error message if limit exceeded, or empty string.
-     */
-    getExceededLimitErrorMessage(organizationId: string): string {
-        return this.isCloud
-            ? ''
-            : `Maximum number of Kody Rules (${this.MAX_KODY_RULES}) reached for organization ${organizationId}`;
-    }
-
-    /**
      * Orders an array of items that have a 'createdAt' field and limits the result if needed.
      * @param items Array of items to order.
      * @param limit Maximum number of items to return. Use 0 for no limit.
@@ -235,7 +224,9 @@ export class KodyRulesValidationService {
         // Check if the rule matches the repository (global or specific)
         const isRepositoryMatch = (rule: Partial<IKodyRule>): boolean => {
             // If we aren't checking a specific repository, all rules match.
-            if (!repositoryId) return true;
+            if (!repositoryId) {
+                return true;
+            }
 
             // Match if the rule is global or specific to the repository
             return (
@@ -246,7 +237,9 @@ export class KodyRulesValidationService {
 
         const isInheritanceMatch = (rule: Partial<IKodyRule>): boolean => {
             // If we aren't checking a specific directory or repository, all rules match.
-            if (!directoryId && !repositoryId) return true;
+            if (!directoryId && !repositoryId) {
+                return true;
+            }
 
             const {
                 inheritable = true,
@@ -255,7 +248,9 @@ export class KodyRulesValidationService {
             } = rule.inheritance ?? {};
 
             // If the rule is not inheritable, it doesn't match.
-            if (!inheritable) return false;
+            if (!inheritable) {
+                return false;
+            }
 
             // If we are querying at the repository level (no directoryId is provided)
             // We only allow it if the repositoryId itself is in the 'include' list.
@@ -283,7 +278,9 @@ export class KodyRulesValidationService {
         };
 
         return kodyRules?.filter((rule) => {
-            if (!rule) return false; // Skip invalid rules
+            if (!rule) {
+                return false;
+            } // Skip invalid rules
 
             // If we are querying at the repository level (no directoryId is provided)
             // we do not allow rules that are specific to a directory (they cannot match)

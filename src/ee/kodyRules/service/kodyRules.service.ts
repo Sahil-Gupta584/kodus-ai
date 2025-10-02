@@ -563,7 +563,8 @@ export class KodyRulesService implements IKodyRulesService {
             }
 
             this.logger.error({
-                message: 'Erro ao validar limite de Kody Rules para plano free',
+                message:
+                    'Error validating Kody Rules limit - blocking operation for safety',
                 error: error,
                 context: KodyRulesService.name,
                 metadata: {
@@ -571,6 +572,10 @@ export class KodyRulesService implements IKodyRulesService {
                     totalRulesAfterOperation,
                 },
             });
+
+            throw new BadRequestException(
+                `Unable to validate rules limit. Please try again later.`,
+            );
         }
     }
 
