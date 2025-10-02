@@ -25,7 +25,9 @@ export class ParametersRepository implements IParametersRepository {
         private readonly integrationConfigRepository: Repository<ParametersModel>,
     ) {}
 
-    async find(filter?: Partial<IParameters>): Promise<ParametersEntity[]> {
+    async find<K extends ParametersKey>(
+        filter?: Partial<IParameters<K>>,
+    ): Promise<ParametersEntity<K>[]> {
         try {
             const { team, ...otherFilterAttributes } = filter || {};
 
@@ -50,7 +52,9 @@ export class ParametersRepository implements IParametersRepository {
         }
     }
 
-    async findOne(filter?: Partial<IParameters>): Promise<ParametersEntity> {
+    async findOne<K extends ParametersKey>(
+        filter?: Partial<IParameters<K>>,
+    ): Promise<ParametersEntity<K>> {
         try {
             const { team, ...otherFilterAttributes } = filter || {};
 
@@ -75,9 +79,9 @@ export class ParametersRepository implements IParametersRepository {
         }
     }
 
-    async findByOrganizationName(
+    async findByOrganizationName<K extends ParametersKey>(
         organizationName: string,
-    ): Promise<ParametersEntity | undefined> {
+    ): Promise<ParametersEntity<K> | undefined> {
         try {
             const response = await this.integrationConfigRepository
                 .createQueryBuilder('parameters')
@@ -99,7 +103,9 @@ export class ParametersRepository implements IParametersRepository {
         }
     }
 
-    async findById(uuid: string): Promise<ParametersEntity> {
+    async findById<K extends ParametersKey>(
+        uuid: string,
+    ): Promise<ParametersEntity<K>> {
         try {
             const queryBuilder =
                 this.integrationConfigRepository.createQueryBuilder(
@@ -119,7 +125,9 @@ export class ParametersRepository implements IParametersRepository {
         }
     }
 
-    async create(integrationConfig: IParameters): Promise<ParametersEntity> {
+    async create<K extends ParametersKey>(
+        integrationConfig: IParameters<K>,
+    ): Promise<ParametersEntity<K>> {
         try {
             const queryBuilder =
                 this.integrationConfigRepository.createQueryBuilder(
@@ -158,10 +166,10 @@ export class ParametersRepository implements IParametersRepository {
         }
     }
 
-    async update(
-        filter: Partial<IParameters>,
-        data: Partial<IParameters>,
-    ): Promise<ParametersEntity> {
+    async update<K extends ParametersKey>(
+        filter: Partial<IParameters<K>>,
+        data: Partial<IParameters<K>>,
+    ): Promise<ParametersEntity<K>> {
         try {
             const queryBuilder: UpdateQueryBuilder<ParametersModel> =
                 this.integrationConfigRepository
@@ -208,10 +216,10 @@ export class ParametersRepository implements IParametersRepository {
         }
     }
 
-    async findByKey(
-        configKey: ParametersKey,
+    async findByKey<K extends ParametersKey>(
+        configKey: K,
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<ParametersEntity> {
+    ): Promise<ParametersEntity<K>> {
         const queryBuilder =
             this.integrationConfigRepository.createQueryBuilder('parameters');
 

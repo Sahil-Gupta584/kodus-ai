@@ -1,16 +1,19 @@
 import { ITeam } from '../../team/interfaces/team.interface';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { IParameters } from '../interfaces/parameters.interface';
+import { ConfigValueMap } from '../types/configValue.type';
 
-export class ParametersEntity implements IParameters {
+export class ParametersEntity<K extends ParametersKey>
+    implements IParameters<K>
+{
     private _uuid: string;
-    private _configKey: ParametersKey;
-    private _configValue: any;
+    private _configKey: K;
+    private _configValue: ConfigValueMap[K];
     private _team?: Partial<ITeam>;
     private _createdAt?: Date;
     private _updatedAt?: Date;
 
-    constructor(parameters: IParameters | Partial<IParameters>) {
+    constructor(parameters: IParameters<K> | Partial<IParameters<K>>) {
         this._uuid = parameters.uuid;
         this._configKey = parameters.configKey;
         this._configValue = parameters.configValue;
@@ -19,7 +22,9 @@ export class ParametersEntity implements IParameters {
         this._updatedAt = parameters.updatedAt;
     }
 
-    public static create(parameters: IParameters | Partial<IParameters>) {
+    public static create<K extends ParametersKey>(
+        parameters: IParameters<K> | Partial<IParameters<K>>,
+    ) {
         return new ParametersEntity(parameters);
     }
 

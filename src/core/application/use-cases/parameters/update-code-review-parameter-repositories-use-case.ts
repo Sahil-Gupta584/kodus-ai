@@ -17,7 +17,14 @@ import {
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import { REQUEST } from '@nestjs/core';
-import { ActionType, ConfigLevel } from '@/config/types/general/codeReviewSettingsLog.type';
+import {
+    ActionType,
+    ConfigLevel,
+} from '@/config/types/general/codeReviewSettingsLog.type';
+import {
+    ICodeReviewParameter,
+    IRepositoryCodeReviewConfig,
+} from '@/config/types/general/codeReviewConfig.type';
 interface ICodeRepository {
     avatar_url?: string;
     default_branch: string;
@@ -56,7 +63,7 @@ export class UpdateCodeReviewParameterRepositoriesUseCase {
 
     async execute(body: {
         organizationAndTeamData: OrganizationAndTeamData;
-    }): Promise<ParametersEntity | boolean> {
+    }): Promise<ParametersEntity<ParametersKey.CODE_REVIEW_CONFIG> | boolean> {
         try {
             const { organizationAndTeamData } = body;
 
@@ -111,7 +118,7 @@ export class UpdateCodeReviewParameterRepositoriesUseCase {
             const updatedCodeReviewConfigValue = {
                 ...codeReviewConfigs.configValue,
                 repositories: updatedRepositories,
-            };
+            } as ICodeReviewParameter;
 
             const result = await this.parametersService.createOrUpdateConfig(
                 ParametersKey.CODE_REVIEW_CONFIG,

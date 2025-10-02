@@ -7,6 +7,7 @@ import {
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import {
     CodeReviewConfig,
+    CodeReviewConfigWithoutLLMProvider,
     CodeReviewVersion,
     KodusConfigFile,
     KodyFineTuningConfig,
@@ -123,12 +124,14 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 repository.id,
             );
 
-            const globalConfig = parameters?.configValue?.global || {};
+            const globalConfig =
+                parameters?.configValue?.global ||
+                ({} as CodeReviewConfigWithoutLLMProvider);
 
             const repoConfig =
                 parameters?.configValue?.repositories?.find(
                     (repo) => repo.id === repository.id.toString(),
-                ) || {};
+                ) || ({} as CodeReviewConfigWithoutLLMProvider);
 
             let kodusConfigFile: Omit<KodusConfigFile, 'version'> | null;
             let validationErrors = [];
@@ -329,8 +332,8 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
     }
 
     private getKodusConfigFileOverrides(
-        repoConfig?: CodeReviewConfig,
-        globalConfig?: CodeReviewConfig,
+        repoConfig?: CodeReviewConfigWithoutLLMProvider,
+        globalConfig?: CodeReviewConfigWithoutLLMProvider,
     ) {
         return (
             repoConfig?.kodusConfigFileOverridesWebPreferences ??

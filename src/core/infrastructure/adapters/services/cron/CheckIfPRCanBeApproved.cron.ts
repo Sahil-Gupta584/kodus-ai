@@ -131,10 +131,7 @@ export class CheckIfPRCanBeApprovedCronProvider {
                     continue;
                 }
 
-                const codeReviewConfig = codeReviewParameter?.configValue as {
-                    global: CodeReviewConfig;
-                    repositories: CodeReviewConfigWithRepositoryInfo[];
-                };
+                const codeReviewConfig = codeReviewParameter?.configValue;
 
                 if (
                     !codeReviewParameter ||

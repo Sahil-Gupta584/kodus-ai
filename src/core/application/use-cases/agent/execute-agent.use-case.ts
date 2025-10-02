@@ -21,6 +21,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import { CreateOrUpdateParametersUseCase } from '../parameters/create-or-update-use-case';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { KodyLearningStatus } from '@/core/domain/parameters/types/configValue.type';
 
 @Injectable()
 export class ExecutionAgentPromptUseCase {
@@ -108,6 +109,7 @@ export class ExecutionAgentPromptUseCase {
             {
                 finishOnboard: true,
                 finishProjectManagementConnection: false,
+                kodyLearningStatus: KodyLearningStatus.ENABLED,
             },
             organizationAndTeamData,
         );

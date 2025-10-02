@@ -59,7 +59,7 @@ export class GenerateCodeReviewParameterUseCase {
     ) {}
 
     async execute(body: GenerateCodeReviewParameterDTO) {
-        let platformConfig: ParametersEntity;
+        let platformConfig: ParametersEntity<ParametersKey.PLATFORM_CONFIGS>;
         let organizationAndTeamData: OrganizationAndTeamData;
 
         try {

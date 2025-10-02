@@ -14,22 +14,16 @@ export interface ICodeRepository {
     directories: Array<any>;
 }
 
-export interface IFilteredCodeRepository {
-    id: string;
-    name: string;
-    isSelected: boolean;
-    directories: Array<any>;
-    directoryId?: string;
-}
-
 export interface IRepositoryCodeReviewConfig
     extends CodeReviewConfigWithoutLLMProvider {
     id: string;
     name: string;
     directories: Array<any>;
+    directoryId?: string;
+    isSelected: boolean;
 }
 
 export interface ICodeReviewParameter {
     global: CodeReviewConfigWithoutLLMProvider;
-    repositories: Array<IRepositoryCodeReviewConfig | IFilteredCodeRepository>;
+    repositories: Array<IRepositoryCodeReviewConfig>;
 }

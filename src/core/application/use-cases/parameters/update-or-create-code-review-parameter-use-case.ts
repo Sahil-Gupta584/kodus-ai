@@ -35,13 +35,14 @@ import {
 import {
     ICodeRepository,
     ICodeReviewParameter,
-    IFilteredCodeRepository,
+    IRepositoryCodeReviewConfig,
 } from '@/config/types/general/codeReviewConfig.type';
 import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
 import {
     Action,
     ResourceType,
 } from '@/core/domain/permissions/enums/permissions.enum';
+import { UserRequest } from '@/config/types/http/user-request.type';
 
 interface CodeReviewParameterBody {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -63,13 +64,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         private readonly codeReviewSettingsLogService: ICodeReviewSettingsLogService,
 
         @Inject(REQUEST)
-        private readonly request: Request & {
-            user: {
-                organization: { uuid: string };
-                uuid: string;
-                email: string;
-            };
-        },
+        private readonly request: UserRequest,
 
         private readonly logger: PinoLoggerService,
 
@@ -78,7 +73,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 
     async execute(
         body: CodeReviewParameterBody,
-    ): Promise<ParametersEntity | boolean> {
+    ): Promise<ParametersEntity<ParametersKey.CODE_REVIEW_CONFIG> | boolean> {
         try {
             const {
                 organizationAndTeamData,
@@ -109,8 +104,9 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 organizationAndTeamData,
             );
 
-            const filteredRepositoryInfo: IFilteredCodeRepository[] =
-                this.filterRepositoryInfo(codeRepositories);
+            const filteredRepositoryInfo = this.filterRepositoryInfo(
+                codeRepositories,
+            ) as IRepositoryCodeReviewConfig[];
 
             if (!codeReviewConfigs) {
                 return await this.createNewConfig(
@@ -337,7 +333,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
     private async createNewConfig(
         organizationAndTeamData: OrganizationAndTeamData,
         configValue: CodeReviewConfigWithoutLLMProvider,
-        filteredRepositoryInfo: IFilteredCodeRepository[],
+        filteredRepositoryInfo: IRepositoryCodeReviewConfig[],
     ) {
         const defaultSuggestionControl =
             this.getDefaultSuggestionControlConfig();
@@ -376,7 +372,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 
     private updateExistingGlobalConfig(
         codeReviewConfigs: ICodeReviewParameter,
-        filteredRepositoryInfo: IFilteredCodeRepository[],
+        filteredRepositoryInfo: IRepositoryCodeReviewConfig[],
     ) {
         if (!codeReviewConfigs.repositories) {
             codeReviewConfigs.repositories = filteredRepositoryInfo;
@@ -399,7 +395,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 
     private mergeRepositories(
         codeReviewConfigs: ICodeReviewParameter,
-        filteredRepositoryInfo: IFilteredCodeRepository[],
+        filteredRepositoryInfo: IRepositoryCodeReviewConfig[],
     ) {
         const existingRepoIds = new Set(
             codeReviewConfigs.repositories.map((repo) => repo.id),
