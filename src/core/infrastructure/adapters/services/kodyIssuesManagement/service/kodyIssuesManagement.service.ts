@@ -28,7 +28,6 @@ import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { BYOKConfig } from '@kodus/kodus-common/llm';
-import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
 
 @Injectable()

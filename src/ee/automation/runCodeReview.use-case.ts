@@ -29,6 +29,16 @@ import {
     ValidationErrorType,
 } from '@/ee/shared/services/permissionValidation.service';
 
+const ERROR_TO_MESSAGE_TYPE: Record<
+    ValidationErrorType,
+    'user' | 'general' | 'byok_required'
+> = {
+    [ValidationErrorType.INVALID_LICENSE]: 'general',
+    [ValidationErrorType.USER_NOT_LICENSED]: 'user',
+    [ValidationErrorType.BYOK_REQUIRED]: 'byok_required',
+    [ValidationErrorType.PLAN_LIMIT_EXCEEDED]: 'general',
+};
+
 @Injectable()
 export class RunCodeReviewAutomationUseCase {
     constructor(
@@ -397,23 +407,12 @@ export class RunCodeReviewAutomationUseCase {
                         );
 
                     if (!validationResult.allowed) {
-                        // Mapear errorType para tipo de comentário apropriado
-                        let noActiveSubscriptionType:
-                            | 'user'
-                            | 'general'
-                            | 'byok_required' = 'general';
-
-                        if (
-                            validationResult.errorType ===
-                            ValidationErrorType.USER_NOT_LICENSED
-                        ) {
-                            noActiveSubscriptionType = 'user';
-                        } else if (
-                            validationResult.errorType ===
-                            ValidationErrorType.BYOK_REQUIRED
-                        ) {
-                            noActiveSubscriptionType = 'byok_required';
-                        }
+                        const noActiveSubscriptionType =
+                            validationResult.errorType
+                                ? ERROR_TO_MESSAGE_TYPE[
+                                      validationResult.errorType
+                                  ]
+                                : 'general';
 
                         await this.createNoActiveSubscriptionComment({
                             organizationAndTeamData,

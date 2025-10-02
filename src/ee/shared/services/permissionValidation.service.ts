@@ -131,7 +131,7 @@ export class PermissionValidationService {
                 };
             }
 
-            // 2. Trial sempre permite (sem BYOK necessário)
+            // 2. Trial sempre permite (sem BYOK necessário e sem validação de usuário)
             if (validation.subscriptionStatus === 'trial') {
                 return { allowed: true };
             }
@@ -141,13 +141,14 @@ export class PermissionValidationService {
                 validation.planType,
             );
 
+            let byokConfig: BYOKConfig | null = null;
+
             // 4. Managed plans usam nossas keys
             if (identifiedPlanType === PlanType.MANAGED) {
-                return { allowed: true, byokConfig: null };
+                byokConfig = null; // Usa keys da Kodus
             }
-
-            // 5. Free/BYOK plans precisam de BYOK config
-            if (this.requiresBYOK(identifiedPlanType)) {
+            // 5. Free/BYOK plans precisam de BYOK config (verificar ANTES de validar usuário)
+            else if (this.requiresBYOK(identifiedPlanType)) {
                 const byokData =
                     await this.organizationParametersService.findByKey(
                         OrganizationParametersKey.BYOK_CONFIG,
@@ -166,6 +167,7 @@ export class PermissionValidationService {
                         },
                     });
 
+                    // Retorna erro de BYOK ANTES de validar usuário
                     return {
                         allowed: false,
                         errorType: ValidationErrorType.BYOK_REQUIRED,
@@ -176,17 +178,10 @@ export class PermissionValidationService {
                     };
                 }
 
-                return {
-                    allowed: true,
-                    byokConfig: byokData.configValue,
-                    metadata: {
-                        planType: validation.planType,
-                        identifiedPlanType,
-                    },
-                };
+                byokConfig = byokData.configValue;
             }
 
-            // 6. Validar usuário específico (se informado)
+            // 6. Validar usuário específico (SEMPRE valida se userGitId fornecido, exceto trial)
             if (userGitId) {
                 const users = await this.licenseService.getAllUsersWithLicense(
                     organizationAndTeamData,
@@ -213,9 +208,10 @@ export class PermissionValidationService {
                 }
             }
 
+            // 7. Tudo OK - retorna sucesso
             return {
                 allowed: true,
-                byokConfig: null,
+                byokConfig,
                 metadata: { planType: validation.planType, identifiedPlanType },
             };
         } catch (error) {
