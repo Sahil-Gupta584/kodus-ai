@@ -36,7 +36,6 @@ import {
     TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
 import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
-import { getObservability } from '@kodus/flow';
 import { endSpan, newSpan } from './utils/span.utils';
 
 export const LLM_ANALYSIS_SERVICE_TOKEN = Symbol('LLMAnalysisService');
@@ -628,7 +627,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                                 data.relevantLinesEnd &&
                                 data.action,
                             {
-                                message: 'All fields are required',
+                                error: 'All fields are required',
                             },
                         ),
                 ),

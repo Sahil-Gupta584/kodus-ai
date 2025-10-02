@@ -42,6 +42,7 @@ import {
     RULE_LIKE_SERVICE_TOKEN,
 } from '@/core/domain/kodyRules/contracts/ruleLike.service.contract';
 import { KodyRulesValidationService } from './kody-rules-validation.service';
+import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
 
 @Injectable()
 export class KodyRulesService implements IKodyRulesService {
@@ -58,6 +59,7 @@ export class KodyRulesService implements IKodyRulesService {
         private readonly logger: PinoLoggerService,
 
         private readonly kodyRulesValidationService: KodyRulesValidationService,
+        private readonly permissionValidationService: PermissionValidationService,
     ) {}
 
     getNativeCollection() {
@@ -97,6 +99,67 @@ export class KodyRulesService implements IKodyRulesService {
         organizationId: string,
     ): Promise<KodyRulesEntity | null> {
         return this.kodyRulesRepository.findByOrganizationId(organizationId);
+    }
+
+    /**
+     * Obtém informações sobre limites de Kody Rules para uma organização
+     * Usado pelo frontend para controlar UI (desabilitar botões, mostrar avisos, etc)
+     */
+    async getRulesLimitStatus(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<{
+        total: number;
+        limit: number | null;
+        remaining: number | null;
+        canAddMore: boolean;
+        isLimited: boolean;
+    }> {
+        try {
+            const existing = await this.findByOrganizationId(
+                organizationAndTeamData.organizationId,
+            );
+
+            const totalActiveRules =
+                existing?.rules?.filter(
+                    (rule) => rule.status === KodyRulesStatus.ACTIVE,
+                )?.length || 0;
+
+            const isLimited =
+                await this.permissionValidationService.shouldLimitResources(
+                    organizationAndTeamData,
+                    KodyRulesService.name,
+                );
+
+            if (!isLimited) {
+                return {
+                    total: totalActiveRules,
+                    limit: null,
+                    remaining: null,
+                    canAddMore: true,
+                    isLimited: false,
+                };
+            }
+
+            const limit = this.kodyRulesValidationService.MAX_KODY_RULES;
+            const remaining = Math.max(0, limit - totalActiveRules);
+            const canAddMore = totalActiveRules < limit;
+
+            return {
+                total: totalActiveRules,
+                limit,
+                remaining,
+                canAddMore,
+                isLimited: true,
+            };
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting rules limit status',
+                error: error,
+                context: KodyRulesService.name,
+                metadata: { organizationAndTeamData },
+            });
+            throw error;
+        }
     }
 
     /**

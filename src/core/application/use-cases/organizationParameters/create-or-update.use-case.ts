@@ -88,18 +88,24 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
             throw new Error('apiKey is required for BYOK config');
         }
 
+        // Processa fallback apenas se existir, caso contrário mantém null/undefined
+        let fallbackConfig = null;
+        if (byokConfig.fallback && typeof byokConfig.fallback === 'object') {
+            fallbackConfig = {
+                ...byokConfig.fallback,
+                apiKey: byokConfig.fallback.apiKey
+                    ? encrypt(byokConfig.fallback.apiKey)
+                    : undefined,
+            };
+        }
+
         return {
             ...byokConfig,
             main: {
                 ...byokConfig.main,
                 apiKey: encrypt(byokConfig.main.apiKey),
             },
-            fallback: {
-                ...byokConfig?.fallback,
-                apiKey: byokConfig?.fallback?.apiKey
-                    ? encrypt(byokConfig?.fallback?.apiKey)
-                    : undefined,
-            },
+            fallback: fallbackConfig,
         };
     }
 }

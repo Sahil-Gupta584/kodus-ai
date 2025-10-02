@@ -29,7 +29,7 @@ export class PromptRunnerService {
     /**
      * Cria e retorna um PromptBuilder já configurado com os providers
      * e configurações BYOK definidos no construtor.
-     * 
+     *
      * @returns PromptBuilder configurado e pronto para uso
      */
     builder(): any {
@@ -37,7 +37,9 @@ export class PromptRunnerService {
             .builder()
             .setProviders({
                 main: this.defaultProvider,
-                fallback: this.byokConfig?.fallback ? this.fallbackProvider : undefined,
+                fallback: this.byokConfig?.fallback
+                    ? this.fallbackProvider
+                    : undefined,
             });
 
         if (this.byokConfig?.main) {
@@ -49,7 +51,7 @@ export class PromptRunnerService {
                     baseURL: this.byokConfig.main.baseURL,
                 })
                 .setBYOKFallbackConfig(
-                    this.byokConfig.fallback
+                    this.byokConfig?.fallback?.apiKey
                         ? {
                               provider: this.byokConfig.fallback.provider,
                               apiKey: decrypt(this.byokConfig.fallback.apiKey),
@@ -66,7 +68,7 @@ export class PromptRunnerService {
     /**
      * Método de conveniência para criar uma nova instância do PromptRunnerService
      * com configurações diferentes.
-     * 
+     *
      * @param provider Provider principal
      * @param fallbackProvider Provider de fallback (opcional)
      * @param byokConfig Configuração BYOK (opcional)

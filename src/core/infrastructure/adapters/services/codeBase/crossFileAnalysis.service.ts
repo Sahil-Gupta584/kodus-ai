@@ -14,11 +14,9 @@ import {
     SuggestionType,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import { v4 as uuidv4 } from 'uuid';
 import {
     LLMModelProvider,
-    LLMProviderService,
     ParserType,
     PromptRole,
     PromptRunnerService as BasePromptRunnerService,
@@ -68,7 +66,6 @@ export class CrossFileAnalysisService {
     };
 
     constructor(
-        private readonly llmProviderService: LLMProviderService,
         private readonly logger: PinoLoggerService,
         private readonly tokenChunkingService: TokenChunkingService,
 

@@ -4,7 +4,6 @@ import { ProviderService } from '@/core/infrastructure/adapters/services/provide
 import {
     BYOKProvider,
     getModelCapabilities,
-    ModelCapabilities,
     ReasoningConfig,
 } from '@kodus/kodus-common/llm';
 

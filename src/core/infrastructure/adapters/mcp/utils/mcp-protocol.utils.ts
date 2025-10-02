@@ -148,7 +148,7 @@ export const ErrorCodes = {
 export function validateArgs<T>(
     args: any,
     schema:
-        | z.ZodSchema<T>
+        | z.ZodType<T>
         | {
               parse?: (a: any) => T;
               validate?: (a: any) => {

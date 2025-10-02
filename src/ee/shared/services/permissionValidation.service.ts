@@ -149,13 +149,9 @@ export class PermissionValidationService {
             }
             // 5. Free/BYOK plans precisam de BYOK config (verificar ANTES de validar usuário)
             else if (this.requiresBYOK(identifiedPlanType)) {
-                const byokData =
-                    await this.organizationParametersService.findByKey(
-                        OrganizationParametersKey.BYOK_CONFIG,
-                        organizationAndTeamData,
-                    );
+                byokConfig = await this.getBYOKConfig(organizationAndTeamData);
 
-                if (!byokData?.configValue) {
+                if (!byokConfig) {
                     this.logger.warn({
                         message: `BYOK required but not configured for plan ${validation.planType}`,
                         context:
@@ -177,8 +173,6 @@ export class PermissionValidationService {
                         },
                     };
                 }
-
-                byokConfig = byokData.configValue;
             }
 
             // 6. Validar usuário específico (SEMPRE valida se userGitId fornecido, exceto trial)
@@ -340,13 +334,11 @@ export class PermissionValidationService {
 
             // Free ou BYOK plans precisam de BYOK config
             if (this.requiresBYOK(identifiedPlanType)) {
-                const byokData =
-                    await this.organizationParametersService.findByKey(
-                        OrganizationParametersKey.BYOK_CONFIG,
-                        organizationAndTeamData,
-                    );
+                const byokConfig = await this.getBYOKConfig(
+                    organizationAndTeamData,
+                );
 
-                if (!byokData?.configValue) {
+                if (!byokConfig) {
                     this.logger.warn({
                         message: `BYOK required but not configured for plan ${validation?.planType}`,
                         context:
@@ -366,12 +358,12 @@ export class PermissionValidationService {
                     metadata: {
                         organizationAndTeamData,
                         planType: validation?.planType,
-                        provider: byokData.configValue?.provider,
-                        model: byokData.configValue?.model,
+                        provider: byokConfig?.main?.provider,
+                        model: byokConfig?.main?.model,
                     },
                 });
 
-                return byokData.configValue;
+                return byokConfig;
             }
 
             // Caso não identificado, usar keys gerenciadas

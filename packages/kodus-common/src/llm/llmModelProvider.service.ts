@@ -34,7 +34,8 @@ export class LLMProviderService {
 
     getLLMProvider(options: LLMProviderOptions): LLMProviderReturn {
         try {
-            if (options.byokConfig) {
+            // Validar se BYOK tem dados válidos antes de tentar usar
+            if (options.byokConfig?.main?.apiKey) {
                 const byokProvider =
                     this.byokProviderService.createBYOKProvider(
                         options.byokConfig,
@@ -54,6 +55,12 @@ export class LLMProviderService {
 
             if (envMode !== 'auto') {
                 // for self-hosted: using openAI provider and changing baseURL
+                if (!process.env.API_OPEN_AI_API_KEY) {
+                    throw new Error(
+                        'API_OPEN_AI_API_KEY not configured for self-hosted mode',
+                    );
+                }
+
                 const llm = getChatGPT({
                     ...options,
                     model: envMode,
@@ -89,6 +96,7 @@ export class LLMProviderService {
                     ...options,
                     model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
                         .modelName,
+                    apiKey: process.env.API_OPEN_AI_API_KEY,
                 });
 
                 return options.jsonMode
@@ -117,8 +125,26 @@ export class LLMProviderService {
 
             return llm;
         } catch (error) {
+            // Se o erro veio de BYOK, deve propagar (não fazer fallback)
+            if (options.byokConfig?.main?.apiKey) {
+                this.logger.error({
+                    message: 'BYOK provider failed - propagating error',
+                    metadata: {
+                        attemptedModel: options.model,
+                        byokProvider: options.byokConfig.main.provider,
+                    },
+                    context: LLMProviderService.name,
+                    error:
+                        error instanceof Error
+                            ? error
+                            : new Error(String(error)),
+                });
+                throw error;
+            }
+
+            // Para outros erros (cloud/self-hosted), usa fallback
             this.logger.error({
-                message: 'Error getting LLM provider',
+                message: 'Error getting LLM provider - using fallback',
                 metadata: {
                     attemptedModel: options.model,
                     attemptedTemperature: options.temperature,
