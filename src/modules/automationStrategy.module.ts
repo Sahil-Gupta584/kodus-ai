@@ -28,7 +28,7 @@ import { PullRequestsModule } from './pullRequests.module';
 import { LicenseModule } from '@/ee/license/license.module';
 import { CodeReviewExecutionModule } from './codeReviewExecution.module';
 import { OrganizationParametersModule } from './organizationParameters.module';
-import { BYOKDeterminationService } from '@/shared/infrastructure/services/byokDetermination.service';
+import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
 
 @Module({
     imports: [
@@ -53,6 +53,7 @@ import { BYOKDeterminationService } from '@/shared/infrastructure/services/byokD
         AuthIntegrationModule,
         LicenseModule,
         forwardRef(() => CodeReviewExecutionModule),
+        PermissionValidationModule,
     ],
     providers: [
         ...UseCases,
@@ -60,7 +61,6 @@ import { BYOKDeterminationService } from '@/shared/infrastructure/services/byokD
         GetConnectionsUseCase,
         AutomationCodeReviewService,
         PromptService,
-        BYOKDeterminationService,
         {
             provide: EXECUTE_AUTOMATION_SERVICE_TOKEN,
             useClass: ExecuteAutomationService,

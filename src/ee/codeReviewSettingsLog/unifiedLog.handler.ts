@@ -2,7 +2,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import {
     CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN,
     ICodeReviewSettingsLogRepository,
-} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.repository.contract';
+} from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.repository.contract';
 import {
     ActionType,
     ConfigLevel,
@@ -10,7 +10,7 @@ import {
 } from '@/config/types/general/codeReviewSettingsLog.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
-import { PinoLoggerService } from '../logger/pino.service';
+import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 
 export interface ChangedDataToExport {
     actionDescription: string;

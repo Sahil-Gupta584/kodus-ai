@@ -54,7 +54,7 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
 import { CodeReviewExecutionModule } from './codeReviewExecution.module';
 import { PermissionsModule } from './permissions.module';
 import { WebhookLogModule } from './webhookLog.module';
-import { ByokModule } from '@/ee/byok/byok.module';
+import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
 
 @Module({
     imports: [
@@ -113,7 +113,7 @@ import { ByokModule } from '@/ee/byok/byok.module';
         CodeReviewExecutionModule,
         PermissionsModule,
         WebhookLogModule,
-        ByokModule,
+        PermissionValidationModule,
     ],
     providers: [
         {

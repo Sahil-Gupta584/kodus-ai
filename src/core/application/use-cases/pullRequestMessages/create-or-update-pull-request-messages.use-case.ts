@@ -8,14 +8,14 @@ import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfac
 import { REQUEST } from '@nestjs/core';
 import { ConfigLevel } from '@/config/types/general/pullRequestMessages.type';
 import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
-import { PullRequestMessagesLogParams } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/pullRequestMessageLog.handler';
 import {
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
     ICodeReviewSettingsLogService,
-} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+} from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 
 import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { PullRequestMessagesLogParams } from '@/ee/codeReviewSettingsLog/pullRequestMessageLog.handler';
 
 @Injectable()
 export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {

@@ -12,8 +12,11 @@ import { DeleteRepositoryCodeReviewParameterDto } from '@/core/infrastructure/ht
 import {
     ICodeReviewSettingsLogService,
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
-} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
-import { ActionType, ConfigLevel } from '@/config/types/general/codeReviewSettingsLog.type';
+} from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import {
+    ActionType,
+    ConfigLevel,
+} from '@/config/types/general/codeReviewSettingsLog.type';
 import { Request } from 'express';
 import { RepositoryWithDirectoriesException } from '@/shared/infrastructure/filters/repository-with-directories.exception';
 import { DeleteByRepositoryOrDirectoryPullRequestMessagesUseCase } from '../pullRequestMessages/delete-by-repository-or-directory.use-case';
@@ -175,13 +178,15 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
 
         try {
             // Deletar pull request messages relacionadas ao repositório
-            const prMessageDeleted = await this.deletePullRequestMessagesUseCase.execute({
-                organizationId: organizationAndTeamData.organizationId,
-                repositoryId: repositoryId,
-            });
+            const prMessageDeleted =
+                await this.deletePullRequestMessagesUseCase.execute({
+                    organizationId: organizationAndTeamData.organizationId,
+                    repositoryId: repositoryId,
+                });
 
             this.logger.log({
-                message: 'Pull request messages deletion completed for repository',
+                message:
+                    'Pull request messages deletion completed for repository',
                 context: DeleteRepositoryCodeReviewParameterUseCase.name,
                 metadata: {
                     repositoryId,
@@ -192,12 +197,13 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
 
             // Atualizar status das Kody Rules do repositório para inactive
             try {
-                const kodyRulesUpdated = await this.kodyRulesService.updateRulesStatusByFilter(
-                    organizationAndTeamData.organizationId,
-                    repositoryId,
-                    undefined,
-                    KodyRulesStatus.DELETED,
-                );
+                const kodyRulesUpdated =
+                    await this.kodyRulesService.updateRulesStatusByFilter(
+                        organizationAndTeamData.organizationId,
+                        repositoryId,
+                        undefined,
+                        KodyRulesStatus.DELETED,
+                    );
 
                 this.logger.log({
                     message: 'Kody rules status updated for deleted repository',
@@ -210,7 +216,8 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
                 });
             } catch (kodyRulesError) {
                 this.logger.error({
-                    message: 'Error updating Kody rules status for deleted repository',
+                    message:
+                        'Error updating Kody rules status for deleted repository',
                     context: DeleteRepositoryCodeReviewParameterUseCase.name,
                     error: kodyRulesError,
                     metadata: {
@@ -326,14 +333,16 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
 
         try {
             // Deletar pull request messages relacionadas ao diretório
-            const prMessageDeleted = await this.deletePullRequestMessagesUseCase.execute({
-                organizationId: organizationAndTeamData.organizationId,
-                repositoryId: repositoryId,
-                directoryId: directoryId,
-            });
+            const prMessageDeleted =
+                await this.deletePullRequestMessagesUseCase.execute({
+                    organizationId: organizationAndTeamData.organizationId,
+                    repositoryId: repositoryId,
+                    directoryId: directoryId,
+                });
 
             this.logger.log({
-                message: 'Pull request messages deletion completed for directory',
+                message:
+                    'Pull request messages deletion completed for directory',
                 context: DeleteRepositoryCodeReviewParameterUseCase.name,
                 metadata: {
                     repositoryId,
@@ -345,12 +354,13 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
 
             // Atualizar status das Kody Rules do diretório para inactive
             try {
-                const kodyRulesUpdated = await this.kodyRulesService.updateRulesStatusByFilter(
-                    organizationAndTeamData.organizationId,
-                    repositoryId,
-                    directoryId,
-                    KodyRulesStatus.DELETED,
-                );
+                const kodyRulesUpdated =
+                    await this.kodyRulesService.updateRulesStatusByFilter(
+                        organizationAndTeamData.organizationId,
+                        repositoryId,
+                        directoryId,
+                        KodyRulesStatus.DELETED,
+                    );
 
                 this.logger.log({
                     message: 'Kody rules status updated for deleted directory',
@@ -364,7 +374,8 @@ export class DeleteRepositoryCodeReviewParameterUseCase {
                 });
             } catch (kodyRulesError) {
                 this.logger.error({
-                    message: 'Error updating Kody rules status for deleted directory',
+                    message:
+                        'Error updating Kody rules status for deleted directory',
                     context: DeleteRepositoryCodeReviewParameterUseCase.name,
                     error: kodyRulesError,
                     metadata: {

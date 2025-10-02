@@ -23,7 +23,7 @@ import { CodebaseModule } from './codeBase.module';
 import { LicenseModule } from '@/ee/license/license.module';
 import { OrganizationParametersModule } from './organizationParameters.module';
 import { WebhookLogModule } from './webhookLog.module';
-import { BYOKDeterminationService } from '@/shared/infrastructure/services/byokDetermination.service';
+import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
 
 @Module({
     imports: [
@@ -45,12 +45,12 @@ import { BYOKDeterminationService } from '@/shared/infrastructure/services/byokD
         forwardRef(() => OrganizationParametersModule),
         forwardRef(() => WebhookLogModule),
         LicenseModule,
+        PermissionValidationModule,
     ],
     providers: [
         ...UseCases,
         RunCodeReviewAutomationUseCase,
         PromptService,
-        BYOKDeterminationService,
         {
             provide: GITHUB_SERVICE_TOKEN,
             useClass: GithubService,

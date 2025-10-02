@@ -8,7 +8,7 @@ import {
     IKodyRule,
     KodyRulesStatus,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
-import { ValidateLicenseService } from '@/ee/byok/validateLicense.service';
+import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
 import { environment } from '@/ee/configs/environment';
 import { isFileMatchingGlob } from '@/shared/utils/glob-utils';
 import { Injectable } from '@nestjs/common';
@@ -19,10 +19,10 @@ import { Injectable } from '@nestjs/common';
 @Injectable()
 export class KodyRulesValidationService {
     public readonly MAX_KODY_RULES = 10;
-    public readonly isCloud: boolean;
+    private readonly isCloud: boolean;
 
     constructor(
-        private readonly validateLicenseService: ValidateLicenseService,
+        private readonly permissionValidationService: PermissionValidationService,
     ) {
         this.isCloud = environment.API_CLOUD_MODE;
     }
@@ -36,9 +36,11 @@ export class KodyRulesValidationService {
         organizationAndTeamData: OrganizationAndTeamData,
         totalRules: number,
     ): Promise<boolean> {
-        const limited = await this.validateLicenseService.limitResources(
-            organizationAndTeamData,
-        );
+        const limited =
+            await this.permissionValidationService.shouldLimitResources(
+                organizationAndTeamData,
+                KodyRulesValidationService.name,
+            );
 
         if (!limited) {
             return true;

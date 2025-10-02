@@ -65,6 +65,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 });
             }
 
+            //TODO: revisar logica
             const byokConfig =
                 await this.organizationParametersService.findByKey(
                     OrganizationParametersKey.BYOK_CONFIG,

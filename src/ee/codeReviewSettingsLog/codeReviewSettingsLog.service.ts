@@ -1,11 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ICodeReviewSettingsLogService } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import { ICodeReviewSettingsLogService } from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import {
     CODE_REVIEW_SETTINGS_LOG_REPOSITORY_TOKEN,
     ICodeReviewSettingsLogRepository,
-} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.repository.contract';
-import { CodeReviewSettingsLogEntity } from '@/core/domain/codeReviewSettingsLog/entities/codeReviewSettingsLog.entity';
-import { ICodeReviewSettingsLog } from '@/core/domain/codeReviewSettingsLog/interfaces/codeReviewSettingsLog.interface';
+} from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.repository.contract';
+import { CodeReviewSettingsLogEntity } from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/entities/codeReviewSettingsLog.entity';
+import { ICodeReviewSettingsLog } from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/interfaces/codeReviewSettingsLog.interface';
 
 // Handlers
 import { KodyRuleLogParams, KodyRulesLogHandler } from './kodyRulesLog.handler';
@@ -27,7 +27,10 @@ import {
     UserStatusLogHandler,
     UserStatusLogParams,
 } from './userStatusLog.handler';
-import { PullRequestMessagesLogHandler, PullRequestMessagesLogParams } from './pullRequestMessageLog.handler';
+import {
+    PullRequestMessagesLogHandler,
+    PullRequestMessagesLogParams,
+} from './pullRequestMessageLog.handler';
 
 @Injectable()
 export class CodeReviewSettingsLogService

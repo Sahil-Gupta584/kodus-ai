@@ -1,10 +1,10 @@
 import { AxiosMCPManagerService } from '@/config/axios/microservices/mcpManager.axios';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { MCPServerConfig } from '@kodus/flow';
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PinoLoggerService } from '../../services/logger/pino.service';
-import { ValidateLicenseService } from '@/ee/byok/validateLicense.service';
+import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
 
 type MCPConnection = {
     id: string;
@@ -47,7 +47,7 @@ export class MCPManagerService {
     constructor(
         private readonly jwt: JwtService,
         private readonly logger: PinoLoggerService,
-        private readonly validateLicenseService: ValidateLicenseService,
+        private readonly permissionValidationService: PermissionValidationService,
     ) {
         this.axiosMCPManagerService = new AxiosMCPManagerService();
     }
@@ -93,9 +93,11 @@ export class MCPManagerService {
         },
     ): Promise<MCPItem[] | MCPServerConfig[]> {
         try {
-            const limited = await this.validateLicenseService.limitResources(
-                organizationAndTeamData,
-            );
+            const limited =
+                await this.permissionValidationService.shouldLimitResources(
+                    organizationAndTeamData,
+                    MCPManagerService.name,
+                );
 
             const { provider, status = 'ACTIVE' } = filters || {};
 

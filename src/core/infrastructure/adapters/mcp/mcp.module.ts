@@ -9,7 +9,7 @@ import { MCPManagerService } from './services/mcp-manager.service';
 import { JwtModule } from '@nestjs/jwt';
 import { KodyRulesModule } from '@/modules/kodyRules.module';
 import { LicenseModule } from '@/ee/license/license.module';
-import { ByokModule } from '@/ee/byok/byok.module';
+import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
 
 @Module({})
 export class McpModule {
@@ -29,10 +29,7 @@ export class McpModule {
         exports.push(MCPManagerService);
 
         // Always import required modules for MCPManagerService dependencies
-        imports.push(
-            JwtModule,
-            forwardRef(() => ByokModule),
-        );
+        imports.push(JwtModule, PermissionValidationModule);
 
         if (isEnabled) {
             imports.push(

@@ -5,10 +5,10 @@
 
 import { forwardRef, Module } from '@nestjs/common';
 import { KodyRulesValidationService } from './service/kody-rules-validation.service';
-import { ByokModule } from '../byok/byok.module';
+import { PermissionValidationModule } from '../shared/permission-validation.module';
 
 @Module({
-    imports: [forwardRef(() => ByokModule)],
+    imports: [PermissionValidationModule],
     providers: [KodyRulesValidationService],
     exports: [KodyRulesValidationService],
 })

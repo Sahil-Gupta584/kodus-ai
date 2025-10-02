@@ -50,9 +50,9 @@ import { TokenChunkingModule } from './tokenChunking.module';
 import { MessageTemplateProcessor } from '@/core/infrastructure/adapters/services/codeBase/utils/services/messageTemplateProcessor.service';
 import { KodyFineTuningContextModule } from '@/core/infrastructure/adapters/services/kodyFineTuning/fineTuningContext/kodyFineTuningContext.module';
 import { KodyFineTuningService } from '@/core/infrastructure/adapters/services/kodyFineTuning/kodyFineTuning.service';
-import { ValidateLicenseService } from '@/ee/byok/validateLicense.service';
 import { LicenseModule } from '@/ee/license/license.module';
 import { LicenseService } from '@/ee/license/license.service';
+import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
 
 @Module({
     imports: [
@@ -76,6 +76,7 @@ import { LicenseService } from '@/ee/license/license.service';
         forwardRef(() => GlobalParametersModule),
         forwardRef(() => TokenChunkingModule),
         forwardRef(() => LicenseModule),
+        PermissionValidationModule,
     ],
     providers: [
         {
@@ -116,7 +117,6 @@ import { LicenseService } from '@/ee/license/license.service';
         KodyFineTuningService,
         CommentAnalysisService,
         MessageTemplateProcessor,
-        ValidateLicenseService,
         LicenseService,
     ],
     exports: [

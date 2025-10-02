@@ -53,7 +53,7 @@ import {
     MessageTemplateProcessor,
     PlaceholderContext,
 } from './utils/services/messageTemplateProcessor.service';
-import { ValidateLicenseService } from '@/ee/byok/validateLicense.service';
+import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
 import { endSpan, newSpan } from './utils/span.utils';
 
 @Injectable()
@@ -70,7 +70,7 @@ export class CommentManagerService implements ICommentManagerService {
         private readonly messageProcessor: MessageTemplateProcessor,
         private readonly promptRunnerService: BasePromptRunnerService,
 
-        private readonly validateLicenseService: ValidateLicenseService,
+        private readonly permissionValidationService: PermissionValidationService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
         this.tokenTracker = new TokenTrackingHandler();
@@ -94,18 +94,20 @@ export class CommentManagerService implements ICommentManagerService {
         }
 
         if (prPreview) {
-            const validLicense =
-                await this.validateLicenseService.validateLicense(
+            const validationResult =
+                await this.permissionValidationService.validateBasicLicense(
                     organizationAndTeamData,
+                    CommentManagerService.name,
                 );
 
-            if (!validLicense) {
+            if (!validationResult.allowed) {
                 return null;
             }
 
-            byokConfigValue = await this.validateLicenseService.getBYOKConfig(
-                organizationAndTeamData,
-            );
+            byokConfigValue =
+                await this.permissionValidationService.getBYOKConfig(
+                    organizationAndTeamData,
+                );
         }
 
         const maxRetries = 2;

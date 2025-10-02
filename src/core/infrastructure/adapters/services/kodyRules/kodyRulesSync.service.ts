@@ -33,7 +33,7 @@ import {
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import * as path from 'path';
 import { endSpan, newSpan } from '../codeBase/utils/span.utils';
-import { ValidateLicenseService } from '@/ee/byok/validateLicense.service';
+import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
 import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
 
 type SyncTarget = {
@@ -61,7 +61,7 @@ export class KodyRulesSyncService {
         private readonly logger: PinoLoggerService,
         private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
         private readonly promptRunnerService: BasePromptRunnerService,
-        private readonly validateLicenseService: ValidateLicenseService,
+        private readonly permissionValidationService: PermissionValidationService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
     }
@@ -857,18 +857,19 @@ export class KodyRulesSyncService {
     }): Promise<Array<Partial<CreateKodyRuleDto>>> {
         try {
             newSpan(`${KodyRulesSyncService.name}::convertFileToKodyRules`);
-            
-            const validLicense =
-                await this.validateLicenseService.validateLicense(
+
+            const validationResult =
+                await this.permissionValidationService.validateBasicLicense(
                     params.organizationAndTeamData,
+                    KodyRulesSyncService.name,
                 );
 
-            if (!validLicense) {
+            if (!validationResult.allowed) {
                 return null;
             }
 
             const byokConfigValue =
-                await this.validateLicenseService.getBYOKConfig(
+                await this.permissionValidationService.getBYOKConfig(
                     params.organizationAndTeamData,
                 );
 
@@ -951,18 +952,19 @@ export class KodyRulesSyncService {
         } catch (error) {
             try {
                 newSpan(`${KodyRulesSyncService.name}::convertFileToKodyRules`);
-                
-                const validLicense =
-                    await this.validateLicenseService.validateLicense(
+
+                const validationResult =
+                    await this.permissionValidationService.validateBasicLicense(
                         params.organizationAndTeamData,
+                        KodyRulesSyncService.name,
                     );
 
-                if (!validLicense) {
+                if (!validationResult.allowed) {
                     return null;
                 }
 
                 const byokConfigValue =
-                    await this.validateLicenseService.getBYOKConfig(
+                    await this.permissionValidationService.getBYOKConfig(
                         params.organizationAndTeamData,
                     );
 

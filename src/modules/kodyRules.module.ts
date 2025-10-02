@@ -30,9 +30,9 @@ import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
 import { GlobalCacheModule } from './cache.module';
 import { RuleLikeModule } from './ruleLike.module';
 import { LicenseModule } from '@/ee/license/license.module';
-import { ValidateLicenseService } from '@/ee/byok/validateLicense.service';
 import { LicenseService } from '@/ee/license/license.service';
 import { OrganizationParametersModule } from './organizationParameters.module';
+import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
 
 @Module({
     imports: [
@@ -55,6 +55,7 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         forwardRef(() => OrganizationParametersModule),
         KodyRulesValidationModule,
         GlobalCacheModule,
+        PermissionValidationModule,
     ],
     providers: [
         ...UseCases,
@@ -68,7 +69,6 @@ import { OrganizationParametersModule } from './organizationParameters.module';
         },
         KodyRulesValidationService,
         KodyRulesSyncService,
-        ValidateLicenseService,
         LicenseService,
     ],
     controllers: [KodyRulesController],

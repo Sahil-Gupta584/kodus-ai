@@ -31,7 +31,7 @@ import { ProgrammingLanguage } from '@/shared/domain/enums/programming-language.
 import {
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
     ICodeReviewSettingsLogService,
-} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+} from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import {
     ActionType,
     UserInfo,
@@ -41,10 +41,6 @@ import {
     IRuleLikeService,
     RULE_LIKE_SERVICE_TOKEN,
 } from '@/core/domain/kodyRules/contracts/ruleLike.service.contract';
-import {
-    ILicenseService,
-    LICENSE_SERVICE_TOKEN,
-} from '@/ee/license/interfaces/license.interface';
 import { KodyRulesValidationService } from './kody-rules-validation.service';
 
 @Injectable()
@@ -58,9 +54,6 @@ export class KodyRulesService implements IKodyRulesService {
 
         @Inject(RULE_LIKE_SERVICE_TOKEN)
         private readonly ruleLikeService: IRuleLikeService,
-
-        @Inject(LICENSE_SERVICE_TOKEN)
-        private readonly licenseService: ILicenseService,
 
         private readonly logger: PinoLoggerService,
 
