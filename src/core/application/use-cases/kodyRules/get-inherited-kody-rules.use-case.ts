@@ -16,6 +16,7 @@ import { Inject, Injectable } from '@nestjs/common';
 
 type KodyRuleWithInheritance = Partial<IKodyRule> & {
     inherited?: 'global' | 'repository' | 'directory';
+    excluded?: boolean;
 };
 
 @Injectable()
@@ -38,16 +39,12 @@ export class GetInheritedRulesKodyRulesUseCase {
         globalRules: Partial<KodyRuleWithInheritance>[];
         repoRules: Partial<KodyRuleWithInheritance>[];
         directoryRules: Partial<KodyRuleWithInheritance>[];
-        excludedRules: Partial<KodyRuleWithInheritance>[];
-        allRules: Partial<KodyRuleWithInheritance>[];
     }> {
         if (!repositoryId || repositoryId === 'global') {
             return {
                 globalRules: [],
                 repoRules: [],
                 directoryRules: [],
-                excludedRules: [],
-                allRules: [],
             };
         }
 
@@ -60,8 +57,6 @@ export class GetInheritedRulesKodyRulesUseCase {
                 globalRules: [],
                 repoRules: [],
                 directoryRules: [],
-                excludedRules: [],
-                allRules: [],
             };
         }
 
@@ -109,47 +104,43 @@ export class GetInheritedRulesKodyRulesUseCase {
         globalRules: Partial<KodyRuleWithInheritance>[];
         repoRules: Partial<KodyRuleWithInheritance>[];
         directoryRules: Partial<KodyRuleWithInheritance>[];
-        excludedRules: Partial<KodyRuleWithInheritance>[];
-        allRules: Partial<KodyRuleWithInheritance>[];
     } {
         const globalRules = [];
         const repoRules = [];
         const directoryRules = [];
-        const excludedRules = [];
 
         for (const rule of rules) {
-            if (
-                rule.inheritance?.exclude?.includes(directoryId || repositoryId)
-            ) {
-                excludedRules.push({
-                    ...rule,
-                    inherited:
-                        rule.repositoryId === 'global'
-                            ? 'global'
-                            : rule.directoryId
-                              ? 'directory'
-                              : 'repository',
-                });
-                continue;
-            }
+            const excluded = rule.inheritance?.exclude?.includes(
+                directoryId || repositoryId,
+            );
 
-            if (rule.repositoryId === 'global' && !rule.directoryId) {
+            if (rule.repositoryId === 'global') {
+                // it comes from global rules
                 globalRules.push({
                     ...rule,
                     inherited: 'global',
+                    excluded,
                 });
             } else if (
                 rule.repositoryId === repositoryId &&
                 !rule.directoryId
             ) {
+                // it comes from repository rules
                 repoRules.push({
                     ...rule,
                     inherited: 'repository',
+                    excluded,
                 });
-            } else if (rule.directoryId && rule.directoryId !== directoryId) {
+            } else if (
+                rule.repositoryId === repositoryId &&
+                rule.directoryId &&
+                rule.directoryId !== directoryId
+            ) {
+                // it comes from another directory rules
                 directoryRules.push({
                     ...rule,
                     inherited: 'directory',
+                    excluded,
                 });
             }
         }
@@ -158,13 +149,6 @@ export class GetInheritedRulesKodyRulesUseCase {
             globalRules,
             repoRules,
             directoryRules,
-            excludedRules,
-            allRules: [
-                ...globalRules,
-                ...repoRules,
-                ...directoryRules,
-                ...excludedRules,
-            ],
         };
     }
 }
