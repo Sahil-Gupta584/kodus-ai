@@ -3475,6 +3475,73 @@ export class AzureReposService
         return criticalIssuesSummaryArray;
     }
 
+    async isWebhookActive(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+    }): Promise<boolean> {
+        const { organizationAndTeamData, repositoryId } = params;
+
+        try {
+            const authDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!authDetails) {
+                return false;
+            }
+
+            const repository = await this.getRepoById(
+                organizationAndTeamData,
+                repositoryId,
+            );
+
+            if (!repository) {
+                return false;
+            }
+
+            const resolvedProjectId = repository.project?.id;
+
+            if (!resolvedProjectId) {
+                return false;
+            }
+
+            const webhookUrl =
+                this.configService.get<string>(
+                    'GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK',
+                ) ?? process.env.GLOBAL_AZURE_REPOS_CODE_MANAGEMENT_WEBHOOK;
+
+            if (!webhookUrl) {
+                return false;
+            }
+
+            const subscriptions =
+                await this.azureReposRequestHelper.listSubscriptionsByProject({
+                    orgName: authDetails.orgName,
+                    token: authDetails.token,
+                    projectId: resolvedProjectId,
+                });
+
+            return subscriptions.some(
+                (subscription) =>
+                    subscription.publisherInputs?.repository === repositoryId &&
+                    subscription.consumerInputs?.url?.includes(webhookUrl),
+            );
+        } catch (error) {
+            this.logger.error({
+                message: 'Error verifying Azure Repos webhook status',
+                context: AzureReposService.name,
+                serviceName: 'AzureReposService isWebhookActive',
+                error: error,
+                metadata: {
+                    organizationAndTeamData,
+                    repositoryId,
+                },
+            });
+
+            return false;
+        }
+    }
+
     async deleteWebhook(params: {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<void> {

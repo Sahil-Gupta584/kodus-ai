@@ -12,9 +12,6 @@ import { PlatformIntegrationModule } from './platformIntegration.module';
 import { PromptService } from '@/core/infrastructure/adapters/services/prompt.service';
 import { ParametersModule } from './parameters.module';
 import { GithubService } from '@/core/infrastructure/adapters/services/github/github.service';
-import { MetricsModule } from './metrics.module';
-import { OrganizationMetricsModule } from './organizationMetrics.module';
-import { UseCases as SaveOrganizationMetricsToDbUseCase } from '@/core/application/use-cases/organizationMetrics/';
 import { GlobalCacheModule } from './cache.module';
 import { AutomationModule } from './automation.module';
 import { TeamAutomationModule } from './teamAutomation.module';
@@ -24,7 +21,9 @@ import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.us
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 import { CodebaseModule } from './codeBase.module';
 import { LicenseModule } from '@/ee/license/license.module';
+import { OrganizationParametersModule } from './organizationParameters.module';
 import { WebhookLogModule } from './webhookLog.module';
+import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
 
 @Module({
     imports: [
@@ -35,8 +34,6 @@ import { WebhookLogModule } from './webhookLog.module';
         forwardRef(() => PlatformIntegrationModule),
         forwardRef(() => OrganizationModule),
         forwardRef(() => UsersModule),
-        forwardRef(() => MetricsModule),
-        forwardRef(() => OrganizationMetricsModule),
         forwardRef(() => ParametersModule),
         forwardRef(() => GlobalCacheModule),
         forwardRef(() => AutomationModule),
@@ -45,12 +42,13 @@ import { WebhookLogModule } from './webhookLog.module';
         forwardRef(() => AgentModule),
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
-        LicenseModule,
+        forwardRef(() => OrganizationParametersModule),
         forwardRef(() => WebhookLogModule),
+        LicenseModule,
+        PermissionValidationModule,
     ],
     providers: [
         ...UseCases,
-        ...SaveOrganizationMetricsToDbUseCase,
         RunCodeReviewAutomationUseCase,
         PromptService,
         {

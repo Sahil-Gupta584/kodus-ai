@@ -5016,6 +5016,79 @@ export class GithubService
         }
     }
 
+    async isWebhookActive(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+    }): Promise<boolean> {
+        const { organizationAndTeamData, repositoryId } = params;
+
+        try {
+            const githubAuthDetail = await this.getGithubAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!githubAuthDetail) {
+                return false;
+            }
+
+            const octokit = await this.instanceOctokit(
+                organizationAndTeamData,
+            );
+
+            const repositories =
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                );
+
+            if (!repositories?.length) {
+                return false;
+            }
+
+            const repository = repositories.find(
+                (repo: Repositories) =>
+                    repo.id?.toString() === repositoryId.toString(),
+            );
+
+            if (!repository) {
+                return false;
+            }
+
+            const owner = await this.getCorrectOwner(githubAuthDetail, octokit);
+
+            const { data: webhooks } = await octokit.repos.listWebhooks({
+                owner,
+                repo: repository.name,
+            });
+
+            const webhookUrl =
+                this.configService.get<string>(
+                    'API_GITHUB_CODE_MANAGEMENT_WEBHOOK',
+                ) ?? process.env.API_GITHUB_CODE_MANAGEMENT_WEBHOOK;
+
+            if (!webhookUrl) {
+                return false;
+            }
+
+            return webhooks.some(
+                (hook) => hook?.config?.url === webhookUrl && hook?.active,
+            );
+        } catch (error) {
+            this.logger.error({
+                message: 'Error verifying GitHub webhook status',
+                context: GithubService.name,
+                serviceName: 'GithubService isWebhookActive',
+                error: error,
+                metadata: {
+                    organizationAndTeamData,
+                    repositoryId,
+                },
+            });
+
+            return false;
+        }
+    }
+
     async deleteWebhook(params: {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<void> {

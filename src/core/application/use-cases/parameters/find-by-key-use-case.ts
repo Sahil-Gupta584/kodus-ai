@@ -8,8 +8,6 @@ import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { IParameters } from '@/core/domain/parameters/interfaces/parameters.interface';
-import { artifacts as teamArtifacts } from '@/core/infrastructure/adapters/services/teamArtifacts/artifactsStructure.json';
-import { organizationArtifacts } from '@/core/infrastructure/adapters/services/organizationArtifacts/organizationArtifactsStructure.json';
 
 @Injectable()
 export class FindByKeyParametersUseCase {
@@ -49,39 +47,7 @@ export class FindByKeyParametersUseCase {
     }
 
     private getUpdatedParamaters(parameter: ParametersEntity) {
-        if (parameter.configKey === ParametersKey.TEAM_ARTIFACTS_CONFIG) {
-            const response = {
-                configKey: parameter.configKey,
-                configValue: parameter.configValue.map((config) => ({
-                    ...config,
-                    description:
-                        teamArtifacts.find(
-                            (artifact) => artifact.name === config.name,
-                        )?.whyIsImportant || '',
-                })),
-                team: parameter.team,
-                uuid: parameter.uuid,
-            };
-
-            return response;
-        } else if (
-            parameter.configKey == ParametersKey.ORGANIZATION_ARTIFACTS_CONFIG
-        ) {
-            const response = {
-                configKey: parameter.configKey,
-                configValue: parameter.configValue.map((config) => ({
-                    ...config,
-                    description:
-                        organizationArtifacts.find(
-                            (artifact) => artifact.name === config.name,
-                        )?.whyIsImportant || '',
-                })),
-                team: parameter.team,
-                uuid: parameter.uuid,
-            };
-
-            return response;
-        } else if (parameter.configKey === ParametersKey.CODE_REVIEW_CONFIG) {
+        if (parameter.configKey === ParametersKey.CODE_REVIEW_CONFIG) {
             /**
              * TEMPORARY LOGIC: Show/hide code review version toggle based on user registration date
              *

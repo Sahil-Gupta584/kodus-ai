@@ -18,6 +18,7 @@ export type OrganizationLicenseValidationResult = {
     subscriptionStatus?: SubscriptionStatus;
     trialEnd?: Date;
     numberOfLicenses?: number;
+    planType?: string;
 };
 
 export type UserWithLicense = {

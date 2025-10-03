@@ -4,4 +4,5 @@ export enum OrganizationParametersKey {
     REVIEW_MODE_CONFIG = 'review_mode_config',
     KODY_FINE_TUNING_CONFIG = 'kody_fine_tuning_config',
     AUTO_JOIN_CONFIG = 'auto_join_config',
+    BYOK_CONFIG = 'byok_config',
 }

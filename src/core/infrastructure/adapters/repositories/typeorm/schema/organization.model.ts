@@ -4,7 +4,6 @@ import { TeamModel } from './team.model';
 import { UserModel } from './user.model';
 import { IntegrationModel } from './integration.model';
 import { AuthIntegrationModel } from './authIntegration.model';
-import { OrganizationMetricsModel } from './organizationMetrics.model';
 import { OrganizationParametersModel } from './organizationParameters.model';
 import { TeamMemberModel } from './teamMember.model';
 import { OrganizationAutomationModel } from './organizationAutomation.model';
@@ -40,9 +39,6 @@ export class OrganizationModel extends CoreModel {
         (authIntegration) => authIntegration.organization,
     )
     authIntegrations: AuthIntegrationModel[];
-
-    @OneToMany(() => OrganizationMetricsModel, (metric) => metric.organization)
-    metrics: OrganizationMetricsModel[];
 
     @OneToMany(
         () => OrganizationParametersModel,

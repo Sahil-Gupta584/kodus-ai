@@ -60,10 +60,7 @@ import { STRING_TIME_INTERVAL } from '@/core/domain/integrationConfigs/enums/str
 import { formatAndFilterChangelog } from './formats/formatChangelog';
 import { formatWorkItems } from './formats/formatWorkItems';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { SPRINT_STATE } from '@/core/domain/sprint/enum/sprintState.enum';
 import { ISprint } from '@/core/domain/platformIntegrations/interfaces/jiraSprint.interface';
-import { artifacts } from '../teamArtifacts/artifactsStructure.json';
-import { organizationArtifacts } from '../organizationArtifacts/organizationArtifactsStructure.json';
 
 import {
     IParametersService,
@@ -130,6 +127,42 @@ export class JiraService
         private readonly cacheService: CacheService,
     ) {
         this.axiosClient = new AxiosJiraService();
+    }
+    getAllSprintsForTeam(
+        organizationAndTeamData: OrganizationAndTeamData,
+        originBoardId?: number,
+    ): Promise<ISprint[]> {
+        throw new Error('Method not implemented.');
+    }
+    getCurrentSprintForTeam(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<ISprint> {
+        throw new Error('Method not implemented.');
+    }
+    getLastCompletedSprintForTeam(
+        organizationAndTeamData: OrganizationAndTeamData,
+        originBoardId?: number,
+    ): Promise<ISprint> {
+        throw new Error('Method not implemented.');
+    }
+    getSprintByProjectManagementId(
+        organizationAndTeamData: OrganizationAndTeamData,
+        projectManagementSprintId: string,
+    ): Promise<ISprint> {
+        throw new Error('Method not implemented.');
+    }
+    getWorkItemsByCurrentSprint(
+        organizationAndTeamData: OrganizationAndTeamData,
+        filters: WorkItemsFilter,
+    ): Promise<Item[]> {
+        throw new Error('Method not implemented.');
+    }
+    getNextSprintForTeam(
+        organizationAndTeamData: any,
+        currentSprintId: string,
+        originBoardId?: number,
+    ): Promise<ISprint> {
+        throw new Error('Method not implemented.');
     }
 
     //#region AuthIntegration
@@ -1629,37 +1662,6 @@ export class JiraService
         );
     }
 
-    async getWorkItemsByCurrentSprint(
-        organizationAndTeamData: OrganizationAndTeamData,
-        filters: WorkItemsFilter,
-    ): Promise<Item[]> {
-        const integration = await this.ensureAuthenticatedIntegration(
-            organizationAndTeamData,
-        );
-
-        if (!integration) {
-            throw new NotFoundException('Integration not found');
-        }
-
-        const currentSprint = await this.getCurrentSprintForTeam(
-            organizationAndTeamData,
-        );
-
-        const workItemTypesDefault =
-            await this.projectManagementService.getWorkItemsTypes(
-                organizationAndTeamData,
-                MODULE_WORKITEMS_TYPES.DEFAULT,
-            );
-
-        filters.workItemTypes = workItemTypesDefault;
-
-        return await this.getWorkItemsBySprint(
-            organizationAndTeamData,
-            currentSprint.id,
-            filters,
-        );
-    }
-
     async getWorkItemsById(params: any): Promise<Item[]> {
         try {
             const integration = await this.ensureAuthenticatedIntegration(
@@ -2140,266 +2142,6 @@ export class JiraService
     }
     // #endregion
 
-    //#region Get Sprints
-    async getAllSprintsForTeam(
-        organizationAndTeamData: OrganizationAndTeamData,
-        originBoardId?: number,
-    ): Promise<ISprint[]> {
-        const integration = await this.ensureAuthenticatedIntegration(
-            organizationAndTeamData,
-        );
-
-        if (!integration) {
-            throw new NotFoundException('Integration not found');
-        }
-
-        const integrationConfig =
-            await this.integrationConfigService.findIntegrationConfigFormatted<{
-                boardId: string;
-                projectId: string;
-                projectKey: string;
-            }>(
-                IntegrationConfigKey.PROJECT_MANAGEMENT_SETUP_CONFIG,
-                organizationAndTeamData,
-            );
-
-        let sprints = await this.getSprints(
-            integration,
-            integrationConfig,
-            organizationAndTeamData,
-        );
-
-        if (sprints && sprints.length > 0 && originBoardId) {
-            sprints = sprints.filter(
-                (sprint) => sprint.originBoardId === originBoardId,
-            );
-        }
-
-        return sprints?.map((sprint) => {
-            return {
-                id: sprint.id,
-                name: sprint.name,
-                startDate: new Date(sprint.startDate),
-                endDate: new Date(sprint.endDate),
-                completeDate: new Date(sprint.completeDate),
-                state: sprint.state,
-                goal: sprint.goal,
-                originBoardId: sprint?.originBoardId,
-            };
-        });
-    }
-
-    async getCurrentSprintForTeam(
-        organizationAndTeamData: any,
-    ): Promise<ISprint> {
-        const integration = await this.ensureAuthenticatedIntegration(
-            organizationAndTeamData,
-        );
-
-        if (!integration) {
-            throw new NotFoundException('Integration not found');
-        }
-
-        const integrationConfig =
-            await this.integrationConfigService.findIntegrationConfigFormatted<{
-                boardId: string;
-                projectId: string;
-                projectKey: string;
-            }>(
-                IntegrationConfigKey.PROJECT_MANAGEMENT_SETUP_CONFIG,
-                organizationAndTeamData,
-            );
-
-        const data = await this.getSprints(
-            integration,
-            integrationConfig,
-            organizationAndTeamData,
-            SPRINT_STATE.ACTIVE,
-        );
-
-        return data?.map((sprint) => {
-            return {
-                id: sprint.id,
-                name: sprint.name,
-                startDate: new Date(sprint.startDate),
-                endDate: new Date(sprint.endDate),
-                completeDate: new Date(sprint?.completeDate),
-                state: sprint.state,
-                goal: sprint.goal,
-                originBoardId: sprint?.originBoardId,
-            };
-        })[0];
-    }
-
-    async getNextSprintForTeam(
-        organizationAndTeamData: any,
-        currentSprintId: string,
-        originBoardId?: number,
-    ): Promise<ISprint> {
-        const integration = await this.ensureAuthenticatedIntegration(
-            organizationAndTeamData,
-        );
-
-        if (!integration) {
-            throw new NotFoundException('Integration not found');
-        }
-
-        const sprints = await this.getAllSprintsForTeam(
-            organizationAndTeamData,
-            originBoardId,
-        );
-
-        if (!sprints) {
-            return null;
-        }
-
-        const currentSprintIndex = sprints.findIndex(
-            (sprint) => sprint.id === currentSprintId,
-        );
-
-        if (
-            currentSprintIndex === -1 ||
-            currentSprintIndex + 1 > sprints.length
-        ) {
-            return null;
-        }
-
-        return sprints[currentSprintIndex + 1];
-    }
-
-    async getLastCompletedSprintForTeam(
-        organizationAndTeamData,
-        originBoardId?: number,
-    ): Promise<ISprint> {
-        const integration = await this.ensureAuthenticatedIntegration(
-            organizationAndTeamData,
-        );
-
-        if (!integration) {
-            throw new NotFoundException('Integration not found');
-        }
-
-        const integrationConfig =
-            await this.integrationConfigService.findIntegrationConfigFormatted<{
-                boardId: string;
-                projectId: string;
-                projectKey: string;
-            }>(
-                IntegrationConfigKey.PROJECT_MANAGEMENT_SETUP_CONFIG,
-                organizationAndTeamData,
-            );
-
-        let sprints = await this.getSprints(
-            integration,
-            integrationConfig,
-            organizationAndTeamData,
-            SPRINT_STATE.CLOSED,
-        );
-
-        if (!sprints || sprints.length === 0) {
-            return;
-        }
-
-        if (originBoardId) {
-            sprints = sprints.filter(
-                (sprint) => sprint.originBoardId === originBoardId,
-            );
-        }
-
-        const sortedSprints = sprints
-            ?.sort((a: any, b: any) => {
-                return (
-                    new Date(b.completeDate).getTime() -
-                    new Date(a.completeDate).getTime()
-                );
-            })
-            .map((sprint) => {
-                return {
-                    id: sprint.id,
-                    name: sprint.name,
-                    startDate: new Date(sprint.startDate),
-                    endDate: new Date(sprint.endDate),
-                    completeDate: new Date(sprint.completeDate),
-                    state: sprint.state,
-                    goal: sprint.goal,
-                    originBoardId: sprint?.originBoardId,
-                };
-            });
-
-        return sortedSprints?.[0];
-    }
-
-    private async getSprints(
-        integration: IIntegration,
-        integrationConfig: {
-            boardId: string;
-            projectId: string;
-            projectKey: string;
-        },
-        organizationAndTeamData: OrganizationAndTeamData,
-        sprintState?: SPRINT_STATE,
-    ) {
-        try {
-            const url = `${process.env.API_JIRA_BASE_URL}/${integration?.authIntegration?.authDetails?.cloudId}/${process.env.API_JIRA_URL_API_VERSION_1}/board/${integrationConfig?.boardId}/sprint`;
-
-            const { data } = await this.axiosClient.get(url, {
-                params: {
-                    state: sprintState,
-                },
-                headers: {
-                    Authorization: `Bearer ${integration?.authIntegration?.authDetails?.authToken}`,
-                    organizationId: organizationAndTeamData.organizationId,
-                    platformType: PlatformType.JIRA,
-                },
-            });
-
-            if (!data || data.values.length <= 0) {
-                return null;
-            }
-
-            return data.values;
-        } catch (error) {
-            console.log('teste', error);
-        }
-    }
-
-    async getSprintByProjectManagementId(
-        organizationAndTeamData: OrganizationAndTeamData,
-        projectManagementSprintId: string,
-    ): Promise<ISprint> {
-        const integration = await this.ensureAuthenticatedIntegration(
-            organizationAndTeamData,
-        );
-
-        if (!integration) {
-            throw new NotFoundException('Integration not found');
-        }
-
-        const url = `${process.env.API_JIRA_BASE_URL}/${integration?.authIntegration?.authDetails?.cloudId}/${process.env.API_JIRA_URL_API_VERSION_1}/sprint/${projectManagementSprintId}`;
-
-        const { data } = await this.axiosClient.get(url, {
-            headers: {
-                Authorization: `Bearer ${integration?.authIntegration?.authDetails?.authToken}`,
-                organizationId: organizationAndTeamData.organizationId,
-                platformType: PlatformType.JIRA,
-            },
-        });
-
-        return {
-            id: data.id,
-            name: data.name,
-            startDate: new Date(data.startDate),
-            endDate: new Date(data.endDate),
-            completeDate: data.completeDate
-                ? new Date(data.completeDate)
-                : null,
-            state: data.state,
-            goal: data.goal,
-            originBoardId: data?.originBoardId,
-        };
-    }
-    //#endregion
-
     //#region Deals
     private async asyncDealWithWorkItemsTypes(
         organizationAndTeamData: OrganizationAndTeamData,
@@ -2523,16 +2265,6 @@ export class JiraService
                     params.organizationAndTeamData,
                 );
             }
-
-            await this.saveTeamArtifactsStructure(
-                integration,
-                params.organizationAndTeamData,
-            );
-
-            await this.saveOrganizationArtifactsStructure(
-                integration,
-                params.organizationAndTeamData,
-            );
 
             await this.saveBoardPriorityType(
                 workItems,
@@ -2689,78 +2421,6 @@ export class JiraService
     //#endregion
 
     //#region Save Functions
-    async saveTeamArtifactsStructure(integration, organizationAndTeamData) {
-        try {
-            const teamMethodology =
-                await this.integrationConfigService.findIntegrationConfigFormatted<string>(
-                    IntegrationConfigKey.TEAM_PROJECT_MANAGEMENT_METHODOLOGY,
-                    organizationAndTeamData,
-                );
-
-            const azureRepos = await this.integrationService.findOne({
-                organization: { uuid: organizationAndTeamData.organizationId },
-                team: { uuid: organizationAndTeamData.teamId },
-                platform: PlatformType.AZURE_REPOS,
-            });
-
-            const teamArtifacts = artifacts.map((artifact) => {
-                let status = artifact.teamMethodology.includes(teamMethodology);
-
-                if (
-                    artifact.name === 'PullRequestWithSizeGreaterThanLimit' &&
-                    azureRepos
-                ) {
-                    status = false;
-                }
-
-                return {
-                    name: artifact.name,
-                    status: status,
-                };
-            });
-
-            return await this.parametersService.createOrUpdateConfig(
-                ParametersKey.TEAM_ARTIFACTS_CONFIG,
-                teamArtifacts,
-                organizationAndTeamData,
-            );
-        } catch (error) {
-            console.log('Error saving the artifacts structure: ', error);
-        }
-    }
-
-    async saveOrganizationArtifactsStructure(
-        integration,
-        organizationAndTeamData,
-    ) {
-        try {
-            const teamMethodology =
-                await this.integrationConfigService.findIntegrationConfigFormatted<string>(
-                    IntegrationConfigKey.TEAM_PROJECT_MANAGEMENT_METHODOLOGY,
-                    organizationAndTeamData,
-                );
-
-            const organizationArtifactsList = organizationArtifacts.map(
-                (artifact) => ({
-                    name: artifact.name,
-                    status: artifact.teamMethodology
-                        .map((tm) => tm.toLowerCase())
-                        .includes(teamMethodology.toLowerCase()),
-                }),
-            );
-
-            return await this.parametersService.createOrUpdateConfig(
-                ParametersKey.ORGANIZATION_ARTIFACTS_CONFIG,
-                organizationArtifactsList,
-                organizationAndTeamData,
-            );
-        } catch (error) {
-            console.log(
-                'Error saving organizational artifacts structure: ',
-                error,
-            );
-        }
-    }
 
     async saveBoardPriorityType(
         columns: any[],

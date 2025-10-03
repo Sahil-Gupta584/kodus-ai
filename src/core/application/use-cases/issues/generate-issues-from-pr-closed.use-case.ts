@@ -17,8 +17,8 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
 import {
     contextToGenerateIssues,
     IRepositoryToIssues,
-} from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
-import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
+} from '@/core/infrastructure/adapters/services/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
+import { KodyIssuesManagementService } from '@/core/infrastructure/adapters/services/kodyIssuesManagement/service/kodyIssuesManagement.service';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
@@ -56,14 +56,16 @@ export class GenerateIssuesFromPrClosedUseCase implements IUseCase {
                 }
             }
 
-            const pr = await this.pullRequestService.findByNumberAndRepositoryName(
-                prData.context.pullRequest.number,
-                prData.context.repository.name,
-                {
-                    organizationId:
-                        prData.context.organizationAndTeamData.organizationId,
-                },
-            );
+            const pr =
+                await this.pullRequestService.findByNumberAndRepositoryName(
+                    prData.context.pullRequest.number,
+                    prData.context.repository.name,
+                    {
+                        organizationId:
+                            prData.context.organizationAndTeamData
+                                .organizationId,
+                    },
+                );
 
             if (!pr) {
                 return;

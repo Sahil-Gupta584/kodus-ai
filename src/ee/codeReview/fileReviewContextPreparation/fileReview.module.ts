@@ -3,10 +3,9 @@ import { FileReviewContextPreparation } from '@/core/infrastructure/adapters/ser
 import { FILE_REVIEW_CONTEXT_PREPARATION_TOKEN } from '@/shared/interfaces/file-review-context-preparation.interface';
 import { FILE_REVIEW_CONTEXT_PREPARATION_PROVIDER } from '@/core/infrastructure/providers/file-analyzer.provider.ee';
 import { CodebaseModule } from '@/modules/codeBase.module';
-import { LogModule } from '@/modules/log.module';
 
 @Module({
-    imports: [forwardRef(() => CodebaseModule), LogModule],
+    imports: [forwardRef(() => CodebaseModule)],
     providers: [
         FileReviewContextPreparation, // Core implementation
         FILE_REVIEW_CONTEXT_PREPARATION_PROVIDER,

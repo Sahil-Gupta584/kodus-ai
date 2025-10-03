@@ -20,6 +20,8 @@ export class MongooseFactory implements MongooseOptionsFactory {
     }
 
     public createMongooseOptions(): MongooseModuleOptions {
+        const env = process.env.API_DATABASE_ENV ?? process.env.API_NODE_ENV;
+
         let uri = new ConnectionString('', {
             user: this.config.username,
             password: this.config.password,
@@ -29,7 +31,11 @@ export class MongooseFactory implements MongooseOptionsFactory {
 
         const { createForInstance } = MongooseConnectionFactory;
 
-        if (process.env.API_NODE_ENV === 'production') {
+        const shouldAppendClusterConfig =
+            !['development', 'test'].includes(env ?? '') &&
+            !!process.env.API_MG_DB_PRODUCTION_CONFIG;
+
+        if (shouldAppendClusterConfig) {
             uri = `${uri}/${process.env.API_MG_DB_PRODUCTION_CONFIG}`;
         }
 

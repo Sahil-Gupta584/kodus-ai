@@ -23,19 +23,24 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import { getMappedPlatform } from '@/shared/utils/webhooks';
 import { stripCurlyBracesFromUUIDs } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-bitbucket.type';
+import { BYOKConfig } from '@kodus/kodus-common/llm';
 import {
-    ILicenseService,
-    LICENSE_SERVICE_TOKEN,
-} from '@/ee/license/interfaces/license.interface';
-import { environment } from '@/ee/configs/environment';
-import { PullRequest } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
-import { IMappedPullRequest } from '@/core/domain/platformIntegrations/types/webhooks/webhooks-common.type';
+    PermissionValidationService,
+    ValidationErrorType,
+} from '@/ee/shared/services/permissionValidation.service';
+
+const ERROR_TO_MESSAGE_TYPE: Record<
+    ValidationErrorType,
+    'user' | 'general' | 'byok_required'
+> = {
+    [ValidationErrorType.INVALID_LICENSE]: 'general',
+    [ValidationErrorType.USER_NOT_LICENSED]: 'user',
+    [ValidationErrorType.BYOK_REQUIRED]: 'byok_required',
+    [ValidationErrorType.PLAN_LIMIT_EXCEEDED]: 'general',
+};
 
 @Injectable()
 export class RunCodeReviewAutomationUseCase {
-    public readonly isCloud: boolean;
-    public readonly isDevelopment: boolean;
-
     constructor(
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
@@ -49,16 +54,12 @@ export class RunCodeReviewAutomationUseCase {
         @Inject(EXECUTE_AUTOMATION_SERVICE_TOKEN)
         private readonly executeAutomation: IExecuteAutomationService,
 
-        @Inject(LICENSE_SERVICE_TOKEN)
-        private readonly licenseService: ILicenseService,
-
         private readonly codeManagement: CodeManagementService,
 
+        private readonly permissionValidationService: PermissionValidationService,
+
         private logger: PinoLoggerService,
-    ) {
-        this.isCloud = environment.API_CLOUD_MODE;
-        this.isDevelopment = environment.API_DEVELOPMENT_MODE;
-    }
+    ) {}
 
     async execute(params: {
         payload: any;
@@ -67,6 +68,7 @@ export class RunCodeReviewAutomationUseCase {
         automationName?: string;
     }) {
         let organizationAndTeamData = null;
+        let byokConfig: BYOKConfig | null = null;
 
         try {
             const { payload, event, platformType } = params;
@@ -124,8 +126,11 @@ export class RunCodeReviewAutomationUseCase {
                 return;
             }
 
-            const { organizationAndTeamData: teamData, automationId } =
-                teamWithAutomation;
+            const {
+                organizationAndTeamData: teamData,
+                automationId,
+                byokConfig,
+            } = teamWithAutomation;
             organizationAndTeamData = teamData;
 
             if (!pullRequest) {
@@ -227,6 +232,7 @@ export class RunCodeReviewAutomationUseCase {
                     platformType: platformType,
                     origin: sanitizedPayload?.origin,
                     action,
+                    byokConfig,
                 },
             );
         } catch (error) {
@@ -333,11 +339,14 @@ export class RunCodeReviewAutomationUseCase {
     }): Promise<{
         organizationAndTeamData: OrganizationAndTeamData;
         automationId: string;
+        byokConfig?: BYOKConfig;
     } | null> {
         try {
             if (!params?.repository?.id) {
                 return null;
             }
+
+            let byokConfig: BYOKConfig | null = null;
 
             const configs =
                 await this.integrationConfigService.findIntegrationConfigWithTeams(
@@ -389,91 +398,39 @@ export class RunCodeReviewAutomationUseCase {
                         automationId: automations[0].uuid,
                     };
 
-                    if (!this.isDevelopment) {
-                        if (this.isCloud) {
-                            const validation =
-                                await this.licenseService.validateOrganizationLicense(
-                                    organizationAndTeamData,
-                                );
+                    // Validação centralizada de permissões usando PermissionValidationService
+                    const validationResult =
+                        await this.permissionValidationService.validateExecutionPermissions(
+                            organizationAndTeamData,
+                            params?.userGitId,
+                            RunCodeReviewAutomationUseCase.name,
+                        );
 
-                            if (!validation?.valid) {
-                                this.logger.warn({
-                                    message: `License not active - PR#${params?.prNumber}`,
-                                    context:
-                                        RunCodeReviewAutomationUseCase.name,
-                                    metadata: {
-                                        organizationAndTeamData,
-                                        prNumber: params?.prNumber,
-                                    },
-                                });
+                    if (!validationResult.allowed) {
+                        const noActiveSubscriptionType =
+                            validationResult.errorType
+                                ? ERROR_TO_MESSAGE_TYPE[
+                                      validationResult.errorType
+                                  ]
+                                : 'general';
 
-                                await this.createNoActiveSubscriptionComment({
-                                    organizationAndTeamData,
-                                    repository: params.repository,
-                                    prNumber: params?.prNumber,
-                                    noActiveSubscriptionType: 'general',
-                                });
+                        await this.createNoActiveSubscriptionComment({
+                            organizationAndTeamData,
+                            repository: params.repository,
+                            prNumber: params?.prNumber,
+                            noActiveSubscriptionType,
+                        });
 
-                                return null;
-                            }
-
-                            if (
-                                validation?.valid &&
-                                validation?.subscriptionStatus === 'trial'
-                            ) {
-                                return {
-                                    organizationAndTeamData,
-                                    automationId,
-                                };
-                            }
-
-                            if (validation?.valid) {
-                                const users =
-                                    await this.licenseService.getAllUsersWithLicense(
-                                        organizationAndTeamData,
-                                    );
-
-                                if (params?.userGitId) {
-                                    const user = users?.find(
-                                        (user) =>
-                                            user?.git_id === params?.userGitId,
-                                    );
-
-                                    if (user) {
-                                        return {
-                                            organizationAndTeamData,
-                                            automationId,
-                                        };
-                                    }
-
-                                    this.logger.warn({
-                                        message: `User License not found - PR#${params?.prNumber}`,
-                                        context:
-                                            RunCodeReviewAutomationUseCase.name,
-                                        metadata: {
-                                            organizationAndTeamData,
-                                            prNumber: params?.prNumber,
-                                        },
-                                    });
-
-                                    await this.createNoActiveSubscriptionComment(
-                                        {
-                                            organizationAndTeamData,
-                                            repository: params.repository,
-                                            prNumber: params?.prNumber,
-                                            noActiveSubscriptionType: 'user',
-                                        },
-                                    );
-
-                                    return null;
-                                }
-                            }
-                        }
+                        return null;
                     }
+
+                    // Se a validação passou, extrair byokConfig do resultado
+                    byokConfig = validationResult.byokConfig ?? null;
 
                     return {
                         organizationAndTeamData,
                         automationId,
+                        byokConfig,
                     };
                 }
             }
@@ -496,7 +453,7 @@ export class RunCodeReviewAutomationUseCase {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { id: string; name: string };
         prNumber: number;
-        noActiveSubscriptionType: 'user' | 'general';
+        noActiveSubscriptionType: 'user' | 'general' | 'byok_required';
     }) {
         const repositoryPayload = {
             id: params.repository.id,
@@ -507,6 +464,8 @@ export class RunCodeReviewAutomationUseCase {
 
         if (params.noActiveSubscriptionType === 'user') {
             message = await this.noActiveSubscriptionForUser();
+        } else if (params.noActiveSubscriptionType === 'byok_required') {
+            message = await this.noBYOKConfiguredMessage(); // NOVO
         }
 
         await this.codeManagement.createIssueComment({
@@ -542,6 +501,15 @@ export class RunCodeReviewAutomationUseCase {
         return (
             '## User License not found! 😢\n\n' +
             'To perform the review, ask the admin to add a subscription for your user in [subscription management](https://app.kodus.io/settings/subscription).\n\n' +
+            '<!-- kody-codereview -->'
+        );
+    }
+
+    private async noBYOKConfiguredMessage(): Promise<string> {
+        return (
+            '## BYOK Configuration Required! 🔑\n\n' +
+            'Your plan requires a Bring Your Own Key (BYOK) configuration to perform code reviews.\n\n' +
+            'Please configure your API keys in [Settings > BYOK Configuration](https://app.kodus.io/settings/byok).\n\n' +
             '<!-- kody-codereview -->'
         );
     }

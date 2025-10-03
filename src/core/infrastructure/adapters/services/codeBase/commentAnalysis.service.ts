@@ -10,6 +10,7 @@ import {
     ParserType,
     PromptRole,
     PromptRunnerService,
+    TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
 import { PinoLoggerService } from '../logger/pino.service';
 import {
@@ -51,16 +52,21 @@ import {
 import { v4 } from 'uuid';
 import { SUPPORTED_LANGUAGES } from '@/core/domain/codeBase/contracts/SupportedLanguages';
 import { LibraryKodyRule } from '@/config/types/kodyRules.type';
+import { endSpan, newSpan } from './utils/span.utils';
 
 @Injectable()
 export class CommentAnalysisService {
+    private readonly tokenTracker: TokenTrackingHandler;
+
     constructor(
         @Inject(CODE_BASE_CONFIG_SERVICE_TOKEN)
         private readonly codeBaseConfigService: ICodeBaseConfigService,
 
         private readonly logger: PinoLoggerService,
         private readonly promptRunnerService: PromptRunnerService,
-    ) {}
+    ) {
+        this.tokenTracker = new TokenTrackingHandler();
+    }
 
     async categorizeComments(params: {
         comments: UncategorizedComment[];
@@ -78,6 +84,8 @@ export class CommentAnalysisService {
                 });
                 return [];
             }
+
+            newSpan(`${CommentAnalysisService.name}::categorizeComments`);
 
             const categorizedCommentsRes = await this.promptRunnerService
                 .builder()
@@ -102,8 +110,11 @@ export class CommentAnalysisService {
                     context: CommentAnalysisService.name,
                     metadata: params,
                 })
+                .addCallbacks([this.tokenTracker])
                 .setRunName('commentCategorizer')
                 .execute();
+
+            endSpan(this.tokenTracker);
 
             const categorizedComments = categorizedCommentsRes?.suggestions;
 
@@ -180,6 +191,8 @@ export class CommentAnalysisService {
                 return [];
             }
 
+            newSpan(`${CommentAnalysisService.name}::generateKodyRules`);
+
             const generatedRes = await this.promptRunnerService
                 .builder()
                 .setProviders({
@@ -204,6 +217,7 @@ export class CommentAnalysisService {
                     context: CommentAnalysisService.name,
                     metadata: params,
                 })
+                .addCallbacks([this.tokenTracker])
                 .setRunName('kodyRulesGenerator')
                 .execute();
 
@@ -259,6 +273,7 @@ export class CommentAnalysisService {
                         context: CommentAnalysisService.name,
                         metadata: params,
                     })
+                    .addCallbacks([this.tokenTracker])
                     .setRunName('kodyRulesGeneratorDuplicateFilter')
                     .execute();
 
@@ -308,8 +323,11 @@ export class CommentAnalysisService {
                     context: CommentAnalysisService.name,
                     metadata: params,
                 })
+                .addCallbacks([this.tokenTracker])
                 .setRunName('kodyRulesGeneratorQualityFilter')
                 .execute();
+
+            endSpan(this.tokenTracker);
 
             const filteredRulesUuids = filteredRulesUuidsRes?.uuids;
 
@@ -393,6 +411,8 @@ export class CommentAnalysisService {
         try {
             const { comments } = params;
 
+            newSpan(`${CommentAnalysisService.name}::filterComments`);
+
             const filteredCommentsIdsRes = await this.promptRunnerService
                 .builder()
                 .setProviders({
@@ -416,8 +436,11 @@ export class CommentAnalysisService {
                     context: CommentAnalysisService.name,
                     metadata: params,
                 })
+                .addCallbacks([this.tokenTracker])
                 .setRunName('commentIrrelevanceFilter')
                 .execute();
+
+            endSpan(this.tokenTracker);
 
             const filteredCommentsIds = filteredCommentsIdsRes?.ids;
 

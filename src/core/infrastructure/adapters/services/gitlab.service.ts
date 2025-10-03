@@ -3099,6 +3099,56 @@ export class GitlabService
         }
     }
 
+    async isWebhookActive(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+    }): Promise<boolean> {
+        const { organizationAndTeamData, repositoryId } = params;
+
+        try {
+            const authDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!authDetails) {
+                return false;
+            }
+
+            const gitlabAPI = this.instanceGitlabApi(authDetails);
+
+            const webhookUrl =
+                this.configService.get<string>(
+                    'API_GITLAB_CODE_MANAGEMENT_WEBHOOK',
+                ) ?? process.env.API_GITLAB_CODE_MANAGEMENT_WEBHOOK;
+
+            if (!webhookUrl) {
+                return false;
+            }
+
+            const normalizedProjectId =
+                typeof repositoryId === 'string' && /^\d+$/.test(repositoryId)
+                    ? Number(repositoryId)
+                    : repositoryId;
+
+            const hooks = await gitlabAPI.ProjectHooks.all(normalizedProjectId);
+
+            return hooks.some((hook) => hook?.url === webhookUrl);
+        } catch (error) {
+            this.logger.error({
+                message: 'Error verifying GitLab webhook status',
+                context: GitlabService.name,
+                serviceName: 'GitlabService isWebhookActive',
+                error: error,
+                metadata: {
+                    organizationAndTeamData,
+                    repositoryId,
+                },
+            });
+
+            return false;
+        }
+    }
+
     async deleteWebhook(params: {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<void> {

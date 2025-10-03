@@ -7,7 +7,7 @@ import {
     SummaryConfig,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { LLMModelProvider } from '@kodus/kodus-common/llm';
+import { BYOKConfig, LLMModelProvider } from '@kodus/kodus-common/llm';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { ISuggestionByPR } from '../../pullRequests/interfaces/pullRequests.interface';
 import {
@@ -36,7 +36,9 @@ export interface ICommentManagerService {
         organizationAndTeamData: OrganizationAndTeamData,
         languageResultPrompt: string,
         summaryConfig: SummaryConfig,
+        byokConfig?: BYOKConfig,
         isCommitRun?: boolean,
+        prPreview?: boolean,
     ): Promise<string>;
 
     updateOverallComment(
@@ -81,6 +83,7 @@ export interface ICommentManagerService {
         prNumber: number,
         provider: LLMModelProvider,
         suggestions: any[],
+        byokConfig?: BYOKConfig,
     ): Promise<any>;
 
     enrichParentSuggestionsWithRelated(

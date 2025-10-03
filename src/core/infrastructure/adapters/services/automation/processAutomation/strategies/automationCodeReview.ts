@@ -23,11 +23,6 @@ import {
     IOrganizationService,
     ORGANIZATION_SERVICE_TOKEN,
 } from '@/core/domain/organization/contracts/organization.service.contract';
-import {
-    CODE_REVIEW_EXECUTION_SERVICE,
-    ICodeReviewExecutionService,
-} from '@/core/domain/codeReviewExecutions/contracts/codeReviewExecution.service.contract';
-import { stat } from 'fs';
 
 @Injectable()
 export class AutomationCodeReviewService
@@ -49,9 +44,6 @@ export class AutomationCodeReviewService
         private readonly organizationService: IOrganizationService,
 
         private readonly codeReviewHandlerService: CodeReviewHandlerService,
-
-        @Inject(CODE_REVIEW_EXECUTION_SERVICE)
-        private readonly codeReviewExecutionService: ICodeReviewExecutionService,
 
         private readonly logger: PinoLoggerService,
     ) {}

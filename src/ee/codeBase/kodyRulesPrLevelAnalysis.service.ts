@@ -29,27 +29,21 @@ import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { TokenChunkingService } from '@/shared/utils/tokenChunking/tokenChunking.service';
 import {
-    TokenTrackingService,
-    TokenTrackingSession,
-} from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
-import {
     LLMModelProvider,
     PromptRunnerService,
     PromptRole,
     ParserType,
+    BYOKConfig,
+    TokenUsage,
+    TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
+import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
+import {
+    endSpan,
+    newSpan,
+} from '@/core/infrastructure/adapters/services/codeBase/utils/span.utils';
 
 //#region Interfaces
-// Interface for token tracking
-interface TokenUsage {
-    input_tokens?: number;
-    output_tokens?: number;
-    total_tokens?: number;
-    model?: string;
-    runId?: string;
-    parentRunId?: string;
-}
-
 // Interface for analyzer response
 interface AnalyzerViolation {
     violatedFileSha: string[] | null;
@@ -103,7 +97,7 @@ export const KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN = Symbol(
 export class KodyRulesPrLevelAnalysisService
     implements IKodyRulesAnalysisService
 {
-    private readonly tokenTracker: TokenTrackingSession;
+    private readonly tokenTracker: TokenTrackingHandler;
 
     private readonly DEFAULT_USAGE_LLM_MODEL_PERCENTAGE = 70;
 
@@ -124,10 +118,7 @@ export class KodyRulesPrLevelAnalysisService
 
         private readonly promptRunnerService: PromptRunnerService,
     ) {
-        this.tokenTracker = new TokenTrackingSession(
-            uuidv4(),
-            new TokenTrackingService(),
-        );
+        this.tokenTracker = new TokenTrackingHandler();
     }
 
     async analyzeCodeWithAI(
@@ -312,7 +303,7 @@ export class KodyRulesPrLevelAnalysisService
             }
 
             const parse = this.processLLMResponse(response);
-            const parsedResponse = Array.isArray(parse)?parse:[parse];
+            const parsedResponse = Array.isArray(parse) ? parse : [parse];
 
             if (!parsedResponse) {
                 this.logger.warn({
@@ -648,6 +639,7 @@ export class KodyRulesPrLevelAnalysisService
             organizationAndTeamData,
             prNumber,
             language,
+            context?.codeReviewConfig?.byokConfig,
         );
     }
 
@@ -932,15 +924,20 @@ export class KodyRulesPrLevelAnalysisService
             language,
         };
 
-        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+        const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+
+        const promptRunner = new BYOKPromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            context?.codeReviewConfig?.byokConfig,
+        );
 
         try {
-            const analysis = await this.promptRunnerService
+            newSpan(`${KodyRulesPrLevelAnalysisService.name}::processChunk`);
+
+            const analysis = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setPayload(analyzerPayload)
@@ -963,10 +960,16 @@ export class KodyRulesPrLevelAnalysisService
                     ...this.buildTags(provider, 'primary'),
                     ...this.buildTags(fallbackProvider, 'fallback'),
                 ])
-                .addCallbacks([this.tokenTracker.createCallbackHandler()])
+                .addCallbacks([this.tokenTracker])
                 .setRunName('prLevelKodyRulesAnalyzer')
                 .setTemperature(0)
                 .execute();
+
+            endSpan(this.tokenTracker, {
+                organizationId: organizationAndTeamData.organizationId,
+                prNumber,
+                chunkIndex,
+            });
 
             if (!analysis) {
                 const message = `No response from LLM for chunk ${chunkIndex + 1} for PR#${prNumber}`;
@@ -1013,6 +1016,7 @@ export class KodyRulesPrLevelAnalysisService
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         language: string,
+        byokConfig: BYOKConfig,
     ): Promise<AIAnalysisResultPrLevel> {
         if (!allViolatedRules?.length) {
             this.logger.log({
@@ -1051,6 +1055,7 @@ export class KodyRulesPrLevelAnalysisService
             language,
             organizationAndTeamData,
             prNumber,
+            byokConfig,
         );
 
         // Adicionar severidade
@@ -1098,6 +1103,7 @@ export class KodyRulesPrLevelAnalysisService
         language: string,
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
+        byokConfig: BYOKConfig,
     ): Promise<ISuggestionByPR[]> {
         if (!suggestions?.length) {
             return suggestions;
@@ -1153,6 +1159,7 @@ export class KodyRulesPrLevelAnalysisService
                     language,
                     organizationAndTeamData,
                     prNumber,
+                    byokConfig,
                 );
 
                 groupedSuggestions.push(groupedSuggestion);
@@ -1219,6 +1226,7 @@ export class KodyRulesPrLevelAnalysisService
         language: string,
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
+        byokConfig: BYOKConfig,
     ): Promise<ISuggestionByPR> {
         // Validação de segurança
         if (!duplicatedSuggestions || duplicatedSuggestions.length === 0) {
@@ -1260,13 +1268,38 @@ export class KodyRulesPrLevelAnalysisService
         };
 
         try {
-            const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+            const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
-            const grouping = await this.promptRunnerService
+            const promptRunner = new BYOKPromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
+
+            newSpan(
+                `${KodyRulesPrLevelAnalysisService.name}::processRuleGrouping`,
+            );
+
+            const grouping = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
+                .setParser(ParserType.STRING)
+                .setLLMJsonMode(true)
+                .setPayload(groupingPayload)
+                .addPrompt({
+                    prompt: prompt_kodyrules_prlevel_group_rules,
+                    role: PromptRole.SYSTEM,
+                })
+                .addPrompt({
+                    prompt: 'Please consolidate the provided violations into a single coherent comment following the instructions.',
+                    role: PromptRole.USER,
+                })
+                .addMetadata({
+                    organizationAndTeamData,
+                    prNumber,
+                    ruleId: rule?.uuid,
+                    provider: provider,
+                    fallbackProvider: fallbackProvider,
                 })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
@@ -1288,12 +1321,18 @@ export class KodyRulesPrLevelAnalysisService
                 })
                 .setRunName('prLevelKodyRulesGrouper')
                 .setTemperature(0)
-                .addCallbacks([this.tokenTracker.createCallbackHandler()])
+                .addCallbacks([this.tokenTracker])
                 .addTags([
                     ...this.buildTags(provider, 'primary'),
                     ...this.buildTags(fallbackProvider, 'fallback'),
                 ])
                 .execute();
+
+            endSpan(this.tokenTracker, {
+                organizationId: organizationAndTeamData.organizationId,
+                prNumber,
+                ruleId: rule?.uuid,
+            });
 
             if (!grouping) {
                 const message = 'No response from LLM for grouping suggestions';

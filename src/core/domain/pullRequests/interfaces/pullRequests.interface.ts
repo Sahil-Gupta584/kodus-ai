@@ -6,9 +6,9 @@ import {
 import { DeliveryStatus } from '../enums/deliveryStatus.enum';
 import { ImplementationStatus } from '../enums/implementationStatus.enum';
 import { PriorityStatus } from '../enums/priorityStatus.enum';
-import { FeedbackType } from '@/ee/kodyFineTuning/domain/enums/feedbackType.enum';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+import { FeedbackType } from '@/core/infrastructure/adapters/services/kodyFineTuning/domain/enums/feedbackType.enum';
 
 export interface IPullRequests {
     uuid?: string;

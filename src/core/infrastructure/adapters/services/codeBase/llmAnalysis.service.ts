@@ -12,7 +12,6 @@ import {
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PinoLoggerService } from '../logger/pino.service';
 
-import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { z } from 'zod';
 import { LLMResponseProcessor } from './utils/transforms/llmResponseProcessor.transform';
 import { prompt_validateImplementedSuggestions } from '@/shared/utils/langchainCommon/prompts/validateImplementedSuggestions';
@@ -27,88 +26,16 @@ import {
 import { prompt_severity_analysis_user } from '@/shared/utils/langchainCommon/prompts/severityAnalysis';
 import { prompt_codeReviewSafeguard_system } from '@/shared/utils/langchainCommon/prompts';
 import {
+    BYOKConfig,
     LLMModelProvider,
     ParserType,
     PromptRole,
     PromptRunnerService,
     PromptScope,
+    TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
-
-// Interface for token tracking
-interface TokenUsage {
-    input_tokens?: number;
-    output_tokens?: number;
-    total_tokens?: number;
-    model?: string;
-    runId?: string;
-    parentRunId?: string;
-    output_reasoning_tokens?: number;
-}
-
-// Handler for token tracking
-class TokenTrackingHandler extends BaseCallbackHandler {
-    name = 'TokenTrackingHandler';
-    tokenUsages: TokenUsage[] = [];
-
-    private extractUsageMetadata(output: any): TokenUsage {
-        try {
-            // Attempts to extract information from different locations in the response
-            const usage: TokenUsage = {};
-
-            // Extracts token information
-            if (output?.llmOutput?.tokenUsage) {
-                Object.assign(usage, output.llmOutput.tokenUsage);
-            } else if (output?.llmOutput?.usage) {
-                Object.assign(usage, output.llmOutput.usage);
-            } else if (output?.generations?.[0]?.[0]?.message?.usage_metadata) {
-                const metadata =
-                    output.generations[0][0].message.usage_metadata;
-                usage.input_tokens = metadata.input_tokens;
-                usage.output_tokens = metadata.output_tokens;
-                usage.total_tokens = metadata.total_tokens;
-                usage.output_reasoning_tokens =
-                    metadata.output_token_details.reasoning;
-            }
-
-            // Extracts model
-            usage.model =
-                output?.llmOutput?.model ||
-                output?.generations?.[0]?.[0]?.message?.response_metadata
-                    ?.model ||
-                'unknown';
-
-            return usage;
-        } catch (error) {
-            console.error('Error extracting usage metadata:', error);
-            return {};
-        }
-    }
-
-    async handleLLMEnd(
-        output: any,
-        runId: string,
-        parentRunId?: string,
-        tags?: string[],
-    ) {
-        const usage = this.extractUsageMetadata(output);
-
-        if (Object.keys(usage).length > 0) {
-            this.tokenUsages.push({
-                ...usage,
-                runId,
-                parentRunId,
-            });
-        }
-    }
-
-    getTokenUsages(): TokenUsage[] {
-        return this.tokenUsages;
-    }
-
-    reset() {
-        this.tokenUsages = [];
-    }
-}
+import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
+import { endSpan, newSpan } from './utils/span.utils';
 
 export const LLM_ANALYSIS_SERVICE_TOKEN = Symbol('LLMAnalysisService');
 
@@ -179,16 +106,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
 </suggestionsContext>`;
     }
 
-    private async logTokenUsage(metadata: any) {
-        // Log token usage for analysis and monitoring
-        this.logger.log({
-            message: 'Token usage',
-            context: LLMAnalysisService.name,
-            metadata: {
-                ...metadata,
-            },
-        });
-    }
     //#endregion
 
     //#region Analyze Code with AI
@@ -202,19 +119,21 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
         const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
-        // Reset token tracking for new analysis
-        this.tokenTracker.reset();
+        const promptRunner = new BYOKPromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            context?.codeReviewConfig?.byokConfig,
+        );
 
         // Prepare base context
         const baseContext = this.prepareAnalysisContext(fileContext, context);
 
         try {
-            const analysis = await this.promptRunnerService
+            newSpan(`${LLMAnalysisService.name}::analyzeCodeWithAI`);
+
+            const analysis = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setPayload(baseContext)
@@ -247,6 +166,11 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 .setRunName('analyzeCodeWithAI')
                 .execute();
 
+            endSpan(this.tokenTracker, {
+                organizationId: organizationAndTeamData?.organizationId,
+                prNumber,
+            });
+
             if (!analysis) {
                 const message = `No analysis result for PR#${prNumber}`;
                 this.logger.warn({
@@ -276,14 +200,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 generateSuggestions: provider,
             };
 
-            const tokenUsages = this.tokenTracker.getTokenUsages();
-            await this.logTokenUsage({
-                tokenUsages,
-                organizationAndTeamData,
-                prNumber,
-                analysis,
-            });
-
             return analysisResult;
         } catch (error) {
             this.logger.error({
@@ -305,12 +221,18 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         fileContext: FileChangeContext,
         reviewModeResponse: ReviewModeResponse,
         context: AnalysisContext,
+        byokConfig: BYOKConfig,
     ): Promise<AIAnalysisResult> {
-        const provider = LLMModelProvider.GEMINI_2_5_PRO;
-        const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+        const defaultProvider = LLMModelProvider.GEMINI_2_5_PRO;
+        const defaultFallback = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
-        // Reset token tracking for new analysis
-        this.tokenTracker.reset();
+        // Criar instância da nova PromptRunnerService com configuração simplificada
+        const promptRunner = new BYOKPromptRunnerService(
+            this.promptRunnerService,
+            defaultProvider,
+            defaultFallback,
+            byokConfig,
+        );
 
         // Prepare base context
         const baseContext = this.prepareAnalysisContext(fileContext, context);
@@ -333,16 +255,13 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                         rankScore: z.number().optional(),
                     }),
                 ),
-                overallSummary: z.string(),
             });
 
-            const analysis = await this.promptRunnerService
+            newSpan(`${LLMAnalysisService.name}::analyzeCodeWithAI_v2`);
+
+            const analysis = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
-                .setParser(ParserType.ZOD, schema, {
+                .setParser(ParserType.ZOD, schema as any, {
                     provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
                     fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
                 })
@@ -370,13 +289,20 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                         baseContext?.organizationAndTeamData?.organizationId,
                     teamId: baseContext?.organizationAndTeamData?.teamId,
                     pullRequestId: baseContext?.pullRequest?.number,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
+                    provider: defaultProvider,
+                    fallbackProvider: byokConfig?.fallback
+                        ? defaultFallback
+                        : undefined,
                     reviewMode: reviewModeResponse,
                 })
                 .setRunName('analyzeCodeWithAI_v2')
                 .setMaxReasoningTokens(3000)
                 .execute();
+
+            endSpan(this.tokenTracker, {
+                organizationId: organizationAndTeamData?.organizationId,
+                prNumber,
+            });
 
             if (!analysis) {
                 const message = `No analysis result for PR#${prNumber}`;
@@ -392,23 +318,12 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 throw new Error(message);
             }
 
-            // Com o parser zod, a resposta já vem estruturada
             const analysisResult: AIAnalysisResult = {
-                codeSuggestions:
-                    analysis.codeSuggestions as Partial<CodeSuggestion>[],
-                overallSummary: analysis.overallSummary,
+                codeSuggestions: analysis.codeSuggestions,
                 codeReviewModelUsed: {
-                    generateSuggestions: provider,
+                    generateSuggestions: defaultProvider,
                 },
             };
-
-            const tokenUsages = this.tokenTracker.getTokenUsages();
-            await this.logTokenUsage({
-                tokenUsages,
-                organizationAndTeamData,
-                prNumber,
-                analysis,
-            });
 
             return analysisResult;
         } catch (error) {
@@ -471,10 +386,9 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 ? LLMModelProvider.GEMINI_2_5_PRO
                 : LLMModelProvider.OPENAI_GPT_4O;
 
-        // Reset token tracking for new suggestions
-        this.tokenTracker.reset();
-
         try {
+            newSpan(`${LLMAnalysisService.name}::generateCodeSuggestions`);
+
             const result = await this.promptRunnerService
                 .builder()
                 .setProviders({
@@ -513,6 +427,11 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 .setTemperature(0)
                 .execute();
 
+            endSpan(this.tokenTracker, {
+                organizationId: organizationAndTeamData?.organizationId,
+                sessionId,
+            });
+
             if (!result) {
                 const message = `No code suggestions generated for session ${sessionId}`;
                 this.logger.warn({
@@ -528,13 +447,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             }
 
             // Log token usage
-            const tokenUsages = this.tokenTracker.getTokenUsages();
-            await this.logTokenUsage({
-                tokenUsages,
-                organizationAndTeamData,
-                sessionId,
-                parameters,
-            });
             return result;
         } catch (error) {
             this.logger.error({
@@ -558,19 +470,25 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         prNumber: number,
         provider: LLMModelProvider,
         codeSuggestions: CodeSuggestion[],
+        byokConfig: BYOKConfig,
     ): Promise<Partial<CodeSuggestion>[]> {
         const fallbackProvider =
             provider === LLMModelProvider.OPENAI_GPT_4O
                 ? LLMModelProvider.NOVITA_DEEPSEEK_V3_0324
                 : LLMModelProvider.OPENAI_GPT_4O;
 
+        const promptRunner = new BYOKPromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            byokConfig,
+        );
+
         try {
-            const result = await this.promptRunnerService
+            newSpan(`${LLMAnalysisService.name}::severityAnalysisAssignment`);
+
+            const result = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setPayload(codeSuggestions)
@@ -589,6 +507,11 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 .setRunName('severityAnalysis')
                 .setTemperature(0)
                 .execute();
+
+            endSpan(this.tokenTracker, {
+                organizationId: organizationAndTeamData?.organizationId,
+                prNumber,
+            });
 
             if (!result) {
                 const message = `No severity analysis result for PR#${prNumber}`;
@@ -642,6 +565,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         suggestions: any[],
         languageResultPrompt: string,
         reviewMode: ReviewModeResponse,
+        byokConfig: BYOKConfig,
     ): Promise<ISafeguardResponse> {
         try {
             suggestions?.forEach((suggestion) => {
@@ -657,9 +581,15 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             });
 
             const provider = LLMModelProvider.GEMINI_2_5_PRO;
-            const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+            const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
-            this.tokenTracker.reset();
+            // Criar instância da nova PromptRunnerService
+            const promptRunner = new BYOKPromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
 
             const payload = {
                 fileContent: file?.fileContent,
@@ -696,19 +626,17 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                                 data.relevantLinesEnd &&
                                 data.action,
                             {
-                                message: 'All fields are required',
+                                error: 'All fields are required',
                             },
                         ),
                 ),
             });
 
-            const filteredSuggestions = await this.promptRunnerService
+            newSpan(`${LLMAnalysisService.name}::filterSuggestionsSafeGuard`);
+
+            const filteredSuggestions = await promptRunner
                 .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
-                .setParser(ParserType.ZOD, schema, {
+                .setParser(ParserType.ZOD, schema as any, {
                     provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
                     fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
                 })
@@ -736,6 +664,11 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 .setMaxReasoningTokens(5000)
                 .execute();
 
+            endSpan(this.tokenTracker, {
+                organizationId: organizationAndTeamData?.organizationId,
+                prNumber,
+            });
+
             if (!filteredSuggestions) {
                 const message = `No response from safeguard for PR#${prNumber}`;
                 this.logger.warn({
@@ -750,8 +683,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 throw new Error(message);
             }
 
-            const tokenUsages = this.tokenTracker.getTokenUsages();
-
             // Filter and update suggestions
             const suggestionsToUpdate =
                 filteredSuggestions?.codeSuggestions?.filter(
@@ -762,14 +693,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                     ?.filter((s) => s.action === 'discard')
                     .map((s) => s.id),
             );
-
-            this.logTokenUsage({
-                tokenUsages,
-                pullRequestId: prNumber,
-                fileContext: file?.filename,
-                provider,
-                organizationAndTeamData,
-            });
 
             const filteredAndMappedSuggestions = suggestions
                 ?.filter(
@@ -838,6 +761,10 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         };
 
         try {
+            newSpan(
+                `${LLMAnalysisService.name}::validateImplementedSuggestions`,
+            );
+
             const result = await this.promptRunnerService
                 .builder()
                 .setProviders({
@@ -862,6 +789,11 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 .addCallbacks([this.tokenTracker])
                 .setRunName('validateImplementedSuggestions')
                 .execute();
+
+            endSpan(this.tokenTracker, {
+                organizationId: organizationAndTeamData?.organizationId,
+                prNumber,
+            });
 
             if (!result) {
                 const message = `No response from validate implemented suggestions for PR#${prNumber}`;

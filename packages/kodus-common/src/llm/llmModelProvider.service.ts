@@ -1,45 +1,73 @@
-import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { Inject, Injectable, LoggerService } from '@nestjs/common';
-import { LLMModelProvider, MODEL_STRATEGIES, getChatGPT } from './helper';
+import {
+    FactoryArgs,
+    LLMModelProvider,
+    MODEL_STRATEGIES,
+    getChatGPT,
+} from './helper';
 import { ChatOpenAI } from '@langchain/openai';
 import { Runnable } from '@langchain/core/runnables';
-import { ChatAnthropic } from '@langchain/anthropic';
-import { ChatVertexAI } from '@langchain/google-vertexai';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { BYOKConfig, BYOKProviderService } from './byokProvider.service';
+import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 
-export type LLMProviderOptions = {
+export type LLMProviderOptions = FactoryArgs & {
     model: LLMModelProvider | string;
-    temperature: number;
     callbacks?: BaseCallbackHandler[];
     maxTokens?: number;
     jsonMode?: boolean;
     maxReasoningTokens?: number;
+    byokConfig?: BYOKConfig;
 };
 
-export type LLMProviderReturn =
-    | ChatOpenAI
-    | ChatAnthropic
-    | ChatVertexAI
-    | Runnable;
+export type LLMProviderReturn = (BaseChatModel | Runnable) & {
+    invoke: (input: any, options?: any) => Promise<any>;
+};
 
 @Injectable()
 export class LLMProviderService {
     constructor(
         @Inject('LLM_LOGGER')
         private readonly logger: LoggerService,
+        private readonly byokProviderService: BYOKProviderService,
     ) {}
 
     getLLMProvider(options: LLMProviderOptions): LLMProviderReturn {
         try {
+            // Validar se BYOK tem dados válidos antes de tentar usar
+            if (options.byokConfig?.main?.apiKey) {
+                const byokProvider =
+                    this.byokProviderService.createBYOKProvider(
+                        options.byokConfig,
+                        {
+                            ...options,
+                            jsonMode: options.jsonMode,
+                        },
+                    );
+
+                // Aplicar JSON mode para OpenAI
+                if (options.jsonMode && byokProvider instanceof ChatOpenAI) {
+                    return byokProvider.withConfig({
+                        response_format: { type: 'json_object' },
+                    });
+                }
+
+                return byokProvider;
+            }
+
             const envMode = process.env.API_LLM_PROVIDER_MODEL ?? 'auto';
 
             if (envMode !== 'auto') {
                 // for self-hosted: using openAI provider and changing baseURL
+                if (!process.env.API_OPEN_AI_API_KEY) {
+                    throw new Error(
+                        'API_OPEN_AI_API_KEY not configured for self-hosted mode',
+                    );
+                }
+
                 const llm = getChatGPT({
+                    ...options,
                     model: envMode,
-                    temperature: options.temperature,
-                    maxTokens: options.maxTokens,
-                    callbacks: options.callbacks,
                     baseURL: process.env.API_OPENAI_FORCE_BASE_URL,
                     apiKey: process.env.API_OPEN_AI_API_KEY,
                 });
@@ -69,11 +97,10 @@ export class LLMProviderService {
                 });
 
                 const llm = getChatGPT({
+                    ...options,
                     model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
                         .modelName,
-                    temperature: options.temperature,
-                    maxTokens: options.maxTokens,
-                    callbacks: options.callbacks,
+                    apiKey: process.env.API_OPEN_AI_API_KEY,
                 });
 
                 return options.jsonMode
@@ -86,10 +113,8 @@ export class LLMProviderService {
             const { factory, modelName, baseURL } = strategy;
 
             let llm = factory({
+                ...options,
                 model: modelName,
-                temperature: options.temperature,
-                maxTokens: options.maxTokens,
-                callbacks: options.callbacks,
                 baseURL,
                 json: options.jsonMode,
                 maxReasoningTokens:
@@ -104,8 +129,26 @@ export class LLMProviderService {
 
             return llm;
         } catch (error) {
+            // Se o erro veio de BYOK, deve propagar (não fazer fallback)
+            if (options.byokConfig?.main?.apiKey) {
+                this.logger.error({
+                    message: 'BYOK provider failed - propagating error',
+                    metadata: {
+                        attemptedModel: options.model,
+                        byokProvider: options.byokConfig.main.provider,
+                    },
+                    context: LLMProviderService.name,
+                    error:
+                        error instanceof Error
+                            ? error
+                            : new Error(String(error)),
+                });
+                throw error;
+            }
+
+            // Para outros erros (cloud/self-hosted), usa fallback
             this.logger.error({
-                message: 'Error getting LLM provider',
+                message: 'Error getting LLM provider - using fallback',
                 metadata: {
                     attemptedModel: options.model,
                     attemptedTemperature: options.temperature,
@@ -118,11 +161,9 @@ export class LLMProviderService {
             });
 
             const llm = getChatGPT({
+                ...options,
                 model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4O]
                     .modelName,
-                temperature: options.temperature,
-                maxTokens: options.maxTokens,
-                callbacks: options.callbacks,
                 apiKey: process.env.API_OPEN_AI_API_KEY,
             });
 

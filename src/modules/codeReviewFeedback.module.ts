@@ -20,7 +20,6 @@ import { CodeReviewFeedbackController } from '@/core/infrastructure/http/control
 import { GetCodeReviewFeedbackByOrganizationUseCase } from '@/core/application/use-cases/codeReviewFeedback/get-feedback-by-organization.use-case';
 import { GetReactionsUseCase } from '@/core/application/use-cases/codeReviewFeedback/get-reactions.use-case';
 import { PullRequestsModule } from './pullRequests.module';
-import { LogModule } from './log.module';
 
 const UseCases = [
     GetReactionsUseCase,
@@ -41,7 +40,6 @@ const UseCases = [
         forwardRef(() => GithubModule),
         forwardRef(() => GitlabModule),
         forwardRef(() => PullRequestsModule),
-        LogModule,
     ],
     providers: [
         ...UseCases,

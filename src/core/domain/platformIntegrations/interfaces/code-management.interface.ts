@@ -1,5 +1,4 @@
 import { CommitLeadTimeForChange } from '../types/codeManagement/commitLeadTimeForChange.type';
-import { DeployFrequency } from '../types/codeManagement/deployFrequency.type';
 import { Organization } from '../types/codeManagement/organization.type';
 import {
     PullRequestAuthor,
@@ -16,10 +15,7 @@ import { IntegrationConfigEntity } from '../../integrationConfigs/entities/integ
 import { Workflow } from '../types/codeManagement/workflow.type';
 import { CodeManagementConnectionStatus } from '@/shared/utils/decorators/validate-code-management-integration.decorator';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import {
-    Repository,
-    ReviewComment,
-} from '@/config/types/general/codeReview.type';
+import { Repository } from '@/config/types/general/codeReview.type';
 import { GitCloneParams } from '../types/codeManagement/gitCloneParams.type';
 import { Commit } from '@/config/types/general/commit.type';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
@@ -60,7 +56,6 @@ export interface ICodeManagementService
         params: any,
     ): Promise<{ name: string; id: string | number }[]>;
     verifyConnection(params: any): Promise<CodeManagementConnectionStatus>;
-    getCommitsByReleaseMode(params: any): Promise<CommitLeadTimeForChange[]>;
     getPullRequestsWithFiles(params): Promise<PullRequestWithFiles[] | null>;
     getPullRequestsForRTTM(params): Promise<PullRequestCodeReviewTime[] | null>;
     getCommits(params: {
@@ -188,6 +183,11 @@ export interface ICodeManagementService
     deleteWebhook(params: {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<void>;
+
+    isWebhookActive(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+    }): Promise<boolean>;
 
     formatReviewCommentBody(params: {
         suggestion: any;

@@ -4,8 +4,8 @@ import { Request } from 'express';
 import {
     ICodeReviewSettingsLogService,
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
-} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
-import { CodeReviewSettingsLogEntity } from '@/core/domain/codeReviewSettingsLog/entities/codeReviewSettingsLog.entity';
+} from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import { CodeReviewSettingsLogEntity } from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/entities/codeReviewSettingsLog.entity';
 import { CodeReviewSettingsLogFiltersDto } from '@/core/infrastructure/http/dtos/code-review-settings-log-filters.dto';
 import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
 import {

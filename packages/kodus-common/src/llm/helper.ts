@@ -5,17 +5,27 @@ import { Runnable } from '@langchain/core/runnables';
 import { ChatVertexAI } from '@langchain/google-vertexai';
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatGoogle } from '@langchain/google-gauth';
-import { Callbacks } from '@langchain/core/callbacks/manager';
 
-export const getChatGPT = (options?: {
-    model?: string;
+type ChatAnthropicOptions = ConstructorParameters<typeof ChatAnthropic>[0] & {
+    // Anthropic marks these as nullable which is incompatible with the others
     temperature?: number;
-    maxTokens?: number;
-    verbose?: boolean;
-    callbacks?: Callbacks;
-    baseURL?: string;
-    apiKey?: string;
-}) => {
+    topP?: number;
+};
+type ChatOpenAIOptions = ConstructorParameters<typeof ChatOpenAI>[0];
+type ChatGoogleAIOptions = ConstructorParameters<typeof ChatGoogle>[0];
+type ChatVertexAIOptions = ConstructorParameters<typeof ChatVertexAI>[0];
+type ChatNovitaAIOptions = ConstructorParameters<typeof ChatNovitaAI>[0];
+
+type FactoryInput =
+    | ChatAnthropicOptions
+    | ChatOpenAIOptions
+    | ChatGoogleAIOptions
+    | ChatVertexAIOptions
+    | ChatNovitaAIOptions;
+
+export type FactoryArgs = FactoryInput & { baseURL?: string; json?: boolean };
+
+export const getChatGPT = (options?: Partial<FactoryArgs>) => {
     const defaultOptions = {
         model: MODEL_STRATEGIES[LLMModelProvider.OPENAI_GPT_4_1].modelName,
         temperature: 0,
@@ -52,16 +62,7 @@ export const getChatGPT = (options?: {
     });
 };
 
-const getChatAnthropic = (
-    options?: {
-        model?: string;
-        temperature?: number;
-        maxTokens?: number;
-        verbose?: boolean;
-        callbacks?: Callbacks;
-        json?: boolean;
-    } | null,
-) => {
+const getChatAnthropic = (options?: Partial<FactoryArgs>) => {
     const defaultOptions = {
         model: MODEL_STRATEGIES[LLMModelProvider.CLAUDE_3_5_SONNET].modelName,
         temperature: 0,
@@ -87,17 +88,7 @@ const getChatAnthropic = (
     });
 };
 
-const getChatGemini = (
-    options?: {
-        model?: string;
-        temperature?: number;
-        topP?: number;
-        maxTokens?: number;
-        verbose?: boolean;
-        callbacks?: Callbacks;
-        json?: boolean;
-    } | null,
-) => {
+const getChatGemini = (options?: Partial<FactoryArgs>) => {
     const defaultOptions = {
         model: MODEL_STRATEGIES[LLMModelProvider.GEMINI_2_5_PRO].modelName,
         temperature: 0,
@@ -129,17 +120,7 @@ const getChatGemini = (
     });
 };
 
-const getChatVertexAI = (
-    options?: {
-        model?: string;
-        temperature?: number;
-        maxTokens?: number;
-        verbose?: boolean;
-        callbacks?: Callbacks;
-        json?: boolean;
-        maxReasoningTokens?: number;
-    } | null,
-) => {
+const getChatVertexAI = (options?: Partial<FactoryArgs>) => {
     const defaultOptions = {
         model: MODEL_STRATEGIES[LLMModelProvider.VERTEX_GEMINI_2_5_PRO]
             .modelName,
@@ -181,15 +162,7 @@ const getChatVertexAI = (
     });
 };
 
-const getNovitaAI = (
-    options?: {
-        model?: string;
-        temperature?: number;
-        maxTokens?: number;
-        verbose?: boolean;
-        callbacks?: Callbacks;
-    } | null,
-) => {
+const getNovitaAI = (options?: Partial<FactoryArgs>) => {
     const defaultOptions = {
         model: MODEL_STRATEGIES[LLMModelProvider.NOVITA_DEEPSEEK_V3].modelName,
         temperature: 0,
@@ -246,21 +219,6 @@ export enum LLMModelProvider {
     NOVITA_MOONSHOTAI_KIMI_K2_INSTRUCT = 'novita:moonshotai/kimi-k2-instruct',
 }
 
-type ChatAnthropicOptions = ConstructorParameters<typeof ChatAnthropic>[0];
-type ChatOpenAIOptions = ConstructorParameters<typeof ChatOpenAI>[0];
-type ChatGoogleAIOptions = ConstructorParameters<typeof ChatGoogle>[0];
-type ChatVertexAIOptions = ConstructorParameters<typeof ChatVertexAI>[0];
-type ChatNovitaAIOptions = ConstructorParameters<typeof ChatNovitaAI>[0];
-
-export type FactoryInput =
-    | ChatAnthropicOptions
-    | ChatOpenAIOptions
-    | ChatGoogleAIOptions
-    | ChatVertexAIOptions
-    | ChatNovitaAIOptions;
-
-type FactoryArgs = FactoryInput & { baseURL?: string; json?: boolean };
-
 export interface ModelStrategy {
     readonly provider: string;
     readonly factory: (args: FactoryArgs) => BaseChatModel | Runnable;
@@ -275,25 +233,25 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
     // OpenAI
     [LLMModelProvider.OPENAI_GPT_4O]: {
         provider: 'openai',
-        factory: getChatGPT as (args: FactoryArgs) => BaseChatModel | Runnable,
+        factory: getChatGPT,
         modelName: 'gpt-4o',
         defaultMaxTokens: -1,
     },
     [LLMModelProvider.OPENAI_GPT_4O_MINI]: {
         provider: 'openai',
-        factory: getChatGPT as (args: FactoryArgs) => BaseChatModel | Runnable,
+        factory: getChatGPT,
         modelName: 'gpt-4o-mini',
         defaultMaxTokens: -1,
     },
     [LLMModelProvider.OPENAI_GPT_4_1]: {
         provider: 'openai',
-        factory: getChatGPT as (args: FactoryArgs) => BaseChatModel | Runnable,
+        factory: getChatGPT,
         modelName: 'gpt-4.1',
         defaultMaxTokens: -1,
     },
     [LLMModelProvider.OPENAI_GPT_O4_MINI]: {
         provider: 'openai',
-        factory: getChatGPT as (args: FactoryArgs) => BaseChatModel | Runnable,
+        factory: getChatGPT,
         modelName: 'o4-mini',
         defaultMaxTokens: -1,
     },
@@ -381,25 +339,25 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
     // Deepseek
     [LLMModelProvider.NOVITA_DEEPSEEK_V3]: {
         provider: 'novita',
-        factory: getNovitaAI as (args: FactoryArgs) => BaseChatModel | Runnable,
+        factory: getNovitaAI,
         modelName: 'deepseek/deepseek_v3',
         defaultMaxTokens: 20000,
     },
     [LLMModelProvider.NOVITA_DEEPSEEK_V3_0324]: {
         provider: 'novita',
-        factory: getNovitaAI as (args: FactoryArgs) => BaseChatModel | Runnable,
+        factory: getNovitaAI,
         modelName: 'deepseek/deepseek-v3-0324',
         defaultMaxTokens: 20000,
     },
     [LLMModelProvider.NOVITA_QWEN3_235B_A22B_THINKING_2507]: {
         provider: 'novita',
-        factory: getNovitaAI as (args: FactoryArgs) => BaseChatModel | Runnable,
+        factory: getNovitaAI,
         modelName: 'qwen/qwen3-235b-a22b-thinking-2507',
         defaultMaxTokens: 20000,
     },
     [LLMModelProvider.NOVITA_MOONSHOTAI_KIMI_K2_INSTRUCT]: {
         provider: 'novita',
-        factory: getNovitaAI as (args: FactoryArgs) => BaseChatModel | Runnable,
+        factory: getNovitaAI,
         modelName: 'moonshotai/kimi-k2-instruct',
         defaultMaxTokens: 20000,
     },

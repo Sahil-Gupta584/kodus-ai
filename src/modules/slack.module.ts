@@ -10,9 +10,7 @@ import { AuthIntegrationModule } from './authIntegration.module';
 import { IntegrationModule } from './integration.module';
 import { IntegrationConfigModule } from './integrationConfig.module';
 import { PlatformIntegrationModule } from './platformIntegration.module';
-import { CheckinHistoryModule } from './checkinHistory.module';
 import { ProfileConfigModule } from './profileConfig.module';
-import { CheckinHistoryOrganizationModule } from './checkInHistoryOrganization.module';
 import { AutomationModule } from './automation.module';
 import { TeamAutomationModule } from './teamAutomation.module';
 
@@ -27,9 +25,6 @@ import { TeamAutomationModule } from './teamAutomation.module';
         forwardRef(() => UsersModule),
         forwardRef(() => ProfileConfigModule),
         forwardRef(() => ProfilesModule),
-        forwardRef(() => AgentModule),
-        forwardRef(() => CheckinHistoryModule),
-        forwardRef(() => CheckinHistoryOrganizationModule),
         forwardRef(() => AutomationModule),
         forwardRef(() => TeamAutomationModule),
     ],
@@ -41,4 +36,4 @@ import { TeamAutomationModule } from './teamAutomation.module';
     ],
     exports: [SLACK_SERVICE_TOKEN],
 })
-export class SlackModule { }
+export class SlackModule {}

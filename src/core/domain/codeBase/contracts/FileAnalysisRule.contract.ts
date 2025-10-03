@@ -5,7 +5,7 @@
 import { FileChange } from '@/config/types/general/codeReview.type';
 import { AnalysisContext } from '@/config/types/general/codeReview.type';
 import { CodeSuggestion } from '@/config/types/general/codeReview.type';
-import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
+import { IClusterizedSuggestion } from '@/core/infrastructure/adapters/services/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
 
 export interface IFileAnalysisRule {
     /**
@@ -24,6 +24,5 @@ export interface IFileAnalysisRule {
     ): Promise<{
         validSuggestions: CodeSuggestion[];
         discardedSuggestions: CodeSuggestion[];
-        overallComments: { filepath: string; summary: string }[];
     }>;
 }

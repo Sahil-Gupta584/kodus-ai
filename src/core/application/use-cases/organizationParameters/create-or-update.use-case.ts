@@ -7,6 +7,8 @@ import { OrganizationParametersEntity } from '@/core/domain/organizationParamete
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
 import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
+import { encrypt } from '@/shared/utils/crypto';
+import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { Inject, Injectable } from '@nestjs/common';
 
 @Injectable()
@@ -23,9 +25,21 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<OrganizationParametersEntity | boolean> {
         try {
+            let processedConfigValue = configValue;
+            if (
+                organizationParametersKey ===
+                OrganizationParametersKey.BYOK_CONFIG
+            ) {
+                return await this.saveByokConfig(
+                    organizationParametersKey,
+                    configValue,
+                    organizationAndTeamData,
+                );
+            }
+
             return await this.organizationParametersService.createOrUpdateConfig(
                 organizationParametersKey,
-                configValue,
+                processedConfigValue,
                 organizationAndTeamData,
             );
         } catch (error) {
@@ -43,5 +57,55 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
                 'Error creating or updating organization parameters',
             );
         }
+    }
+
+    private async saveByokConfig(
+        organizationParametersKey: OrganizationParametersKey,
+        configValue: any,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<boolean> {
+        let processedConfigValue = configValue;
+        processedConfigValue = this.encryptByokConfigApiKey(configValue);
+
+        const result =
+            await this.organizationParametersService.createOrUpdateConfig(
+                organizationParametersKey,
+                processedConfigValue,
+                organizationAndTeamData,
+            );
+
+        return !!result;
+    }
+
+    private encryptByokConfigApiKey(configValue: any): BYOKConfig {
+        if (!configValue || typeof configValue !== 'object') {
+            throw new Error('Invalid BYOK config value');
+        }
+
+        const byokConfig = configValue as BYOKConfig;
+
+        if (!byokConfig.main.apiKey) {
+            throw new Error('apiKey is required for BYOK config');
+        }
+
+        // Processa fallback apenas se existir, caso contrário mantém null/undefined
+        let fallbackConfig = null;
+        if (byokConfig.fallback && typeof byokConfig.fallback === 'object') {
+            fallbackConfig = {
+                ...byokConfig.fallback,
+                apiKey: byokConfig.fallback.apiKey
+                    ? encrypt(byokConfig.fallback.apiKey)
+                    : undefined,
+            };
+        }
+
+        return {
+            ...byokConfig,
+            main: {
+                ...byokConfig.main,
+                apiKey: encrypt(byokConfig.main.apiKey),
+            },
+            fallback: fallbackConfig,
+        };
     }
 }

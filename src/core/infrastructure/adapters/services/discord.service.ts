@@ -33,23 +33,14 @@ import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-k
 import { IntegrationCategory } from '@/shared/domain/enums/integration-category.enum';
 import { IntegrationServiceDecorator } from '@/shared/utils/decorators/integration-service.decorator';
 import { v4 as uuidv4 } from 'uuid';
-import {
-    CHECKIN_HISTORY_SERVICE_TOKEN,
-    ICheckinHistoryService,
-} from '@/core/domain/checkinHistory/contracts/checkinHistory.service.contracts';
+
 import {
     IProfileConfigService,
     PROFILE_CONFIG_SERVICE_TOKEN,
 } from '@/core/domain/profileConfigs/contracts/profileConfig.service.contract';
 import { ProfileConfigKey } from '@/core/domain/profileConfigs/enum/profileConfigKey.enum';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import {
-    CHECKIN_HISTORY_ORGANIZATION_SERVICE_TOKEN,
-    ICheckinHistoryOrganizationService,
-} from '@/core/domain/checkinHistoryOrganization/contracts/checkinHistory.service.contracts';
 import NotificationFormatter from '@/core/application/use-cases/platformIntegration/communication/sendNotification/notification.formatter';
-import { MetricsFormatterCommunicationPlatform } from './metrics/formatCommunicationPlatform/metrics.formatter';
-import { DiscordFormatter } from './metrics/formatCommunicationPlatform/discord.formatter';
 import { CommunicationManagementConnectionStatus } from '@/shared/utils/decorators/validate-communication-management-integration.decorator';
 
 @Injectable()
@@ -70,16 +61,19 @@ export class DiscordService implements ICommunicationService {
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
 
-        @Inject(CHECKIN_HISTORY_SERVICE_TOKEN)
-        private readonly checkinHistoryService: ICheckinHistoryService,
-
-        @Inject(CHECKIN_HISTORY_ORGANIZATION_SERVICE_TOKEN)
-        private readonly checkinHistoryOrganizationService: ICheckinHistoryOrganizationService,
-
         @Inject(PROFILE_CONFIG_SERVICE_TOKEN)
         private readonly profileConfigService: IProfileConfigService,
     ) {
         this.axiosService = new AxiosDiscordService();
+    }
+    saveCheckinHistory(params: any): Promise<any> {
+        throw new Error('Method not implemented.');
+    }
+    saveCheckinHistoryOrganization(params: any): Promise<any> {
+        throw new Error('Method not implemented.');
+    }
+    formatMetricsMessage(params: any): Promise<any> {
+        throw new Error('Method not implemented.');
     }
 
     public savePrivateChannel(params: any): Promise<void> {
@@ -526,69 +520,7 @@ export class DiscordService implements ICommunicationService {
         return discord?.configValue?.channelId ?? null;
     }
 
-    public async saveCheckinHistory(params: any): Promise<any> {
-        try {
-            const content = params.message?.embeds
-                ? params.message?.embeds[0]?.description
-                : params.message;
-
-            return await this.checkinHistoryService.create({
-                teamId: params.organizationAndTeamData.teamId,
-                organizationId: params.organizationAndTeamData.organizationId,
-                date: params.date,
-                content,
-                sectionDataItems: params?.sectionDataItems,
-                type: params.type,
-                overdueWorkItemsList: params?.overdueWorkItemsList,
-            });
-        } catch (error) {
-            throw new Error('Error in Checkin History Save Execution', error);
-        }
-    }
-
-    public async saveCheckinHistoryOrganization(params: any): Promise<any> {
-        try {
-            const content = params.message?.embeds
-                ? params.message?.embeds[0]?.description
-                : params.message;
-
-            return await this.checkinHistoryOrganizationService.create({
-                teamsIds: params.teamsIds,
-                organizationId: params.organizationId,
-                date: params.date,
-                content,
-                type: params.type,
-            });
-        } catch (error) {
-            throw new Error('Error in Checkin History Save Execution', error);
-        }
-    }
-
     public async formatKodyNotification(params: any): Promise<any> {
         return NotificationFormatter.formatForDiscord(params.notification);
-    }
-
-    public async formatMetricsMessage(params: any): Promise<any> {
-        let comparedMetrics;
-        try {
-            comparedMetrics =
-                await MetricsFormatterCommunicationPlatform.compareMetrics(
-                    params.metrics,
-                );
-        } catch (error) {
-            console.error('Error comparing metrics:', error);
-            comparedMetrics = null;
-        }
-
-        try {
-            return DiscordFormatter.format(
-                comparedMetrics,
-                params.columns,
-                params.language,
-            );
-        } catch (error) {
-            console.error('Error formatting metrics:', error);
-            return null;
-        }
     }
 }

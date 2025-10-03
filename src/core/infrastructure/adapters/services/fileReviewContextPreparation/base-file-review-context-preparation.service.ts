@@ -20,6 +20,7 @@ import {
     handlePatchDeletions,
 } from '@/shared/utils/patch';
 import { TaskStatus } from '@kodus/kodus-proto/task';
+import { BYOKConfig } from '@kodus/kodus-common/llm';
 
 /**
  * Abstract base class for file review context preparation
@@ -94,6 +95,7 @@ export abstract class BaseFileReviewContextPreparation
      */
     protected abstract determineReviewMode(
         options?: ReviewModeOptions,
+        byokConfig?: BYOKConfig,
     ): Promise<ReviewModeResponse>;
 
     /**
@@ -110,13 +112,16 @@ export abstract class BaseFileReviewContextPreparation
         patchWithLinesStr: string,
         context: AnalysisContext,
     ): Promise<{ fileContext: AnalysisContext } | null> {
-        const reviewModeProm = this.determineReviewMode({
-            fileChangeContext: {
-                file,
+        const reviewModeProm = this.determineReviewMode(
+            {
+                fileChangeContext: {
+                    file,
+                },
+                patch: patchWithLinesStr,
+                context,
             },
-            patch: patchWithLinesStr,
-            context,
-        });
+            context?.codeReviewConfig?.byokConfig,
+        );
 
         const relevantContentProm = this.getRelevantFileContent(file, context);
 

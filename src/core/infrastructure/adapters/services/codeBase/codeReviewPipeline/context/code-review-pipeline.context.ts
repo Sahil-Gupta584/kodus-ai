@@ -9,12 +9,13 @@ import {
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { AutomationExecutionEntity } from '@/core/domain/automation/entities/automation-execution.entity';
-import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { PipelineContext } from '../../../pipeline/interfaces/pipeline-context.interface';
 import { TaskStatus } from '@kodus/kodus-proto/task';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
+import { IClusterizedSuggestion } from '../../../kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
+import { ObservabilitySystem } from '@kodus/flow/dist/observability';
 
 export interface CodeReviewPipelineContext extends PipelineContext {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -75,7 +76,6 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     fileAnalysisResults?: Array<{
         validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
         discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[];
-        overallComment: { filepath: string; summary: string };
         file: FileChange;
     }>;
 
@@ -86,7 +86,6 @@ export interface CodeReviewPipelineContext extends PipelineContext {
 
     validSuggestions: Partial<CodeSuggestion>[];
     discardedSuggestions: Partial<CodeSuggestion>[];
-    overallComments: { filepath: string; summary: string }[];
     lastAnalyzedCommit?: any;
 
     validSuggestionsByPR?: ISuggestionByPR[];
@@ -105,4 +104,6 @@ export interface CodeReviewPipelineContext extends PipelineContext {
 
     // Metadados dos arquivos processados (reviewMode, codeReviewModelUsed, etc.)
     fileMetadata?: Map<string, any>;
+
+    correlationId: string;
 }

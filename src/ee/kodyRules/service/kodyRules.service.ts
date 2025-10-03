@@ -11,10 +11,14 @@ import {
     KodyRulesScope,
     KodyRulesStatus,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
-import { Inject, Injectable } from '@nestjs/common';
+import {
+    BadRequestException,
+    Inject,
+    Injectable,
+    NotFoundException,
+} from '@nestjs/common';
 import { CreateKodyRuleDto } from '@/core/infrastructure/http/dtos/create-kody-rule.dto';
 import { v4 } from 'uuid';
-import { NotFoundException } from '@nestjs/common';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import * as libraryKodyRules from './data/library-kody-rules.json';
 import * as bucketsData from './data/buckets.json';
@@ -27,10 +31,9 @@ import { ProgrammingLanguage } from '@/shared/domain/enums/programming-language.
 import {
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
     ICodeReviewSettingsLogService,
-} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+} from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import {
     ActionType,
-    ConfigLevel,
     UserInfo,
 } from '@/config/types/general/codeReviewSettingsLog.type';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
@@ -38,7 +41,8 @@ import {
     IRuleLikeService,
     RULE_LIKE_SERVICE_TOKEN,
 } from '@/core/domain/kodyRules/contracts/ruleLike.service.contract';
-import { RuleFeedbackType } from '@/core/domain/kodyRules/entities/ruleLike.entity';
+import { KodyRulesValidationService } from './kody-rules-validation.service';
+import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
 
 @Injectable()
 export class KodyRulesService implements IKodyRulesService {
@@ -53,6 +57,9 @@ export class KodyRulesService implements IKodyRulesService {
         private readonly ruleLikeService: IRuleLikeService,
 
         private readonly logger: PinoLoggerService,
+
+        private readonly kodyRulesValidationService: KodyRulesValidationService,
+        private readonly permissionValidationService: PermissionValidationService,
     ) {}
 
     getNativeCollection() {
@@ -92,6 +99,67 @@ export class KodyRulesService implements IKodyRulesService {
         organizationId: string,
     ): Promise<KodyRulesEntity | null> {
         return this.kodyRulesRepository.findByOrganizationId(organizationId);
+    }
+
+    /**
+     * Obtém informações sobre limites de Kody Rules para uma organização
+     * Usado pelo frontend para controlar UI (desabilitar botões, mostrar avisos, etc)
+     */
+    async getRulesLimitStatus(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<{
+        total: number;
+        limit: number | null;
+        remaining: number | null;
+        canAddMore: boolean;
+        isLimited: boolean;
+    }> {
+        try {
+            const existing = await this.findByOrganizationId(
+                organizationAndTeamData.organizationId,
+            );
+
+            const totalActiveRules =
+                existing?.rules?.filter(
+                    (rule) => rule.status === KodyRulesStatus.ACTIVE,
+                )?.length || 0;
+
+            const isLimited =
+                await this.permissionValidationService.shouldLimitResources(
+                    organizationAndTeamData,
+                    KodyRulesService.name,
+                );
+
+            if (!isLimited) {
+                return {
+                    total: totalActiveRules,
+                    limit: null,
+                    remaining: null,
+                    canAddMore: true,
+                    isLimited: false,
+                };
+            }
+
+            const limit = this.kodyRulesValidationService.MAX_KODY_RULES;
+            const remaining = Math.max(0, limit - totalActiveRules);
+            const canAddMore = totalActiveRules < limit;
+
+            return {
+                total: totalActiveRules,
+                limit,
+                remaining,
+                canAddMore,
+                isLimited: true,
+            };
+        } catch (error) {
+            this.logger.error({
+                message: 'Error getting rules limit status',
+                error: error,
+                context: KodyRulesService.name,
+                metadata: { organizationAndTeamData },
+            });
+            throw error;
+        }
     }
 
     /**
@@ -160,6 +228,8 @@ export class KodyRulesService implements IKodyRulesService {
                 throw new NotFoundException('Rule not found');
             }
 
+            await this.ensureFreePlanLimit(organizationAndTeamData, 1);
+
             const newRule: IKodyRule = {
                 uuid: v4(),
                 title: kodyRule?.title,
@@ -221,6 +291,11 @@ export class KodyRulesService implements IKodyRulesService {
 
         // If there is no UUID, it is a new rule
         if (!kodyRule.uuid) {
+            await this.ensureFreePlanLimit(
+                organizationAndTeamData,
+                (existing.rules?.length ?? 0) + 1,
+            );
+
             const newRule: IKodyRule = {
                 uuid: v4(),
                 title: kodyRule.title,
@@ -522,6 +597,48 @@ export class KodyRulesService implements IKodyRulesService {
                 },
             });
             throw error;
+        }
+    }
+
+    private async ensureFreePlanLimit(
+        organizationAndTeamData: OrganizationAndTeamData,
+        totalRulesAfterOperation: number,
+    ) {
+        if (!organizationAndTeamData?.organizationId) {
+            return;
+        }
+
+        try {
+            const validation =
+                await this.kodyRulesValidationService.validateRulesLimit(
+                    organizationAndTeamData,
+                    totalRulesAfterOperation,
+                );
+
+            if (!validation) {
+                throw new BadRequestException(
+                    `Free plan's limit of Kody Rules reached.`,
+                );
+            }
+        } catch (error) {
+            if (error instanceof BadRequestException) {
+                throw error;
+            }
+
+            this.logger.error({
+                message:
+                    'Error validating Kody Rules limit - blocking operation for safety',
+                error: error,
+                context: KodyRulesService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    totalRulesAfterOperation,
+                },
+            });
+
+            throw new BadRequestException(
+                `Unable to validate rules limit. Please try again later.`,
+            );
         }
     }
 

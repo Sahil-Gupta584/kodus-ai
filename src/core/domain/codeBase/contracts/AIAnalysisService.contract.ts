@@ -7,7 +7,7 @@ import {
     ReviewModeResponse,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { LLMModelProvider } from '@kodus/kodus-common/llm';
+import { BYOKConfig, LLMModelProvider } from '@kodus/kodus-common/llm';
 
 export interface IAIAnalysisService {
     analyzeCodeWithAI(
@@ -24,6 +24,7 @@ export interface IAIAnalysisService {
         fileContext: FileChangeContext,
         reviewModeResponse: ReviewModeResponse,
         context: AnalysisContext,
+        byokConfig: BYOKConfig,
     ): Promise<AIAnalysisResult>;
     generateCodeSuggestions(
         organizationAndTeamData: OrganizationAndTeamData,
@@ -40,6 +41,7 @@ export interface IAIAnalysisService {
         suggestions: any[],
         languageResultPrompt: string,
         reviewMode: ReviewModeResponse,
+        byokConfig: BYOKConfig,
     ): Promise<any>;
     validateImplementedSuggestions(
         organizationAndTeamData: OrganizationAndTeamData,
@@ -54,11 +56,13 @@ export interface IAIAnalysisService {
         provider: LLMModelProvider,
         file: FileChange,
         codeDiff: string,
+        byokConfig: BYOKConfig,
     ): Promise<ReviewModeResponse>;
     severityAnalysisAssignment(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
         provider: LLMModelProvider,
         codeSuggestions: CodeSuggestion[],
+        byokConfig: BYOKConfig,
     ): Promise<Partial<CodeSuggestion>[]>;
 }

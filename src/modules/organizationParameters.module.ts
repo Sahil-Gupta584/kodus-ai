@@ -17,6 +17,10 @@ import { ParametersModule } from './parameters.module';
 import { OrgnizationParametersController } from '@/core/infrastructure/http/controllers/organizationParameters.controller';
 import { CreateOrUpdateOrganizationParametersUseCase } from '@/core/application/use-cases/organizationParameters/create-or-update.use-case';
 import { FindByKeyOrganizationParametersUseCase } from '@/core/application/use-cases/organizationParameters/find-by-key.use-case';
+import { GetModelsByProviderUseCase } from '@/core/application/use-cases/organizationParameters/get-models-by-provider.use-case';
+import { DeleteByokConfigUseCase } from '@/core/application/use-cases/organizationParameters/delete-byok-config.use-case';
+import { ProviderService } from '@/core/infrastructure/adapters/services/providers/provider.service';
+import { LicenseModule } from '@/ee/license/license.module';
 
 @Module({
     imports: [
@@ -26,15 +30,19 @@ import { FindByKeyOrganizationParametersUseCase } from '@/core/application/use-c
         forwardRef(() => IntegrationConfigModule),
         forwardRef(() => TeamsModule),
         forwardRef(() => ParametersModule),
+        forwardRef(() => LicenseModule),
     ],
     providers: [
         SaveCategoryWorkItemsTypesUseCase,
         CreateOrUpdateOrganizationParametersUseCase,
         FindByKeyOrganizationParametersUseCase,
+        GetModelsByProviderUseCase,
+        DeleteByokConfigUseCase,
         OrganizationParametersService,
         PromptService,
         ProjectManagementService,
         PlatformIntegrationFactory,
+        ProviderService,
         {
             provide: ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
             useClass: OrganizationParametersService,
@@ -50,6 +58,8 @@ import { FindByKeyOrganizationParametersUseCase } from '@/core/application/use-c
         ORGANIZATION_PARAMETERS_REPOSITORY_TOKEN,
         SaveCategoryWorkItemsTypesUseCase,
         OrganizationParametersService,
+        GetModelsByProviderUseCase,
+        DeleteByokConfigUseCase,
     ],
 })
 export class OrganizationParametersModule {}

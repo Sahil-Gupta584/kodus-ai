@@ -3,6 +3,7 @@ declare global {
         interface ProcessEnv {
             // ENVIRONMENT
             API_NODE_ENV: string;
+            API_DATABASE_ENV?: 'development' | 'test' | 'homolog' | 'production';
             ENV?: 'development' | 'production';
 
             // SERVER
