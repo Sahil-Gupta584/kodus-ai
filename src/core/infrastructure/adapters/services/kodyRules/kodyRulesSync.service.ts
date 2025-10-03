@@ -7,7 +7,6 @@ import { CreateOrUpdateKodyRulesUseCase } from '@/core/application/use-cases/kod
 import {
     KodyRulesOrigin,
     KodyRulesScope,
-    IKodyRule,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import {
     CreateKodyRuleDto,
@@ -19,7 +18,7 @@ import {
     KODY_RULES_SERVICE_TOKEN,
 } from '@/core/domain/kodyRules/contracts/kodyRules.service.contract';
 import {
-    PromptRunnerService as BasePromptRunnerService,
+    PromptRunnerService,
     ParserType,
     PromptRole,
     LLMModelProvider,
@@ -34,7 +33,7 @@ import {
 import * as path from 'path';
 import { endSpan, newSpan } from '../codeBase/utils/span.utils';
 import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
-import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
+import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
 
 type SyncTarget = {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -60,7 +59,7 @@ export class KodyRulesSyncService {
         private readonly codeManagementService: CodeManagementService,
         private readonly logger: PinoLoggerService,
         private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
-        private readonly promptRunnerService: BasePromptRunnerService,
+        private readonly promptRunnerService: PromptRunnerService,
         private readonly permissionValidationService: PermissionValidationService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
@@ -878,7 +877,7 @@ export class KodyRulesSyncService {
             const fallbackProvider =
                 LLMModelProvider.NOVITA_QWEN3_235B_A22B_THINKING_2507;
 
-            const promptRunner = new PromptRunnerService(
+            const promptRunner = new BYOKPromptRunnerService(
                 this.promptRunnerService,
                 provider,
                 fallbackProvider,
@@ -971,7 +970,7 @@ export class KodyRulesSyncService {
                 const provider = LLMModelProvider.GEMINI_2_5_FLASH;
                 const fallbackProvider = LLMModelProvider.GEMINI_2_5_PRO;
 
-                const promptRunner = new PromptRunnerService(
+                const promptRunner = new BYOKPromptRunnerService(
                     this.promptRunnerService,
                     provider,
                     fallbackProvider,

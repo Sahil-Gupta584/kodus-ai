@@ -15,14 +15,14 @@ import { contextToGenerateIssues } from '../../core/infrastructure/adapters/serv
 import {
     LLMProviderService,
     LLMModelProvider,
-    PromptRunnerService as BasePromptRunnerService,
+    PromptRunnerService,
     ParserType,
     PromptRole,
     BYOKConfig,
     TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
 import { environment } from '@/ee/configs/environment';
-import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
+import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import {
     endSpan,
     newSpan,
@@ -47,7 +47,7 @@ export class KodyIssuesAnalysisService {
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
 
-        private readonly promptRunnerService: BasePromptRunnerService,
+        private readonly promptRunnerService: PromptRunnerService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
         this.isCloud = environment.API_CLOUD_MODE;
@@ -68,7 +68,7 @@ export class KodyIssuesAnalysisService {
                 `${KodyIssuesAnalysisService.name}::mergeSuggestionsIntoIssues`,
             );
 
-            const promptRunner = new PromptRunnerService(
+            const promptRunner = new BYOKPromptRunnerService(
                 this.promptRunnerService,
                 provider,
                 fallbackProvider,
@@ -162,7 +162,7 @@ export class KodyIssuesAnalysisService {
             const provider = LLMModelProvider.GEMINI_2_5_PRO;
             const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
-            const promptRunner = new PromptRunnerService(
+            const promptRunner = new BYOKPromptRunnerService(
                 this.promptRunnerService,
                 provider,
                 fallbackProvider,

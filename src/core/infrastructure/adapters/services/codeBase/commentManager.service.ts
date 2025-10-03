@@ -33,11 +33,11 @@ import {
     LLMProviderService,
     ParserType,
     PromptRole,
-    PromptRunnerService as BasePromptRunnerService,
+    PromptRunnerService,
     BYOKConfig,
     TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
-import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
+import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
 
 interface ClusteredSuggestion {
     id: string;
@@ -68,7 +68,7 @@ export class CommentManagerService implements ICommentManagerService {
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
         private readonly messageProcessor: MessageTemplateProcessor,
-        private readonly promptRunnerService: BasePromptRunnerService,
+        private readonly promptRunnerService: PromptRunnerService,
 
         private readonly permissionValidationService: PermissionValidationService,
     ) {
@@ -191,7 +191,7 @@ export class CommentManagerService implements ICommentManagerService {
 
                 newSpan(`${CommentManagerService.name}::generateSummaryPR`);
 
-                const promptRunner = new PromptRunnerService(
+                const promptRunner = new BYOKPromptRunnerService(
                     this.promptRunnerService,
                     LLMModelProvider.GEMINI_2_5_FLASH,
                     fallbackProvider,
@@ -937,7 +937,7 @@ ${reviewOptions}
                 `${CommentManagerService.name}::repeatedCodeReviewSuggestionClustering`,
             );
 
-            const promptRunner = new PromptRunnerService(
+            const promptRunner = new BYOKPromptRunnerService(
                 this.promptRunnerService,
                 provider,
                 fallbackProvider,

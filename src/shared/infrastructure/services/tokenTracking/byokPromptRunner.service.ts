@@ -2,20 +2,19 @@ import { Injectable } from '@nestjs/common';
 import {
     BYOKConfig,
     LLMModelProvider,
-    PromptRunnerService as BasePromptRunnerService,
-    PromptBuilder,
+    PromptRunnerService,
 } from '@kodus/kodus-common/llm';
 import { decrypt } from '@/shared/utils/crypto';
 
 @Injectable()
-export class PromptRunnerService {
-    private readonly basePromptRunnerService: BasePromptRunnerService;
+export class BYOKPromptRunnerService {
+    private readonly basePromptRunnerService: PromptRunnerService;
     private readonly defaultProvider: LLMModelProvider;
     private readonly fallbackProvider?: LLMModelProvider;
     private readonly byokConfig?: BYOKConfig;
 
     constructor(
-        basePromptRunnerService: BasePromptRunnerService,
+        basePromptRunnerService: PromptRunnerService,
         provider: LLMModelProvider,
         fallbackProvider?: LLMModelProvider,
         byokConfig?: BYOKConfig,
@@ -27,10 +26,10 @@ export class PromptRunnerService {
     }
 
     /**
-     * Cria e retorna um PromptBuilder já configurado com os providers
-     * e configurações BYOK definidos no construtor.
+     * Creates and returns a PromptBuilder already configured with the providers
+     * and BYOK settings defined in the constructor.
      *
-     * @returns PromptBuilder configurado e pronto para uso
+     * @returns Configured PromptBuilder ready to use
      */
     builder(): any {
         let analysisBuilder = this.basePromptRunnerService
@@ -66,20 +65,20 @@ export class PromptRunnerService {
     }
 
     /**
-     * Método de conveniência para criar uma nova instância do PromptRunnerService
-     * com configurações diferentes.
+     * Convenience method to create a new instance of BYOKPromptRunnerService
+     * with different configurations.
      *
-     * @param provider Provider principal
-     * @param fallbackProvider Provider de fallback (opcional)
-     * @param byokConfig Configuração BYOK (opcional)
-     * @returns Nova instância do PromptRunnerService
+     * @param provider Main provider
+     * @param fallbackProvider Fallback provider (optional)
+     * @param byokConfig BYOK configuration (optional)
+     * @returns New instance of BYOKPromptRunnerService
      */
     withConfig(
         provider: LLMModelProvider,
         fallbackProvider?: LLMModelProvider,
         byokConfig?: BYOKConfig,
-    ): PromptRunnerService {
-        return new PromptRunnerService(
+    ): BYOKPromptRunnerService {
+        return new BYOKPromptRunnerService(
             this.basePromptRunnerService,
             provider,
             fallbackProvider,
@@ -88,21 +87,21 @@ export class PromptRunnerService {
     }
 
     /**
-     * Getter para acessar o provider padrão configurado
+     * Getter to access the configured default provider
      */
     get provider(): LLMModelProvider {
         return this.defaultProvider;
     }
 
     /**
-     * Getter para acessar o provider de fallback configurado
+     * Getter to access the configured fallback provider
      */
     get fallback(): LLMModelProvider | undefined {
         return this.fallbackProvider;
     }
 
     /**
-     * Getter para acessar a configuração BYOK
+     * Getter to access the BYOK configuration
      */
     get config(): BYOKConfig | undefined {
         return this.byokConfig;

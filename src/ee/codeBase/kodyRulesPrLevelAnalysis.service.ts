@@ -30,14 +30,14 @@ import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { TokenChunkingService } from '@/shared/utils/tokenChunking/tokenChunking.service';
 import {
     LLMModelProvider,
-    PromptRunnerService as BasePromptRunnerService,
+    PromptRunnerService,
     PromptRole,
     ParserType,
     BYOKConfig,
     TokenUsage,
     TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
-import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
+import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import {
     endSpan,
     newSpan,
@@ -116,7 +116,7 @@ export class KodyRulesPrLevelAnalysisService
 
         private readonly tokenChunkingService: TokenChunkingService,
 
-        private readonly promptRunnerService: BasePromptRunnerService,
+        private readonly promptRunnerService: PromptRunnerService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
     }
@@ -926,7 +926,7 @@ export class KodyRulesPrLevelAnalysisService
 
         const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
-        const promptRunner = new PromptRunnerService(
+        const promptRunner = new BYOKPromptRunnerService(
             this.promptRunnerService,
             provider,
             fallbackProvider,
@@ -1270,7 +1270,7 @@ export class KodyRulesPrLevelAnalysisService
         try {
             const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
-            const promptRunner = new PromptRunnerService(
+            const promptRunner = new BYOKPromptRunnerService(
                 this.promptRunnerService,
                 provider,
                 fallbackProvider,

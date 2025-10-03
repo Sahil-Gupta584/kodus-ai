@@ -12,7 +12,6 @@ import {
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PinoLoggerService } from '../logger/pino.service';
 
-import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { z } from 'zod';
 import { LLMResponseProcessor } from './utils/transforms/llmResponseProcessor.transform';
 import { prompt_validateImplementedSuggestions } from '@/shared/utils/langchainCommon/prompts/validateImplementedSuggestions';
@@ -31,11 +30,11 @@ import {
     LLMModelProvider,
     ParserType,
     PromptRole,
-    PromptRunnerService as BasePromptRunnerService,
+    PromptRunnerService,
     PromptScope,
     TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
-import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
+import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import { endSpan, newSpan } from './utils/span.utils';
 
 export const LLM_ANALYSIS_SERVICE_TOKEN = Symbol('LLMAnalysisService');
@@ -47,7 +46,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
 
     constructor(
         private readonly logger: PinoLoggerService,
-        private readonly promptRunnerService: BasePromptRunnerService,
+        private readonly promptRunnerService: PromptRunnerService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
@@ -120,7 +119,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
         const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
-        const promptRunner = new PromptRunnerService(
+        const promptRunner = new BYOKPromptRunnerService(
             this.promptRunnerService,
             provider,
             fallbackProvider,
@@ -228,7 +227,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         const defaultFallback = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
         // Criar instância da nova PromptRunnerService com configuração simplificada
-        const promptRunner = new PromptRunnerService(
+        const promptRunner = new BYOKPromptRunnerService(
             this.promptRunnerService,
             defaultProvider,
             defaultFallback,
@@ -478,7 +477,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 ? LLMModelProvider.NOVITA_DEEPSEEK_V3_0324
                 : LLMModelProvider.OPENAI_GPT_4O;
 
-        const promptRunner = new PromptRunnerService(
+        const promptRunner = new BYOKPromptRunnerService(
             this.promptRunnerService,
             provider,
             fallbackProvider,
@@ -585,7 +584,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
             // Criar instância da nova PromptRunnerService
-            const promptRunner = new PromptRunnerService(
+            const promptRunner = new BYOKPromptRunnerService(
                 this.promptRunnerService,
                 provider,
                 fallbackProvider,
@@ -846,7 +845,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         provider: LLMModelProvider,
         file: FileChange,
         codeDiff: string,
-        byokConfig: BYOKConfig,
     ): Promise<ReviewModeResponse> {
         const fallbackProvider =
             provider === LLMModelProvider.OPENAI_GPT_4O
@@ -859,17 +857,12 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         };
 
         try {
-            newSpan(`${LLMAnalysisService.name}::selectReviewMode`);
-
-            const promptRunner = new PromptRunnerService(
-                this.promptRunnerService,
-                provider,
-                fallbackProvider,
-                byokConfig,
-            );
-
-            const result = await promptRunner
+            const result = await this.promptRunnerService
                 .builder()
+                .setProviders({
+                    main: provider,
+                    fallback: fallbackProvider,
+                })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
                 .setTemperature(0)
@@ -888,11 +881,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 })
                 .setRunName('selectReviewMode')
                 .execute();
-
-            endSpan(this.tokenTracker, {
-                organizationId: organizationAndTeamData?.organizationId,
-                prNumber,
-            });
 
             if (!result) {
                 const message = `No response from select review mode for PR#${prNumber}`;

@@ -1,7 +1,6 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { TokenChunkingService } from '@/shared/utils/tokenChunking/tokenChunking.service';
-import { RunnableSequence } from '@langchain/core/runnables';
 import {
     CrossFileAnalysisPayload,
     CrossFileAnalysisSchema,
@@ -19,12 +18,12 @@ import {
     LLMModelProvider,
     ParserType,
     PromptRole,
-    PromptRunnerService as BasePromptRunnerService,
+    PromptRunnerService,
     TokenTrackingHandler,
     TokenUsage,
 } from '@kodus/kodus-common/llm';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
-import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
+import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import { endSpan, newSpan } from './utils/span.utils';
 
 //#region Interfaces
@@ -69,7 +68,7 @@ export class CrossFileAnalysisService {
         private readonly logger: PinoLoggerService,
         private readonly tokenChunkingService: TokenChunkingService,
 
-        private readonly promptRunnerService: BasePromptRunnerService,
+        private readonly promptRunnerService: PromptRunnerService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
     }
@@ -449,7 +448,7 @@ export class CrossFileAnalysisService {
 
         newSpan(`${CrossFileAnalysisService.name}::processChunk`);
 
-        const promptRunner = new PromptRunnerService(
+        const promptRunner = new BYOKPromptRunnerService(
             this.promptRunnerService,
             provider,
             fallbackProvider,

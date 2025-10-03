@@ -38,7 +38,7 @@ import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { IKodyRulesAnalysisService } from '@/core/domain/codeBase/contracts/KodyRulesAnalysisService.contract';
 import {
     LLMModelProvider,
-    PromptRunnerService as BasePromptRunnerService,
+    PromptRunnerService,
     ParserType,
     PromptRole,
     BYOKConfig,
@@ -53,7 +53,7 @@ import {
     endSpan,
     newSpan,
 } from '@/core/infrastructure/adapters/services/codeBase/utils/span.utils';
-import { PromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/promptRunner.service';
+import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
 
 // Interface for extended context used in Kody Rules analysis
 interface KodyRulesExtendedContext {
@@ -91,7 +91,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         private readonly kodyRulesService: KodyRulesService,
         @Inject(CODE_BASE_CONFIG_SERVICE_TOKEN)
         private readonly codeBaseConfigService: ICodeBaseConfigService,
-        private readonly promptRunnerService: BasePromptRunnerService,
+        private readonly promptRunnerService: PromptRunnerService,
         private readonly kodyRulesValidationService: KodyRulesValidationService,
         private readonly logger: PinoLoggerService,
     ) {
@@ -292,7 +292,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 `${KodyRulesAnalysisService.name}::extractKodyRuleIdsFromContent`,
             );
 
-            const promptRunner = new PromptRunnerService(
+            const promptRunner = new BYOKPromptRunnerService(
                 this.promptRunnerService,
                 provider,
                 fallbackProvider,
@@ -556,7 +556,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         context: KodyRulesExtendedContext,
         byokConfig?: BYOKConfig,
     ) {
-        const promptRunner = new PromptRunnerService(
+        const promptRunner = new BYOKPromptRunnerService(
             this.promptRunnerService,
             provider,
             fallbackProvider,
@@ -602,7 +602,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         context: KodyRulesExtendedContext,
         byokConfig?: BYOKConfig,
     ) {
-        const promptRunner = new PromptRunnerService(
+        const promptRunner = new BYOKPromptRunnerService(
             this.promptRunnerService,
             provider,
             fallbackProvider,
@@ -645,7 +645,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         context: KodyRulesExtendedContext,
         byokConfig?: BYOKConfig,
     ) {
-        const promptRunner = new PromptRunnerService(
+        const promptRunner = new BYOKPromptRunnerService(
             this.promptRunnerService,
             provider,
             fallbackProvider,
@@ -688,7 +688,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         context: KodyRulesExtendedContext,
         byokConfig?: BYOKConfig,
     ) {
-        const promptRunner = new PromptRunnerService(
+        const promptRunner = new BYOKPromptRunnerService(
             this.promptRunnerService,
             provider,
             fallbackProvider,

@@ -5,9 +5,14 @@ import { BusinessRulesValidationAgentProvider } from '@/core/infrastructure/adap
 import { BusinessRulesValidationAgentUseCase } from '@/core/application/use-cases/agent/business-rules-validation-agent.use-case';
 import { ParametersModule } from './parameters.module';
 import { McpModule } from '@/core/infrastructure/adapters/mcp/mcp.module';
+import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
 
 @Module({
-    imports: [forwardRef(() => ParametersModule), McpModule.forRoot()],
+    imports: [
+        forwardRef(() => ParametersModule),
+        McpModule.forRoot(),
+        PermissionValidationModule,
+    ],
     providers: [
         ConversationAgentProvider,
         ConversationAgentUseCase,

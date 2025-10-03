@@ -1,21 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import {
-    createDirectLLMAdapter,
     createMCPAdapter,
     createOrchestration,
     Thread,
-    MCPServerConfig,
-    DirectLLMAdapter,
     PlannerType,
     StorageEnum,
-    toHumanAiMessages,
+    LLMAdapter,
 } from '@kodus/flow';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseConnection } from '@/config/types';
 import { ConnectionString } from 'connection-string';
-import { LLMProviderService, LLMModelProvider } from '@kodus/kodus-common/llm';
+import { LLMModelProvider, PromptRunnerService } from '@kodus/kodus-common/llm';
 import { SDKOrchestrator } from '@kodus/flow/dist/orchestration';
 import { PinoLoggerService } from '../../logger/pino.service';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
@@ -24,6 +21,8 @@ import {
     IParametersService,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { Inject } from '@nestjs/common';
+import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
+import { BaseAgentProvider } from './base-agent.provider';
 
 export interface ValidationResult {
     needsMoreInfo?: boolean;
@@ -32,13 +31,13 @@ export interface ValidationResult {
 }
 
 @Injectable()
-export class BusinessRulesValidationAgentProvider {
+export class BusinessRulesValidationAgentProvider extends BaseAgentProvider {
     protected config: DatabaseConnection;
 
     private orchestration: SDKOrchestrator;
     private mcpAdapter: ReturnType<typeof createMCPAdapter>;
-    private llmAdapter: DirectLLMAdapter;
-    private readonly defaultLLMConfig = {
+    private llmAdapter: LLMAdapter;
+    protected readonly defaultLLMConfig = {
         llmProvider: LLMModelProvider.GEMINI_2_5_PRO,
         temperature: 0,
         maxTokens: 20000,
@@ -48,65 +47,21 @@ export class BusinessRulesValidationAgentProvider {
 
     constructor(
         private readonly configService: ConfigService,
-        private readonly llmProviderService: LLMProviderService,
+        promptRunnerService: PromptRunnerService,
         private readonly logger: PinoLoggerService,
+        permissionValidationService: PermissionValidationService,
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
         private readonly mcpManagerService?: MCPManagerService,
     ) {
+        super(promptRunnerService, permissionValidationService);
         this.config =
             this.configService.get<DatabaseConnection>('mongoDatabase');
-        this.llmAdapter = this.createLLMAdapter();
     }
 
-    private createLLMAdapter() {
-        const self = this;
-        const wrappedLLM = {
-            name: 'agent-configurable-llm',
-            async call(messages: any[], options: any = {}) {
-                const lcMessages = toHumanAiMessages(messages);
-
-                const resolveProvider = (model?: string): LLMModelProvider => {
-                    return (
-                        (model && (model as any)) ||
-                        self.defaultLLMConfig.llmProvider
-                    );
-                };
-
-                const provider = resolveProvider(options?.model);
-
-                const client = self.llmProviderService.getLLMProvider({
-                    model: provider ?? self.defaultLLMConfig.llmProvider,
-                    temperature:
-                        options?.temperature ??
-                        self.defaultLLMConfig.temperature,
-                    maxTokens:
-                        options?.maxTokens ?? self.defaultLLMConfig.maxTokens,
-                    maxReasoningTokens:
-                        options?.maxReasoningTokens ??
-                        self.defaultLLMConfig.maxReasoningTokens,
-                });
-
-                const resp = await client.invoke(lcMessages, {
-                    stop: options?.stop ?? self.defaultLLMConfig.stop,
-                    temperature:
-                        options?.temperature ??
-                        self.defaultLLMConfig.temperature,
-                    maxReasoningTokens:
-                        options?.maxReasoningTokens ??
-                        self.defaultLLMConfig.maxReasoningTokens,
-                });
-
-                return resp as any;
-            },
-        };
-
-        return createDirectLLMAdapter(wrappedLLM);
-    }
-
-    private async createMCPAdapter(
+    protected async createMCPAdapter(
         organizationAndTeamData: OrganizationAndTeamData,
-    ) {
+    ): Promise<void> {
         const mcpManagerServers = await this.mcpManagerService.getConnections(
             organizationAndTeamData,
         );
@@ -162,6 +117,8 @@ export class BusinessRulesValidationAgentProvider {
             protocol: this.config.port ? 'mongodb' : 'mongodb+srv',
             hosts: [{ name: this.config.host, port: this.config.port }],
         }).toString();
+
+        this.llmAdapter = super.createLLMAdapter('BusinessRulesValidation');
 
         this.orchestration = await createOrchestration({
             tenantId: 'kodus-agent-business-rules',
@@ -307,6 +264,9 @@ export class BusinessRulesValidationAgentProvider {
                     'Organization and team data is required for business rules validation.',
                 );
             }
+
+            // Fetch BYOK configuration and store organization data
+            await this.fetchBYOKConfig(context.organizationAndTeamData);
 
             await this.initialize(
                 context.organizationAndTeamData,
