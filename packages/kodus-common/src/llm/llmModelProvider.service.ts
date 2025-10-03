@@ -39,9 +39,13 @@ export class LLMProviderService {
                 const byokProvider =
                     this.byokProviderService.createBYOKProvider(
                         options.byokConfig,
-                        options,
+                        {
+                            ...options,
+                            jsonMode: options.jsonMode,
+                        },
                     );
 
+                // Aplicar JSON mode para OpenAI
                 if (options.jsonMode && byokProvider instanceof ChatOpenAI) {
                     return byokProvider.withConfig({
                         response_format: { type: 'json_object' },

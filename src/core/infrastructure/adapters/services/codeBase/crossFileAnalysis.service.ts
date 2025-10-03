@@ -458,10 +458,6 @@ export class CrossFileAnalysisService {
         let analysisBuilder = promptRunner.builder();
 
         const analysis = await analysisBuilder
-            .setProviders({
-                main: provider,
-                fallback: fallbackProvider,
-            })
             .setParser(ParserType.ZOD, CrossFileAnalysisSchema)
             .setLLMJsonMode(true)
             .setPayload(payload)

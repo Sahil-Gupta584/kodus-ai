@@ -47,14 +47,26 @@ export class BYOKProviderService {
         },
     ): BaseChatModel {
         const { provider, apiKey, model, baseURL } = config.main;
-        const defaultOptions = {
+
+        const defaultOptions: Record<string, unknown> = {
             maxTokens: options?.maxTokens ?? -1,
             callbacks: options?.callbacks ?? [],
             temperature: options?.temperature ?? 0,
+            maxReasoningTokens: options?.maxReasoningTokens ?? 1,
         };
 
         if (!supportsTemperature(model)) {
-            delete (defaultOptions as any).temperature;
+            delete defaultOptions.temperature;
+        }
+
+        // Cria commonOptions sem maxReasoningTokens (usado apenas no Gemini)
+        const commonOptions: Record<string, unknown> = {
+            maxTokens: defaultOptions.maxTokens,
+            callbacks: defaultOptions.callbacks,
+        };
+
+        if (defaultOptions.temperature !== undefined) {
+            commonOptions.temperature = defaultOptions.temperature;
         }
 
         switch (provider) {
@@ -62,7 +74,7 @@ export class BYOKProviderService {
                 return new ChatOpenAI({
                     modelName: model,
                     openAIApiKey: apiKey,
-                    ...defaultOptions,
+                    ...commonOptions,
                     configuration: {
                         apiKey: apiKey,
                     },
@@ -77,7 +89,7 @@ export class BYOKProviderService {
                 return new ChatOpenAI({
                     modelName: model,
                     openAIApiKey: apiKey,
-                    ...defaultOptions,
+                    ...commonOptions,
                     configuration: {
                         baseURL: baseURL,
                         apiKey: apiKey,
@@ -88,7 +100,7 @@ export class BYOKProviderService {
                 return new ChatOpenAI({
                     modelName: model,
                     openAIApiKey: apiKey,
-                    ...defaultOptions,
+                    ...commonOptions,
                     configuration: {
                         baseURL: 'https://openrouter.ai/api/v1',
                         apiKey: apiKey,
@@ -99,27 +111,53 @@ export class BYOKProviderService {
                 return new ChatAnthropic({
                     modelName: model,
                     anthropicApiKey: apiKey,
-                    temperature: defaultOptions.temperature,
-                    maxTokens: defaultOptions.maxTokens,
-                    callbacks: defaultOptions.callbacks,
+                    ...commonOptions,
                 });
 
-            case BYOKProvider.GOOGLE_GEMINI:
-                return new ChatGoogle({
+            case BYOKProvider.GOOGLE_GEMINI: {
+                // Gemini usa maxOutputTokens ao invés de maxTokens e requer valores positivos
+                const geminiOptions: Record<string, unknown> = {
                     model: model,
                     apiKey: apiKey,
-                    temperature: defaultOptions.temperature,
-                    maxOutputTokens: defaultOptions.maxTokens,
                     callbacks: defaultOptions.callbacks,
-                    maxReasoningTokens: options?.maxReasoningTokens,
-                });
+                };
 
-            case BYOKProvider.NOVITA:
+                if (defaultOptions.temperature !== undefined) {
+                    geminiOptions.temperature = defaultOptions.temperature;
+                }
+
+                // Só passa maxOutputTokens se for um valor válido (> 0)
+                const maxTokens = defaultOptions.maxTokens as number;
+                if (maxTokens > 0) {
+                    geminiOptions.maxOutputTokens = maxTokens;
+                }
+
+                // Só passa maxReasoningTokens se for um valor válido (> 0)
+                const maxReasoningTokens =
+                    defaultOptions.maxReasoningTokens as number;
+                if (maxReasoningTokens > 0) {
+                    geminiOptions.maxReasoningTokens = maxReasoningTokens;
+                }
+
+                // Configurar JSON mode se necessário
+                if (options?.jsonMode) {
+                    geminiOptions.responseMimeType = 'application/json';
+                }
+
+                return new ChatGoogle(geminiOptions);
+            }
+
+            case BYOKProvider.NOVITA: {
+                const novitaMaxTokens = commonOptions.maxTokens as number;
                 return this.createNovitaProvider({
                     model,
                     apiKey,
-                    ...defaultOptions,
+                    temperature:
+                        (commonOptions.temperature as number | undefined) ?? 0,
+                    maxTokens: novitaMaxTokens > 0 ? novitaMaxTokens : 4096,
+                    callbacks: commonOptions.callbacks as Callbacks,
                 });
+            }
 
             case BYOKProvider.GOOGLE_VERTEX:
                 throw new Error(
