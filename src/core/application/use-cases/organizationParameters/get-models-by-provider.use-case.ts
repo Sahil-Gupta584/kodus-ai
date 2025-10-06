@@ -188,7 +188,13 @@ export class GetModelsByProviderUseCase {
     private async getGeminiModels(apiKey?: string): Promise<ModelResponse> {
         try {
             const response = await axios.get<GeminiResponse>(
-                `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+                'https://generativelanguage.googleapis.com/v1beta/models',
+                {
+                    headers: {
+                        'x-goog-api-key': apiKey,
+                    },
+                    timeout: 10000, // 10 segundos timeout
+                },
             );
 
             return {

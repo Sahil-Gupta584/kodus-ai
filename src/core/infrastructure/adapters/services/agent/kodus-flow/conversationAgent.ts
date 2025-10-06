@@ -12,10 +12,10 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseConnection } from '@/config/types';
-import { ConnectionString } from 'connection-string';
 import { LLMModelProvider, PromptRunnerService } from '@kodus/kodus-common/llm';
 import { SDKOrchestrator } from '@kodus/flow/dist/orchestration';
 import { PinoLoggerService } from '../../logger/pino.service';
+import { ObservabilityService } from '../../logger/observability.service';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import {
     PARAMETERS_SERVICE_TOKEN,
@@ -46,6 +46,7 @@ export class ConversationAgentProvider extends BaseAgentProvider {
         promptRunnerService: PromptRunnerService,
         private readonly logger: PinoLoggerService,
         permissionValidationService: PermissionValidationService,
+        private readonly observabilityService: ObservabilityService,
         private readonly mcpManagerService?: MCPManagerService,
     ) {
         super(promptRunnerService, permissionValidationService);
@@ -73,49 +74,23 @@ export class ConversationAgentProvider extends BaseAgentProvider {
     }
 
     private async createOrchestration() {
-        let uri = new ConnectionString('', {
-            user: this.config.username,
-            password: this.config.password,
-            protocol: this.config.port ? 'mongodb' : 'mongodb+srv',
-            hosts: [{ name: this.config.host, port: this.config.port }],
-        }).toString();
-
         this.llmAdapter = super.createLLMAdapter('ConversationalAgent');
 
         this.orchestration = await createOrchestration({
             tenantId: 'kodus-agent-conversation',
             llmAdapter: this.llmAdapter,
             mcpAdapter: this.mcpAdapter,
-            observability: {
-                logging: { enabled: true, level: 'info' },
-                mongodb: {
-                    type: 'mongodb',
-                    connectionString: uri,
-                    database: this.config.database,
-                    collections: {
-                        logs: 'observability_logs',
-                        telemetry: 'observability_telemetry',
-                        errors: 'observability_errors',
-                    },
-                    batchSize: 100,
-                    flushIntervalMs: 5000,
-                    ttlDays: 30,
-                    enableObservability: true,
-                },
-                telemetry: {
-                    enabled: true,
-                    serviceName: 'kodus-flow',
-                    sampling: { rate: 1, strategy: 'probabilistic' },
-                    privacy: { includeSensitiveData: false },
-                    spanTimeouts: {
-                        enabled: true,
-                        maxDurationMs: 5 * 60 * 1000,
-                    },
-                },
-            },
+            observability:
+                this.observabilityService.createAgentObservabilityConfig(
+                    this.config,
+                    'kodus-flow',
+                ),
             storage: {
                 type: StorageEnum.MONGODB,
-                connectionString: uri,
+                connectionString:
+                    this.observabilityService.buildConnectionString(
+                        this.config,
+                    ),
                 database: this.config.database,
             },
         });
@@ -194,7 +169,6 @@ export class ConversationAgentProvider extends BaseAgentProvider {
                 throw new Error('thread and team data is required.');
             }
 
-            // Fetch BYOK configuration and store organization data
             await this.fetchBYOKConfig(organizationAndTeamData);
 
             await this.initialize(organizationAndTeamData, userLanguage);
@@ -211,12 +185,9 @@ export class ConversationAgentProvider extends BaseAgentProvider {
                 },
             );
 
-            let uri = new ConnectionString('', {
-                user: this.config.username,
-                password: this.config.password,
-                protocol: this.config.port ? 'mongodb' : 'mongodb+srv',
-                hosts: [{ name: this.config.host, port: this.config.port }],
-            }).toString();
+            const uri = this.observabilityService.buildConnectionString(
+                this.config,
+            );
 
             const corr = (result?.context?.correlationId as string) ?? '';
 

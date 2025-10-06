@@ -68,7 +68,6 @@ export class RunCodeReviewAutomationUseCase {
         automationName?: string;
     }) {
         let organizationAndTeamData = null;
-        let byokConfig: BYOKConfig | null = null;
 
         try {
             const { payload, event, platformType } = params;
