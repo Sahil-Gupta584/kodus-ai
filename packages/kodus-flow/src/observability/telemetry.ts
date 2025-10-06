@@ -7,6 +7,7 @@ import {
 } from './types.js';
 import { SimpleTracer } from './core/tracer.js';
 import { createLogger } from './logger.js';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 /**
  * Simple and robust telemetry system
@@ -17,6 +18,7 @@ export class TelemetrySystem {
     private logger = createLogger('telemetry');
     private processors: SpanProcessor[] = [];
     private currentSpan?: Span;
+    private als = new AsyncLocalStorage<Span>();
 
     constructor(config: Partial<TelemetryConfig> = {}) {
         this.config = {
@@ -66,8 +68,8 @@ export class TelemetrySystem {
             return true;
         }
 
-        // Probabilistic sampling
-        return Math.random() < (this.config.sampling?.rate ?? 1.0);
+        // Base decision only – final sampling may be refined per-span in startSpan
+        return true;
     }
 
     /**
@@ -78,6 +80,32 @@ export class TelemetrySystem {
             return this.createNoOpSpan();
         }
 
+        // Rule-based sampling per operation name
+        const baseRate = this.config.sampling?.rate ?? 1.0;
+        let rate = baseRate;
+        const rules = this.config.sampling?.rules || [];
+        for (const rule of rules) {
+            const opMatch = rule.operation && name.includes(rule.operation);
+            const svcMatch =
+                rule.service &&
+                (this.config.serviceName ?? 'unknown-service') === rule.service;
+            if (opMatch || svcMatch) {
+                rate = rule.rate;
+                break;
+            }
+        }
+
+        const strategy = this.config.sampling?.strategy ?? 'probabilistic';
+        const sampled =
+            strategy === 'always'
+                ? true
+                : strategy === 'never'
+                  ? false
+                  : Math.random() < rate;
+        if (!sampled) {
+            return this.createNoOpSpan();
+        }
+
         const finalAttributes: Record<string, string | number | boolean> = {
             serviceName: this.config.serviceName ?? 'unknown-service',
             ...this.config.globalAttributes,
@@ -85,8 +113,11 @@ export class TelemetrySystem {
         };
 
         // Auto-parent to current span when available and no parent provided
+        const parentFromAls = this.als.getStore()?.getSpanContext();
         const parentContext =
-            options.parent || this.currentSpan?.getSpanContext();
+            options.parent ||
+            parentFromAls ||
+            this.currentSpan?.getSpanContext();
 
         const span = this.tracer.startSpan(name, {
             ...options,
@@ -106,28 +137,30 @@ export class TelemetrySystem {
         const previousSpan = this.currentSpan;
         this.currentSpan = span;
 
-        try {
-            const result = await fn();
-            span.setStatus({ code: 'ok' });
-            return result;
-        } catch (error) {
-            span.recordException(error as Error);
-            throw error;
-        } finally {
-            span.end();
-            this.currentSpan = previousSpan;
+        return await this.als.run(span, async () => {
+            try {
+                const result = await fn();
+                span.setStatus({ code: 'ok' });
+                return result;
+            } catch (error) {
+                span.recordException(error as Error);
+                throw error;
+            } finally {
+                span.end();
+                this.currentSpan = previousSpan;
 
-            // Process the completed span
-            const traceItem = span.toTraceItem();
-            void this.processTraceItem(traceItem);
-        }
+                // Process the completed span
+                const traceItem = span.toTraceItem();
+                void this.processTraceItem(traceItem);
+            }
+        });
     }
 
     /**
      * Get the current active span
      */
     getCurrentSpan(): Span | undefined {
-        return this.currentSpan;
+        return this.als.getStore() || this.currentSpan;
     }
 
     /**
