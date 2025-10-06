@@ -55,6 +55,7 @@ import { CodeReviewExecutionModule } from './codeReviewExecution.module';
 import { PermissionsModule } from './permissions.module';
 import { WebhookLogModule } from './webhookLog.module';
 import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
+import { UsageModule } from './usage.module';
 
 @Module({
     imports: [
@@ -114,6 +115,7 @@ import { PermissionValidationModule } from '@/ee/shared/permission-validation.mo
         PermissionsModule,
         WebhookLogModule,
         PermissionValidationModule,
+        UsageModule,
     ],
     providers: [
         {
