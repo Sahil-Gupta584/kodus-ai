@@ -176,7 +176,7 @@ export class PermissionValidationService {
             }
 
             // 6. Validar usuário específico (SEMPRE valida se userGitId fornecido, exceto trial)
-            if (userGitId) {
+            if (!this.requiresBYOK(identifiedPlanType) && userGitId) {
                 const users = await this.licenseService.getAllUsersWithLicense(
                     organizationAndTeamData,
                 );

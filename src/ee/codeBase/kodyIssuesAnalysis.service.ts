@@ -23,10 +23,7 @@ import {
 } from '@kodus/kodus-common/llm';
 import { environment } from '@/ee/configs/environment';
 import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
-import {
-    endSpan,
-    newSpan,
-} from '@/core/infrastructure/adapters/services/codeBase/utils/span.utils';
+import { ObservabilityService } from '@/core/infrastructure/adapters/services/logger/observability.service';
 
 export const KODY_ISSUES_ANALYSIS_SERVICE_TOKEN = Symbol(
     'KodyIssuesAnalysisService',
@@ -48,6 +45,7 @@ export class KodyIssuesAnalysisService {
         private readonly parametersService: IParametersService,
 
         private readonly promptRunnerService: PromptRunnerService,
+        private readonly observabilityService: ObservabilityService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
         this.isCloud = environment.API_CLOUD_MODE;
@@ -64,7 +62,7 @@ export class KodyIssuesAnalysisService {
             const provider = LLMModelProvider.GEMINI_2_5_PRO;
             const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
 
-            newSpan(
+            this.observabilityService.startSpan(
                 `${KodyIssuesAnalysisService.name}::mergeSuggestionsIntoIssues`,
             );
 
@@ -114,7 +112,7 @@ export class KodyIssuesAnalysisService {
                 .setTemperature(0)
                 .execute();
 
-            endSpan(this.tokenTracker, {
+            this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData.organizationId,
                 prNumber: pullRequest.number,
             });
@@ -169,7 +167,9 @@ export class KodyIssuesAnalysisService {
                 byokConfig,
             );
 
-            newSpan(`${KodyIssuesAnalysisService.name}::resolveExistingIssues`);
+            this.observabilityService.startSpan(
+                `${KodyIssuesAnalysisService.name}::resolveExistingIssues`,
+            );
 
             const result = await promptRunner
                 .builder()
@@ -216,7 +216,7 @@ export class KodyIssuesAnalysisService {
                 .setTemperature(0)
                 .execute();
 
-            endSpan(this.tokenTracker, {
+            this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: context.organizationAndTeamData.organizationId,
                 prNumber: context.pullRequest.number,
             });

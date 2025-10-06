@@ -45,25 +45,11 @@ export class CodeReviewHandlerService {
         executionId: string,
     ) {
         try {
-            const correlationId =
-                this.observabilityService.generateCorrelationId();
-
-            const thread = createThreadId(
-                {
-                    organizationId: organizationAndTeamData.organizationId,
-                    teamId: organizationAndTeamData.teamId,
-                    executionId,
-                },
-                {
-                    prefix: 'vbl',
-                },
-            );
-
             await this.observabilityService.initializeObservability(
                 this.config,
                 {
                     serviceName: 'codeReviewPipeline',
-                    correlationId,
+                    correlationId: executionId,
                 },
             );
 
@@ -98,7 +84,7 @@ export class CodeReviewHandlerService {
                         status: TaskStatus.TASK_STATUS_UNSPECIFIED,
                     },
                 },
-                correlationId,
+                correlationId: executionId,
             };
 
             this.logger.log({
@@ -109,6 +95,7 @@ export class CodeReviewHandlerService {
                     organizationId: organizationAndTeamData.organizationId,
                     teamId: organizationAndTeamData.teamId,
                     pullRequestNumber: pullRequest.number,
+                    executionId,
                 },
             });
 
@@ -124,6 +111,7 @@ export class CodeReviewHandlerService {
                     suggestionsCount: result?.lineComments?.length || 0,
                     organizationAndTeamData,
                     pullRequestNumber: pullRequest.number,
+                    executionId,
                 },
             });
 
@@ -152,6 +140,7 @@ export class CodeReviewHandlerService {
                     organizationId: organizationAndTeamData.organizationId,
                     teamId: organizationAndTeamData.teamId,
                     pullRequestNumber: pullRequest.number,
+                    executionId,
                 },
             });
 

@@ -31,7 +31,7 @@ import {
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import * as path from 'path';
-import { endSpan, newSpan } from '../codeBase/utils/span.utils';
+import { ObservabilityService } from '../logger/observability.service';
 import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
 import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
 
@@ -61,6 +61,7 @@ export class KodyRulesSyncService {
         private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
         private readonly promptRunnerService: PromptRunnerService,
         private readonly permissionValidationService: PermissionValidationService,
+        private readonly observabilityService: ObservabilityService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
     }
@@ -855,7 +856,9 @@ export class KodyRulesSyncService {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<Array<Partial<CreateKodyRuleDto>>> {
         try {
-            newSpan(`${KodyRulesSyncService.name}::convertFileToKodyRules`);
+            this.observabilityService.startSpan(
+                `${KodyRulesSyncService.name}::convertFileToKodyRules`,
+            );
 
             const validationResult =
                 await this.permissionValidationService.validateBasicLicense(
@@ -921,7 +924,7 @@ export class KodyRulesSyncService {
                 .setRunName('kodyRulesFileToRules')
                 .execute();
 
-            endSpan(this.tokenTracker, {
+            this.observabilityService.endSpan(this.tokenTracker, {
                 repositoryId: params.repositoryId,
                 filePath: params.filePath,
                 fallback: false,
@@ -950,7 +953,9 @@ export class KodyRulesSyncService {
             }));
         } catch (error) {
             try {
-                newSpan(`${KodyRulesSyncService.name}::convertFileToKodyRules`);
+                this.observabilityService.startSpan(
+                    `${KodyRulesSyncService.name}::convertFileToKodyRules`,
+                );
 
                 const validationResult =
                     await this.permissionValidationService.validateBasicLicense(
@@ -997,7 +1002,7 @@ export class KodyRulesSyncService {
                     .setRunName('kodyRulesFileToRulesRaw')
                     .execute();
 
-                endSpan(this.tokenTracker, {
+                this.observabilityService.endSpan(this.tokenTracker, {
                     repositoryId: params.repositoryId,
                     filePath: params.filePath,
                     fallback: true,

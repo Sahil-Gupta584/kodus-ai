@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConnectionString } from 'connection-string';
 import { getObservability, IdGenerator } from '@kodus/flow';
+import type { TokenTrackingHandler } from '@kodus/kodus-common/llm';
 import { DatabaseConnection } from '@/config/types';
 
 export interface ObservabilityConfig {
@@ -24,6 +25,11 @@ export interface ObservabilityConfig {
 
 @Injectable()
 export class ObservabilityService {
+    private readonly instances = new Map<
+        string,
+        ReturnType<typeof getObservability>
+    >();
+
     private static readonly DEFAULT_COLLECTIONS = {
         logs: 'observability_logs',
         telemetry: 'observability_telemetry',
@@ -103,10 +109,15 @@ export class ObservabilityService {
     ) {
         const correlationId =
             options.correlationId || this.generateCorrelationId();
-        const obsConfig = this.createObservabilityConfig(config, options);
+        const key = this.makeKey(config, options.serviceName);
 
-        const obs = getObservability(obsConfig);
-        obs.initialize();
+        let obs = this.instances.get(key);
+        if (!obs) {
+            const obsConfig = this.createObservabilityConfig(config, options);
+            obs = getObservability(obsConfig);
+            obs.initialize();
+            this.instances.set(key, obs);
+        }
 
         if (correlationId) {
             const ctx = obs.createContext(correlationId);
@@ -144,15 +155,83 @@ export class ObservabilityService {
     }
 
     buildConnectionString(config: DatabaseConnection): string {
+        if (!config?.host) {
+            throw new Error(
+                'ObservabilityService: host inválido ou ausente em DatabaseConnection',
+            );
+        }
+
+        const protocol = config.port ? 'mongodb' : 'mongodb+srv';
+
+        const hostItems = String(config.host)
+            .split(',')
+            .map((raw) => raw.trim())
+            .filter(Boolean)
+            .map((h) => ({ name: h, port: config.port }));
+
         return new ConnectionString('', {
             user: config.username,
             password: config.password,
-            protocol: config.port ? 'mongodb' : 'mongodb+srv',
-            hosts: [{ name: config.host, port: config.port }],
+            protocol,
+            hosts:
+                hostItems.length > 0
+                    ? hostItems
+                    : [{ name: config.host, port: config.port }],
         }).toString();
     }
 
     generateCorrelationId(): string {
         return IdGenerator.correlationId();
+    }
+
+    ensureContext(
+        config: DatabaseConnection,
+        serviceName: string,
+        correlationId?: string,
+    ) {
+        return this.initializeObservability(config, {
+            serviceName,
+            correlationId: correlationId || this.generateCorrelationId(),
+        });
+    }
+
+    private makeKey(config: DatabaseConnection, serviceName: string): string {
+        return JSON.stringify({
+            h: config.host,
+            p: config.port ?? null,
+            db: config.database ?? null,
+            s: serviceName,
+        });
+    }
+
+    startSpan(name: string) {
+        const obs = getObservability();
+        return obs.startSpan(name);
+    }
+
+    endSpan(
+        tokenTracker?: TokenTrackingHandler,
+        metadata?: Record<string, any>,
+        reset: boolean = true,
+    ) {
+        const obs = getObservability();
+        const span = obs.getCurrentSpan();
+        if (span) {
+            obs.withSpan(span, () => {
+                if (tokenTracker) {
+                    const tokenUsages = tokenTracker.getTokenUsages() as any;
+                    if (reset) {
+                        tokenTracker.reset();
+                    }
+
+                    span.setAttributes({
+                        tokenUsages,
+                        ...(metadata || {}),
+                    });
+                } else {
+                    span.setAttributes({ ...(metadata || {}) });
+                }
+            });
+        }
     }
 }

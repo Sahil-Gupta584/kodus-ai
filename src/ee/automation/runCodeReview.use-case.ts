@@ -420,6 +420,17 @@ export class RunCodeReviewAutomationUseCase {
                             noActiveSubscriptionType,
                         });
 
+                        this.logger.warn({
+                            message: 'No active subscription found',
+                            context: RunCodeReviewAutomationUseCase.name,
+                            metadata: {
+                                organizationAndTeamData,
+                                repository: params?.repository,
+                                prNumber: params?.prNumber,
+                                userGitId: params?.userGitId,
+                            },
+                        });
+
                         return null;
                     }
 

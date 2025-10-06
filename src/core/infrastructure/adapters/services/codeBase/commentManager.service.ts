@@ -54,7 +54,7 @@ import {
     PlaceholderContext,
 } from './utils/services/messageTemplateProcessor.service';
 import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
-import { endSpan, newSpan } from './utils/span.utils';
+import { ObservabilityService } from '../logger/observability.service';
 
 @Injectable()
 export class CommentManagerService implements ICommentManagerService {
@@ -69,7 +69,7 @@ export class CommentManagerService implements ICommentManagerService {
         private readonly parametersService: IParametersService,
         private readonly messageProcessor: MessageTemplateProcessor,
         private readonly promptRunnerService: PromptRunnerService,
-
+        private readonly observabilityService: ObservabilityService,
         private readonly permissionValidationService: PermissionValidationService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
@@ -189,7 +189,9 @@ export class CommentManagerService implements ICommentManagerService {
 
                 const userPrompt = `<changedFilesContext>${JSON.stringify(baseContext?.changedFiles, null, 2) || 'No files changed'}</changedFilesContext>`;
 
-                newSpan(`${CommentManagerService.name}::generateSummaryPR`);
+                this.observabilityService.startSpan(
+                    `${CommentManagerService.name}::generateSummaryPR`,
+                );
 
                 const promptRunner = new BYOKPromptRunnerService(
                     this.promptRunnerService,
@@ -224,7 +226,7 @@ export class CommentManagerService implements ICommentManagerService {
                     .setTemperature(0)
                     .execute();
 
-                endSpan(this.tokenTracker, {
+                this.observabilityService.endSpan(this.tokenTracker, {
                     organizationId: organizationAndTeamData?.organizationId,
                     prNumber: pullRequest?.number,
                     repositoryId: repository?.id,
@@ -933,7 +935,7 @@ ${reviewOptions}
 
             const userPrompt = `<codeSuggestionsContext>${JSON.stringify(baseContext?.codeSuggestions, null, 2) || 'No code suggestions provided'}</codeSuggestionsContext>`;
 
-            newSpan(
+            this.observabilityService.startSpan(
                 `${CommentManagerService.name}::repeatedCodeReviewSuggestionClustering`,
             );
 
@@ -969,7 +971,7 @@ ${reviewOptions}
                 .setTemperature(0)
                 .execute();
 
-            endSpan(this.tokenTracker, {
+            this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData?.organizationId,
                 prNumber,
             });
