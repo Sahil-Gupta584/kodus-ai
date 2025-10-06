@@ -38,10 +38,7 @@ import {
     TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
 import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
-import {
-    endSpan,
-    newSpan,
-} from '@/core/infrastructure/adapters/services/codeBase/utils/span.utils';
+import { ObservabilityService } from '@/core/infrastructure/adapters/services/logger/observability.service';
 
 //#region Interfaces
 // Interface for analyzer response
@@ -117,6 +114,7 @@ export class KodyRulesPrLevelAnalysisService
         private readonly tokenChunkingService: TokenChunkingService,
 
         private readonly promptRunnerService: PromptRunnerService,
+        private readonly observabilityService: ObservabilityService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
     }
@@ -934,7 +932,9 @@ export class KodyRulesPrLevelAnalysisService
         );
 
         try {
-            newSpan(`${KodyRulesPrLevelAnalysisService.name}::processChunk`);
+            this.observabilityService.startSpan(
+                `${KodyRulesPrLevelAnalysisService.name}::processChunk`,
+            );
 
             const analysis = await promptRunner
                 .builder()
@@ -965,7 +965,7 @@ export class KodyRulesPrLevelAnalysisService
                 .setTemperature(0)
                 .execute();
 
-            endSpan(this.tokenTracker, {
+            this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData.organizationId,
                 prNumber,
                 chunkIndex,
@@ -1277,7 +1277,7 @@ export class KodyRulesPrLevelAnalysisService
                 byokConfig,
             );
 
-            newSpan(
+            this.observabilityService.startSpan(
                 `${KodyRulesPrLevelAnalysisService.name}::processRuleGrouping`,
             );
 
@@ -1328,7 +1328,7 @@ export class KodyRulesPrLevelAnalysisService
                 ])
                 .execute();
 
-            endSpan(this.tokenTracker, {
+            this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData.organizationId,
                 prNumber,
                 ruleId: rule?.uuid,

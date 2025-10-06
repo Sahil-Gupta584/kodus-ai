@@ -24,7 +24,7 @@ import {
 } from '@kodus/kodus-common/llm';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
-import { endSpan, newSpan } from './utils/span.utils';
+import { ObservabilityService } from '../logger/observability.service';
 
 //#region Interfaces
 interface BatchProcessingConfig {
@@ -69,6 +69,7 @@ export class CrossFileAnalysisService {
         private readonly tokenChunkingService: TokenChunkingService,
 
         private readonly promptRunnerService: PromptRunnerService,
+        private readonly observabilityService: ObservabilityService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
     }
@@ -446,7 +447,9 @@ export class CrossFileAnalysisService {
 
         const runName = `crossFileAnalyzeCodeWithAI`;
 
-        newSpan(`${CrossFileAnalysisService.name}::processChunk`);
+        this.observabilityService.startSpan(
+            `${CrossFileAnalysisService.name}::processChunk`,
+        );
 
         const promptRunner = new BYOKPromptRunnerService(
             this.promptRunnerService,
@@ -485,7 +488,7 @@ export class CrossFileAnalysisService {
             })
             .execute();
 
-        endSpan(this.tokenTracker, {
+        this.observabilityService.endSpan(this.tokenTracker, {
             organizationId: organizationAndTeamData?.organizationId,
             prNumber,
             analysisType,

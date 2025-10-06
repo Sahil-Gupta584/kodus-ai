@@ -124,6 +124,7 @@ export class AutomationCodeReviewService
                 AutomationStatus.IN_PROGRESS, // in the future maybe pending?
                 'Automation started',
             );
+
             if (!execution) {
                 this.logger.warn({
                     message: `Could not create code review execution for PR #${pullRequest?.number}`,
@@ -150,6 +151,7 @@ export class AutomationCodeReviewService
                     teamAutomationId,
                     origin || 'automation',
                     action,
+                    execution.uuid,
                 );
 
             await this._handleExecutionCompletion(execution, result, payload);

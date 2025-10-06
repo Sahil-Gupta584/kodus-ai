@@ -50,10 +50,7 @@ import {
     TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
 import { status as Status } from '@grpc/grpc-js';
-import {
-    endSpan,
-    newSpan,
-} from '@/core/infrastructure/adapters/services/codeBase/utils/span.utils';
+import { ObservabilityService } from '@/core/infrastructure/adapters/services/logger/observability.service';
 
 @Injectable()
 export class CodeAstAnalysisService
@@ -75,6 +72,7 @@ export class CodeAstAnalysisService
         private readonly taskMicroserviceClient: ClientGrpc,
 
         private readonly promptRunnerService: PromptRunnerService,
+        private readonly observabilityService: ObservabilityService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
         this.tokenTracker = new TokenTrackingHandler();
@@ -102,7 +100,9 @@ export class CodeAstAnalysisService
 
             const payload = await this.prepareAnalysisContext(context);
 
-            newSpan(`${CodeAstAnalysisService.name}::analyzeASTWithAI`);
+            this.observabilityService.startSpan(
+                `${CodeAstAnalysisService.name}::analyzeASTWithAI`,
+            );
 
             const analysis = await this.promptRunnerService
                 .builder()
@@ -128,7 +128,7 @@ export class CodeAstAnalysisService
                 .setRunName('CodeASTAnalysisAI')
                 .execute();
 
-            endSpan(this.tokenTracker, {
+            this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: context.organizationAndTeamData.organizationId,
                 prNumber: context.pullRequest.number,
             });

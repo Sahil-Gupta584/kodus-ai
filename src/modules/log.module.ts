@@ -4,6 +4,7 @@ import { LogDatabaseRepository } from '@/core/infrastructure/adapters/repositori
 import { LogModelInstance } from '@/core/infrastructure/adapters/repositories/mongoose/schema';
 import { LogService } from '@/core/infrastructure/adapters/services/logger/log.service';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { ObservabilityService } from '@/core/infrastructure/adapters/services/logger/observability.service';
 import { Global, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 
@@ -20,7 +21,13 @@ import { MongooseModule } from '@nestjs/mongoose';
             provide: LOG_REPOSITORY_TOKEN,
             useClass: LogDatabaseRepository,
         },
+        ObservabilityService,
     ],
-    exports: [LOG_SERVICE_TOKEN, LOG_REPOSITORY_TOKEN, PinoLoggerService],
+    exports: [
+        LOG_SERVICE_TOKEN,
+        LOG_REPOSITORY_TOKEN,
+        PinoLoggerService,
+        ObservabilityService,
+    ],
 })
 export class LogModule {}

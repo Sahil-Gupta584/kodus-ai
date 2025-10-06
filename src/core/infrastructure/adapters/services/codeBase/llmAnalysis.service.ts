@@ -35,7 +35,7 @@ import {
     TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
 import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
-import { endSpan, newSpan } from './utils/span.utils';
+import { ObservabilityService } from '../logger/observability.service';
 
 export const LLM_ANALYSIS_SERVICE_TOKEN = Symbol('LLMAnalysisService');
 
@@ -47,6 +47,7 @@ export class LLMAnalysisService implements IAIAnalysisService {
     constructor(
         private readonly logger: PinoLoggerService,
         private readonly promptRunnerService: PromptRunnerService,
+        private readonly observabilityService: ObservabilityService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
@@ -130,7 +131,9 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         const baseContext = this.prepareAnalysisContext(fileContext, context);
 
         try {
-            newSpan(`${LLMAnalysisService.name}::analyzeCodeWithAI`);
+            this.observabilityService.startSpan(
+                `${LLMAnalysisService.name}::analyzeCodeWithAI`,
+            );
 
             const analysis = await promptRunner
                 .builder()
@@ -166,7 +169,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 .setRunName('analyzeCodeWithAI')
                 .execute();
 
-            endSpan(this.tokenTracker, {
+            this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData?.organizationId,
                 prNumber,
             });
@@ -257,7 +260,9 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 ),
             });
 
-            newSpan(`${LLMAnalysisService.name}::analyzeCodeWithAI_v2`);
+            this.observabilityService.startSpan(
+                `${LLMAnalysisService.name}::analyzeCodeWithAI_v2`,
+            );
 
             const analysis = await promptRunner
                 .builder()
@@ -299,7 +304,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 .setMaxReasoningTokens(3000)
                 .execute();
 
-            endSpan(this.tokenTracker, {
+            this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData?.organizationId,
                 prNumber,
             });
@@ -387,7 +392,9 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 : LLMModelProvider.OPENAI_GPT_4O;
 
         try {
-            newSpan(`${LLMAnalysisService.name}::generateCodeSuggestions`);
+            this.observabilityService.startSpan(
+                `${LLMAnalysisService.name}::generateCodeSuggestions`,
+            );
 
             const result = await this.promptRunnerService
                 .builder()
@@ -427,7 +434,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 .setTemperature(0)
                 .execute();
 
-            endSpan(this.tokenTracker, {
+            this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData?.organizationId,
                 sessionId,
             });
@@ -485,7 +492,9 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         );
 
         try {
-            newSpan(`${LLMAnalysisService.name}::severityAnalysisAssignment`);
+            this.observabilityService.startSpan(
+                `${LLMAnalysisService.name}::severityAnalysisAssignment`,
+            );
 
             const result = await promptRunner
                 .builder()
@@ -508,7 +517,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 .setTemperature(0)
                 .execute();
 
-            endSpan(this.tokenTracker, {
+            this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData?.organizationId,
                 prNumber,
             });
@@ -632,7 +641,9 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 ),
             });
 
-            newSpan(`${LLMAnalysisService.name}::filterSuggestionsSafeGuard`);
+            this.observabilityService.startSpan(
+                `${LLMAnalysisService.name}::filterSuggestionsSafeGuard`,
+            );
 
             const filteredSuggestions = await promptRunner
                 .builder()
@@ -664,7 +675,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 .setMaxReasoningTokens(5000)
                 .execute();
 
-            endSpan(this.tokenTracker, {
+            this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData?.organizationId,
                 prNumber,
             });
@@ -761,7 +772,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         };
 
         try {
-            newSpan(
+            this.observabilityService.startSpan(
                 `${LLMAnalysisService.name}::validateImplementedSuggestions`,
             );
 
@@ -790,7 +801,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 .setRunName('validateImplementedSuggestions')
                 .execute();
 
-            endSpan(this.tokenTracker, {
+            this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData?.organizationId,
                 prNumber,
             });

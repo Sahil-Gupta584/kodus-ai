@@ -11,10 +11,10 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 import { MCPManagerService } from '../../../mcp/services/mcp-manager.service';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseConnection } from '@/config/types';
-import { ConnectionString } from 'connection-string';
 import { LLMModelProvider, PromptRunnerService } from '@kodus/kodus-common/llm';
 import { SDKOrchestrator } from '@kodus/flow/dist/orchestration';
 import { PinoLoggerService } from '../../logger/pino.service';
+import { ObservabilityService } from '../../logger/observability.service';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import {
     PARAMETERS_SERVICE_TOKEN,
@@ -52,6 +52,7 @@ export class BusinessRulesValidationAgentProvider extends BaseAgentProvider {
         permissionValidationService: PermissionValidationService,
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
+        private readonly observabilityService: ObservabilityService,
         private readonly mcpManagerService?: MCPManagerService,
     ) {
         super(promptRunnerService, permissionValidationService);
@@ -111,40 +112,23 @@ export class BusinessRulesValidationAgentProvider extends BaseAgentProvider {
     }
 
     private async createOrchestration() {
-        let uri = new ConnectionString('', {
-            user: this.config.username,
-            password: this.config.password,
-            protocol: this.config.port ? 'mongodb' : 'mongodb+srv',
-            hosts: [{ name: this.config.host, port: this.config.port }],
-        }).toString();
-
         this.llmAdapter = super.createLLMAdapter('BusinessRulesValidation');
 
         this.orchestration = await createOrchestration({
             tenantId: 'kodus-agent-business-rules',
             llmAdapter: this.llmAdapter,
             mcpAdapter: this.mcpAdapter,
-            observability: {
-                logging: { enabled: true, level: 'info' },
-                mongodb: {
-                    type: 'mongodb',
-                    connectionString: uri,
-                    database: this.config.database,
-                },
-                telemetry: {
-                    enabled: true,
-                    serviceName: 'kodus-business-rules-validation',
-                    sampling: { rate: 1, strategy: 'probabilistic' },
-                    privacy: { includeSensitiveData: false },
-                    spanTimeouts: {
-                        enabled: true,
-                        maxDurationMs: 10 * 60 * 1000,
-                    },
-                },
-            },
+            observability:
+                this.observabilityService.createAgentObservabilityConfig(
+                    this.config,
+                    'kodus-business-rules-validation',
+                ),
             storage: {
                 type: StorageEnum.MONGODB,
-                connectionString: uri,
+                connectionString:
+                    this.observabilityService.buildConnectionString(
+                        this.config,
+                    ),
                 database: this.config.database,
             },
         });

@@ -52,7 +52,7 @@ import {
 import { v4 } from 'uuid';
 import { SUPPORTED_LANGUAGES } from '@/core/domain/codeBase/contracts/SupportedLanguages';
 import { LibraryKodyRule } from '@/config/types/kodyRules.type';
-import { endSpan, newSpan } from './utils/span.utils';
+import { ObservabilityService } from '../logger/observability.service';
 
 @Injectable()
 export class CommentAnalysisService {
@@ -64,6 +64,7 @@ export class CommentAnalysisService {
 
         private readonly logger: PinoLoggerService,
         private readonly promptRunnerService: PromptRunnerService,
+        private readonly observabilityService: ObservabilityService,
     ) {
         this.tokenTracker = new TokenTrackingHandler();
     }
@@ -85,7 +86,9 @@ export class CommentAnalysisService {
                 return [];
             }
 
-            newSpan(`${CommentAnalysisService.name}::categorizeComments`);
+            this.observabilityService.startSpan(
+                `${CommentAnalysisService.name}::categorizeComments`,
+            );
 
             const categorizedCommentsRes = await this.promptRunnerService
                 .builder()
@@ -114,7 +117,7 @@ export class CommentAnalysisService {
                 .setRunName('commentCategorizer')
                 .execute();
 
-            endSpan(this.tokenTracker);
+            this.observabilityService.endSpan(this.tokenTracker);
 
             const categorizedComments = categorizedCommentsRes?.suggestions;
 
@@ -191,7 +194,9 @@ export class CommentAnalysisService {
                 return [];
             }
 
-            newSpan(`${CommentAnalysisService.name}::generateKodyRules`);
+            this.observabilityService.startSpan(
+                `${CommentAnalysisService.name}::generateKodyRules`,
+            );
 
             const generatedRes = await this.promptRunnerService
                 .builder()
@@ -327,7 +332,7 @@ export class CommentAnalysisService {
                 .setRunName('kodyRulesGeneratorQualityFilter')
                 .execute();
 
-            endSpan(this.tokenTracker);
+            this.observabilityService.endSpan(this.tokenTracker);
 
             const filteredRulesUuids = filteredRulesUuidsRes?.uuids;
 
@@ -411,7 +416,9 @@ export class CommentAnalysisService {
         try {
             const { comments } = params;
 
-            newSpan(`${CommentAnalysisService.name}::filterComments`);
+            this.observabilityService.startSpan(
+                `${CommentAnalysisService.name}::filterComments`,
+            );
 
             const filteredCommentsIdsRes = await this.promptRunnerService
                 .builder()
@@ -440,7 +447,7 @@ export class CommentAnalysisService {
                 .setRunName('commentIrrelevanceFilter')
                 .execute();
 
-            endSpan(this.tokenTracker);
+            this.observabilityService.endSpan(this.tokenTracker);
 
             const filteredCommentsIds = filteredCommentsIdsRes?.ids;
 

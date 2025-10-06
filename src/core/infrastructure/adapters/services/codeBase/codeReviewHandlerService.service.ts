@@ -10,10 +10,10 @@ import { CodeReviewPipelineContext } from './codeReviewPipeline/context/code-rev
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { TaskStatus } from '@kodus/kodus-proto/task';
 import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
-import { getObservability, IdGenerator } from '@kodus/flow';
+import { createThreadId } from '@kodus/flow';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseConnection } from '@/config/types';
-import { ConnectionString } from 'connection-string';
+import { ObservabilityService } from '../logger/observability.service';
 
 @Injectable()
 export class CodeReviewHandlerService {
@@ -26,6 +26,8 @@ export class CodeReviewHandlerService {
         private readonly logger: PinoLoggerService,
 
         private readonly configService: ConfigService,
+
+        private readonly observabilityService: ObservabilityService,
     ) {
         this.config =
             this.configService.get<DatabaseConnection>('mongoDatabase');
@@ -40,41 +42,16 @@ export class CodeReviewHandlerService {
         teamAutomationId: string,
         origin: string,
         action: string,
+        executionId: string,
     ) {
         try {
-            const uri = new ConnectionString('', {
-                user: this.config.username,
-                password: this.config.password,
-                protocol: this.config.port ? 'mongodb' : 'mongodb+srv',
-                hosts: [{ name: this.config.host, port: this.config.port }],
-            }).toString();
-
-            const correlationId = IdGenerator.correlationId();
-            const obs = getObservability({
-                logging: { enabled: true, level: 'info' },
-                mongodb: {
-                    type: 'mongodb',
-                    connectionString: uri,
-                    database: this.config.database,
-                    collections: {
-                        logs: 'observability_logs',
-                        telemetry: 'observability_telemetry',
-                        errors: 'observability_errors',
-                    },
-                    batchSize: 100,
-                    flushIntervalMs: 5000,
-                    ttlDays: 30,
-                    enableObservability: true,
-                },
-                telemetry: {
-                    enabled: true,
+            await this.observabilityService.initializeObservability(
+                this.config,
+                {
                     serviceName: 'codeReviewPipeline',
-                    sampling: { rate: 1, strategy: 'probabilistic' },
+                    correlationId: executionId,
                 },
-            });
-            obs.initialize();
-            const ctx = obs.createContext(correlationId);
-            obs.setContext(ctx);
+            );
 
             const initialContext: CodeReviewPipelineContext = {
                 statusInfo: {
@@ -107,7 +84,7 @@ export class CodeReviewHandlerService {
                         status: TaskStatus.TASK_STATUS_UNSPECIFIED,
                     },
                 },
-                correlationId,
+                correlationId: executionId,
             };
 
             this.logger.log({
@@ -118,6 +95,7 @@ export class CodeReviewHandlerService {
                     organizationId: organizationAndTeamData.organizationId,
                     teamId: organizationAndTeamData.teamId,
                     pullRequestNumber: pullRequest.number,
+                    executionId,
                 },
             });
 
@@ -133,6 +111,7 @@ export class CodeReviewHandlerService {
                     suggestionsCount: result?.lineComments?.length || 0,
                     organizationAndTeamData,
                     pullRequestNumber: pullRequest.number,
+                    executionId,
                 },
             });
 
@@ -161,6 +140,7 @@ export class CodeReviewHandlerService {
                     organizationId: organizationAndTeamData.organizationId,
                     teamId: organizationAndTeamData.teamId,
                     pullRequestNumber: pullRequest.number,
+                    executionId,
                 },
             });
 

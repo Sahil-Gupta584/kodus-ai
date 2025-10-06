@@ -49,10 +49,7 @@ import {
     CODE_BASE_CONFIG_SERVICE_TOKEN,
     ICodeBaseConfigService,
 } from '@/core/domain/codeBase/contracts/CodeBaseConfigService.contract';
-import {
-    endSpan,
-    newSpan,
-} from '@/core/infrastructure/adapters/services/codeBase/utils/span.utils';
+import { ObservabilityService } from '@/core/infrastructure/adapters/services/logger/observability.service';
 import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
 
 // Interface for extended context used in Kody Rules analysis
@@ -94,6 +91,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         private readonly promptRunnerService: PromptRunnerService,
         private readonly kodyRulesValidationService: KodyRulesValidationService,
         private readonly logger: PinoLoggerService,
+        private readonly observabilityService: ObservabilityService,
     ) {
         // this.anthropic = new Anthropic({
         //     apiKey: process.env.API_ANTHROPIC_API_KEY,
@@ -288,7 +286,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
             const provider = LLMModelProvider.GEMINI_2_5_FLASH;
             const fallbackProvider = LLMModelProvider.GEMINI_2_5_PRO;
 
-            newSpan(
+            this.observabilityService.startSpan(
                 `${KodyRulesAnalysisService.name}::extractKodyRuleIdsFromContent`,
             );
 
@@ -330,7 +328,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 .setTemperature(0)
                 .execute();
 
-            endSpan(this.tokenTracker, {
+            this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData.organizationId,
                 prNumber: prNumber,
             });
@@ -423,7 +421,9 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         };
 
         try {
-            newSpan(`${KodyRulesAnalysisService.name}::analyzeCodeWithAI`);
+            this.observabilityService.startSpan(
+                `${KodyRulesAnalysisService.name}::analyzeCodeWithAI`,
+            );
 
             const classifier = this.getClassifier(
                 provider,
@@ -498,7 +498,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
             const generatedKodyRulesSuggestionsResult =
                 await generator.execute();
 
-            endSpan(this.tokenTracker, {
+            this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData.organizationId,
                 prNumber: prNumber,
             });
