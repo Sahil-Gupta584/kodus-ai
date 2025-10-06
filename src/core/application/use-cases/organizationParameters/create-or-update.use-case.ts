@@ -64,13 +64,24 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
         configValue: any,
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<boolean> {
+        const getConfigValue =
+            await this.organizationParametersService.findByKey(
+                organizationParametersKey,
+                organizationAndTeamData,
+            );
+
         let processedConfigValue = configValue;
         processedConfigValue = this.encryptByokConfigApiKey(configValue);
+
+        const mergedConfigValue = {
+            ...getConfigValue.configValue,
+            ...processedConfigValue,
+        };
 
         const result =
             await this.organizationParametersService.createOrUpdateConfig(
                 organizationParametersKey,
-                processedConfigValue,
+                mergedConfigValue,
                 organizationAndTeamData,
             );
 
@@ -84,28 +95,35 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
 
         const byokConfig = configValue as BYOKConfig;
 
-        if (!byokConfig.main.apiKey) {
-            throw new Error('apiKey is required for BYOK config');
+        if (!byokConfig.main && !byokConfig.fallback) {
+            throw new Error('At least main or fallback config is required');
         }
 
-        // Processa fallback apenas se existir, caso contrário mantém null/undefined
-        let fallbackConfig = null;
-        if (byokConfig.fallback && typeof byokConfig.fallback === 'object') {
-            fallbackConfig = {
+        let encryptedMain = null;
+        if (byokConfig.main) {
+            if (!byokConfig.main.apiKey) {
+                throw new Error('apiKey is required for main BYOK config');
+            }
+            encryptedMain = {
+                ...byokConfig.main,
+                apiKey: encrypt(byokConfig.main.apiKey),
+            };
+        }
+
+        let encryptedFallback = null;
+        if (byokConfig.fallback) {
+            if (!byokConfig.fallback.apiKey) {
+                throw new Error('apiKey is required for fallback BYOK config');
+            }
+            encryptedFallback = {
                 ...byokConfig.fallback,
-                apiKey: byokConfig.fallback.apiKey
-                    ? encrypt(byokConfig.fallback.apiKey)
-                    : undefined,
+                apiKey: encrypt(byokConfig.fallback.apiKey),
             };
         }
 
         return {
-            ...byokConfig,
-            main: {
-                ...byokConfig.main,
-                apiKey: encrypt(byokConfig.main.apiKey),
-            },
-            fallback: fallbackConfig,
+            ...(encryptedMain && { main: encryptedMain }),
+            ...(encryptedFallback && { fallback: encryptedFallback }),
         };
     }
 }

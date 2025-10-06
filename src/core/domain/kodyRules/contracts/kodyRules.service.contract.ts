@@ -58,9 +58,5 @@ export interface IKodyRulesService extends IKodyRulesRepository {
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<{
         total: number;
-        limit: number | null;
-        remaining: number | null;
-        canAddMore: boolean;
-        isLimited: boolean;
     }>;
 }

@@ -42,10 +42,13 @@ export class BYOKPromptRunnerService {
             });
 
         if (this.byokConfig?.main) {
+            const apiKey = decrypt(this.byokConfig.main.apiKey);
+            const fallbackApiKey = decrypt(this.byokConfig?.fallback?.apiKey);
+
             analysisBuilder = analysisBuilder
                 .setBYOKConfig({
                     provider: this.byokConfig.main.provider,
-                    apiKey: decrypt(this.byokConfig.main.apiKey),
+                    apiKey: apiKey,
                     model: this.byokConfig.main.model,
                     baseURL: this.byokConfig.main.baseURL,
                 })
@@ -53,7 +56,7 @@ export class BYOKPromptRunnerService {
                     this.byokConfig?.fallback?.apiKey
                         ? {
                               provider: this.byokConfig.fallback.provider,
-                              apiKey: decrypt(this.byokConfig.fallback.apiKey),
+                              apiKey: fallbackApiKey,
                               model: this.byokConfig.fallback.model,
                               baseURL: this.byokConfig.fallback.baseURL,
                           }

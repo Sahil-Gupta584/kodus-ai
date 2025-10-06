@@ -117,7 +117,9 @@ export class CommentAnalysisService {
                 .setRunName('commentCategorizer')
                 .execute();
 
-            this.observabilityService.endSpan(this.tokenTracker);
+            this.observabilityService.endSpan(this.tokenTracker, {
+                type: 'system',
+            });
 
             const categorizedComments = categorizedCommentsRes?.suggestions;
 

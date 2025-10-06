@@ -224,10 +224,12 @@ export class ObservabilityService {
     ) {
         const obs = getObservability();
         const span = obs.getCurrentSpan();
+
         if (span) {
             obs.withSpan(span, () => {
                 if (tokenTracker) {
                     const tokenUsages = tokenTracker.getTokenUsages() as any;
+
                     if (reset) {
                         tokenTracker.reset();
                     }

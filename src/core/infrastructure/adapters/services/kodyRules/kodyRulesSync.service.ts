@@ -928,6 +928,7 @@ export class KodyRulesSyncService {
                 repositoryId: params.repositoryId,
                 filePath: params.filePath,
                 fallback: false,
+                type: 'byok',
             });
 
             let normalizedResult: any[] = [];
@@ -1006,6 +1007,7 @@ export class KodyRulesSyncService {
                     repositoryId: params.repositoryId,
                     filePath: params.filePath,
                     fallback: true,
+                    type: 'byok',
                 });
 
                 const parsed = this.extractJsonArray(raw);

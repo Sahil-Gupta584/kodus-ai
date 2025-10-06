@@ -109,10 +109,6 @@ export class KodyRulesService implements IKodyRulesService {
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<{
         total: number;
-        limit: number | null;
-        remaining: number | null;
-        canAddMore: boolean;
-        isLimited: boolean;
     }> {
         try {
             const existing = await this.findByOrganizationId(
@@ -124,32 +120,8 @@ export class KodyRulesService implements IKodyRulesService {
                     (rule) => rule.status === KodyRulesStatus.ACTIVE,
                 )?.length || 0;
 
-            const isLimited =
-                await this.permissionValidationService.shouldLimitResources(
-                    organizationAndTeamData,
-                    KodyRulesService.name,
-                );
-
-            if (!isLimited) {
-                return {
-                    total: totalActiveRules,
-                    limit: null,
-                    remaining: null,
-                    canAddMore: true,
-                    isLimited: false,
-                };
-            }
-
-            const limit = this.kodyRulesValidationService.MAX_KODY_RULES;
-            const remaining = Math.max(0, limit - totalActiveRules);
-            const canAddMore = totalActiveRules < limit;
-
             return {
                 total: totalActiveRules,
-                limit,
-                remaining,
-                canAddMore,
-                isLimited: true,
             };
         } catch (error) {
             this.logger.error({

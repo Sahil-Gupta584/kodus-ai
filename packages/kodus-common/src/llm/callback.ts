@@ -31,13 +31,26 @@ export class TokenTrackingHandler extends BaseCallbackHandler {
         try {
             const usage: Omit<TokenUsage, 'model' | 'runId' | 'parentRunId'> =
                 {};
+            let copyUsage: Record<string, any> = {};
 
             if (output?.llmOutput?.tokenUsage) {
+                copyUsage = output.llmOutput.tokenUsage as Record<string, any>;
+
                 Object.assign(usage, output.llmOutput.tokenUsage);
             } else if (output?.llmOutput?.usage) {
                 Object.assign(usage, output.llmOutput.usage);
             } else if (output?.llmOutput?.usage_metadata) {
                 Object.assign(usage, output.llmOutput.usage_metadata);
+            }
+
+            if (
+                copyUsage.totalTokens &&
+                copyUsage.promptTokens &&
+                copyUsage.completionTokens
+            ) {
+                usage.total_tokens = copyUsage.totalTokens as number;
+                usage.input_tokens = copyUsage.promptTokens as number;
+                usage.output_tokens = copyUsage.completionTokens as number;
             }
 
             if (

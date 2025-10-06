@@ -131,6 +131,7 @@ export class CodeAstAnalysisService
             this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: context.organizationAndTeamData.organizationId,
                 prNumber: context.pullRequest.number,
+                type: 'system',
             });
 
             if (!analysis) {

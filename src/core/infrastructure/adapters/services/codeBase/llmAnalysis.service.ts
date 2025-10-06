@@ -172,6 +172,8 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData?.organizationId,
                 prNumber,
+                type: 'byok',
+                file: { name: fileContext?.file?.filename },
             });
 
             if (!analysis) {
@@ -305,8 +307,10 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 .execute();
 
             this.observabilityService.endSpan(this.tokenTracker, {
+                type: 'byok',
                 organizationId: organizationAndTeamData?.organizationId,
                 prNumber,
+                file: { name: fileContext?.file?.filename },
             });
 
             if (!analysis) {
@@ -520,6 +524,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData?.organizationId,
                 prNumber,
+                type: 'byok',
             });
 
             if (!result) {
@@ -678,6 +683,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData?.organizationId,
                 prNumber,
+                type: 'byok',
             });
 
             if (!filteredSuggestions) {
