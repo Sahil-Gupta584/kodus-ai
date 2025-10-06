@@ -43,14 +43,12 @@ export const withObservability: MiddlewareFactoryType<
 
             const attributes: Record<string, string | number> = {};
             attributes['runtime.event.type'] = String(event.type);
-            attributes['tenant.id'] =
+            attributes['tenantId'] =
                 (event.metadata?.tenantId as string) || 'unknown';
             const cid = (event.metadata?.correlationId as string) || 'unknown';
-            attributes['correlation.id'] = cid;
             // Canonical attribute for filtering
             attributes['correlationId'] = cid;
             attributes['thread.id'] = event.threadId;
-            attributes['event.ts'] = event.ts;
 
             const span = obs.startSpan(SPAN_NAMES.WORKFLOW_STEP, {
                 attributes,

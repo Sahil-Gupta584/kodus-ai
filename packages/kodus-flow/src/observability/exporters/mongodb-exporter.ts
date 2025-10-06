@@ -58,14 +58,10 @@ export class MongoDBExporter implements LogProcessor {
         this.logger = createLogger('mongodb-exporter');
     }
 
-    /**
-     * Inicializar conexão com MongoDB
-     */
     async initialize(): Promise<void> {
         if (this.isInitialized) return;
 
         try {
-            // Dynamic import para evitar dependência obrigatória
             const { MongoClient: mongoClient } = await import('mongodb');
 
             this.client = new mongoClient(this.config.connectionString, {
@@ -321,12 +317,14 @@ export class MongoDBExporter implements LogProcessor {
         const correlationId = item.attributes['correlationId'] as string;
         const tenantId =
             (item.attributes['agent.tenant.id'] as string) ||
+            (item.attributes['tenantId'] as string) ||
             (item.attributes['tenant.id'] as string);
         const executionId =
             (item.attributes['agent.execution.id'] as string) ||
             (item.attributes['execution.id'] as string);
         const sessionId =
             (item.attributes['agent.conversation.id'] as string) ||
+            (item.attributes['sessionId'] as string) ||
             (item.attributes['conversation.id'] as string);
         const agentName = item.attributes['agent.name'] as string;
         const toolName = item.attributes['tool.name'] as string;
@@ -411,7 +409,9 @@ export class MongoDBExporter implements LogProcessor {
                 this.logger.debug('Logs flushed to MongoDB', {
                     count: logsToFlush.length,
                     collection: this.config.collections.logs,
-                });
+                    // prevent re-processing this log by exporters
+                    skipProcessors: true,
+                } as any);
             }
         } catch (error) {
             this.logger.error(
@@ -439,7 +439,8 @@ export class MongoDBExporter implements LogProcessor {
                 this.logger.debug('Telemetry flushed to MongoDB', {
                     count: telemetryToFlush.length,
                     collection: this.config.collections.telemetry,
-                });
+                    skipProcessors: true,
+                } as any);
             }
         } catch (error) {
             this.logger.error(
@@ -467,7 +468,8 @@ export class MongoDBExporter implements LogProcessor {
                 this.logger.debug('Errors flushed to MongoDB', {
                     count: errorsToFlush.length,
                     collection: this.config.collections.errors,
-                });
+                    skipProcessors: true,
+                } as any);
             }
         } catch (error) {
             this.logger.error(
@@ -532,7 +534,7 @@ export function createMongoDBExporterFromStorage(
         batchSize: storageConfig.batchSize || 100,
         flushIntervalMs: storageConfig.flushIntervalMs || 5000,
         maxRetries: 3,
-        ttlDays: storageConfig.ttlDays || 30,
+        ttlDays: storageConfig.ttlDays ?? 30,
         enableObservability: storageConfig.enableObservability ?? true,
     };
 
@@ -546,208 +548,4 @@ export function createMongoDBExporter(
     config?: Partial<MongoDBExporterConfig>,
 ): MongoDBExporter {
     return new MongoDBExporter(config);
-}
-
-/**
- * MongoDB Metrics Exporter
- */
-export class MongoDBMetricsExporter {
-    private config: MongoDBExporterConfig;
-    private logger: ReturnType<typeof createLogger>;
-    private client: any = null;
-    private db: any = null;
-    private collection: any = null;
-    private isInitialized = false;
-
-    constructor(config: Partial<MongoDBExporterConfig> = {}) {
-        this.config = {
-            connectionString: 'mongodb://localhost:27017/kodus',
-            database: 'kodus',
-            collections: {
-                logs: 'observability_logs',
-                telemetry: 'observability_telemetry',
-                errors: 'observability_errors',
-            },
-            batchSize: 25, // Menor batch para métricas (menos frequente)
-            flushIntervalMs: 60000, // 1min para métricas (menos crítico)
-            maxRetries: 5, // Mais tentativas para métricas
-            ttlDays: 90, // Métricas mantidas por mais tempo
-            enableObservability: false,
-            ...config,
-        };
-
-        this.logger = createLogger('mongodb-metrics-exporter');
-    }
-
-    /**
-     * Initialize MongoDB connection
-     */
-    async initialize(): Promise<void> {
-        if (this.isInitialized) return;
-
-        try {
-            // Dynamic import para evitar dependência obrigatória
-            const { MongoClient: mongoClient } = await import('mongodb');
-
-            this.client = new mongoClient(this.config.connectionString, {
-                maxPoolSize: 10,
-                serverSelectionTimeoutMS: 5000,
-                connectTimeoutMS: 10000,
-                socketTimeoutMS: 45000,
-            });
-
-            await this.client.connect();
-            this.db = this.client.db(this.config.database);
-            this.collection = this.db.collection('observability_metrics'); // Dedicated metrics collection
-
-            // Create indexes for metrics with error handling
-            try {
-                // Check if TTL index already exists
-                const existingIndexes = await this.collection
-                    .listIndexes()
-                    .toArray();
-                const ttlIndexExists = existingIndexes.some(
-                    (index) =>
-                        index.key.timestamp === 1 && index.expireAfterSeconds,
-                );
-
-                if (!ttlIndexExists) {
-                    // Try to drop existing non-TTL index if it exists
-                    try {
-                        await this.collection.dropIndex('timestamp_1');
-                        this.logger.info(
-                            'Dropped existing timestamp index without TTL',
-                        );
-                    } catch {
-                        // Index doesn't exist or can't be dropped, continue
-                        this.logger.debug(
-                            'Could not drop existing index, continuing with TTL creation',
-                        );
-                    }
-
-                    // Create TTL index
-                    await this.collection.createIndex(
-                        { timestamp: 1 },
-                        {
-                            expireAfterSeconds:
-                                this.config.ttlDays * 24 * 60 * 60,
-                            background: true, // Create in background to avoid blocking
-                        },
-                    );
-                    this.logger.info(
-                        'Created TTL index for metrics collection',
-                    );
-                } else {
-                    this.logger.debug(
-                        'TTL index already exists for metrics collection',
-                    );
-                }
-
-                // Create other indexes if they don't exist
-                const indexesToCreate = [
-                    { key: { metricName: 1 }, name: 'metricName_1' },
-                    { key: { tenantId: 1 }, name: 'tenantId_1' },
-                ];
-
-                for (const indexSpec of indexesToCreate) {
-                    const indexExists = existingIndexes.some(
-                        (index) =>
-                            JSON.stringify(index.key) ===
-                            JSON.stringify(indexSpec.key),
-                    );
-
-                    if (!indexExists) {
-                        await this.collection.createIndex(indexSpec.key, {
-                            name: indexSpec.name,
-                            background: true,
-                        });
-                        this.logger.info(`Created index: ${indexSpec.name}`);
-                    }
-                }
-            } catch (indexError) {
-                this.logger.warn(
-                    'Failed to create some indexes, continuing without them',
-                    { error: (indexError as Error).message },
-                );
-                // Continue without indexes rather than failing initialization
-            }
-
-            this.isInitialized = true;
-
-            this.logger.info('MongoDB Metrics Exporter initialized', {
-                database: this.config.database,
-                collection: 'observability_metrics',
-            });
-        } catch (error) {
-            this.logger.error(
-                'Failed to initialize MongoDB Metrics Exporter',
-                error as Error,
-            );
-            throw error;
-        }
-    }
-
-    /**
-     * Export metrics to MongoDB
-     */
-    async exportMetrics(metrics: Record<string, any>): Promise<void> {
-        if (!this.isInitialized || !this.collection) {
-            this.logger.debug(
-                'Metrics exporter not initialized, skipping export',
-            );
-            return;
-        }
-
-        try {
-            const metricsItem: any = {
-                timestamp: new Date(),
-                correlationId: metrics.correlationId,
-                tenantId: metrics.tenantId,
-                executionId: metrics.executionId,
-                metrics: metrics,
-                createdAt: new Date(),
-            };
-
-            await this.collection.insertOne(metricsItem);
-
-            if (this.config.enableObservability) {
-                this.logger.debug('Metrics exported to MongoDB', {
-                    collection: 'observability_metrics',
-                });
-            }
-        } catch (error) {
-            this.logger.error(
-                'Failed to export metrics to MongoDB',
-                error as Error,
-            );
-        }
-    }
-
-    /**
-     * Flush metrics (for interface compatibility)
-     */
-    async flush(): Promise<void> {
-        // Metrics are exported immediately, no batch processing needed
-        this.logger.debug('Metrics flush called (no-op)');
-    }
-
-    /**
-     * Shutdown the exporter
-     */
-    async shutdown(): Promise<void> {
-        if (this.client) {
-            await this.client.close();
-            this.isInitialized = false;
-            this.logger.info('MongoDB Metrics Exporter shutdown');
-        }
-    }
-}
-
-/**
- * Factory para criar MongoDB Metrics Exporter
- */
-export function createMongoDBMetricsExporter(
-    config?: Partial<MongoDBExporterConfig>,
-): MongoDBMetricsExporter {
-    return new MongoDBMetricsExporter(config);
 }

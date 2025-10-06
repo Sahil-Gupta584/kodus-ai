@@ -9,7 +9,14 @@ import {
 } from './types.js';
 import { TelemetrySystem } from './telemetry.js';
 import { isEnhancedError } from '../core/error-unified.js';
-import { createLogger, addLogProcessor } from './logger.js';
+import {
+    createLogger,
+    addLogProcessor,
+    setGlobalLogLevel,
+    setSpanContextProvider,
+    setObservabilityContextProvider,
+} from './logger.js';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 import {
     executionTracker,
@@ -17,13 +24,7 @@ import {
     completeExecutionTracking,
     failExecutionTracking,
 } from './execution-tracker.js';
-import { getMetrics, MetricsSystem } from './metrics.js';
 
-// Log attribute constants
-const LOG_ATTRIBUTES = {
-    LEVEL: 'log.level' as const,
-    MESSAGE: 'log.message' as const,
-} as const;
 import {
     createAgentExecutionSpan,
     createToolExecutionSpan,
@@ -32,9 +33,7 @@ import {
 import { IdGenerator } from '../utils/id-generator.js';
 import {
     createMongoDBExporter,
-    createMongoDBMetricsExporter,
     MongoDBExporter,
-    MongoDBMetricsExporter,
 } from './exporters/mongodb-exporter.js';
 
 /**
@@ -43,11 +42,11 @@ import {
 export class ObservabilitySystem {
     private config: ObservabilityConfig;
     private telemetry: TelemetrySystem;
-    private metrics: MetricsSystem;
     private logger = createLogger('observability');
     private currentContext?: ObservabilityContext;
+    private alsContext = new AsyncLocalStorage<ObservabilityContext>();
     private mongodbExporter?: MongoDBExporter;
-    private mongodbMetricsExporter?: MongoDBMetricsExporter;
+    // Metrics exporter removed: metrics collection not used
 
     constructor(config: Partial<ObservabilityConfig> = {}) {
         this.config = {
@@ -75,9 +74,40 @@ export class ObservabilitySystem {
             ...config,
         };
 
-        // Initialize telemetry and metrics systems
+        // Initialize telemetry system
         this.telemetry = new TelemetrySystem(this.config.telemetry);
-        this.metrics = getMetrics();
+
+        // Bridge logger level from configuration (overrides env)
+        if (this.config.logging?.level) {
+            try {
+                setGlobalLogLevel(this.config.logging.level);
+            } catch {}
+        }
+
+        // Provide span context to logger for log-trace correlation
+        try {
+            setSpanContextProvider(() => {
+                const span = this.telemetry.getCurrentSpan();
+                const sc = span?.getSpanContext();
+                if (sc && sc.traceId && sc.spanId) {
+                    return { traceId: sc.traceId, spanId: sc.spanId };
+                }
+                return undefined;
+            });
+        } catch {}
+
+        // Provide observability context for default log fields
+        try {
+            setObservabilityContextProvider(() => {
+                const ctx = this.getContext();
+                if (!ctx) return undefined;
+                return {
+                    correlationId: ctx.correlationId,
+                    tenantId: ctx.tenantId,
+                    sessionId: ctx.sessionId,
+                };
+            });
+        } catch {}
 
         // Setup exporters (async initialization will be handled separately)
         // We'll call setupExporters after construction to avoid making constructor async
@@ -112,13 +142,17 @@ export class ObservabilitySystem {
      */
     setContext(context: ObservabilityContext): void {
         this.currentContext = context;
+        try {
+            // Make context available within this async chain
+            this.alsContext.enterWith(context);
+        } catch {}
     }
 
     /**
      * Get the current observability context
      */
     getContext(): ObservabilityContext | undefined {
-        return this.currentContext;
+        return this.alsContext.getStore() || this.currentContext;
     }
 
     /**
@@ -205,9 +239,6 @@ export class ObservabilitySystem {
             this.currentContext?.correlationId ||
             IdGenerator.correlationId();
 
-        // Record agent execution start
-        this.metrics.counter('agent_executions_total', 1, { agent: agentName });
-
         // Start execution tracking
         const executionId = startExecutionTracking(
             agentName,
@@ -250,14 +281,6 @@ export class ObservabilitySystem {
 
             const duration = Date.now() - startTime;
 
-            // Record success metrics
-            this.metrics.counter('agent_executions_success', 1, {
-                agent: agentName,
-            });
-            this.metrics.histogram('agent_execution_duration', duration, {
-                agent: agentName,
-            });
-
             completeExecutionTracking(executionId, result);
 
             this.logger.debug('Agent execution completed', {
@@ -270,14 +293,6 @@ export class ObservabilitySystem {
             return result;
         } catch (error) {
             const duration = Date.now() - startTime;
-
-            // Record error metrics
-            this.metrics.counter('agent_executions_error', 1, {
-                agent: agentName,
-            });
-            this.metrics.histogram('agent_execution_duration', duration, {
-                agent: agentName,
-            });
 
             span.recordException(error as Error);
             if (isEnhancedError(error as Error)) {
@@ -342,20 +357,11 @@ export class ObservabilitySystem {
 
         const span = this.startSpan(SPAN_NAMES.TOOL_EXECUTE, spanOptions);
 
-        const start = Date.now();
         return this.withSpan(span, async () => {
             try {
                 const result = await fn();
-                const duration = Date.now() - start;
-                this.metrics.counter('tool_executions_success', 1, {
-                    tool: toolName,
-                });
-                this.metrics.histogram('tool_execution_duration', duration, {
-                    tool: toolName,
-                });
                 return result;
             } catch (error) {
-                const duration = Date.now() - start;
                 if (isEnhancedError(error as Error)) {
                     try {
                         const e = error as any;
@@ -370,12 +376,6 @@ export class ObservabilitySystem {
                         }
                     } catch {}
                 }
-                this.metrics.counter('tool_executions_error', 1, {
-                    tool: toolName,
-                });
-                this.metrics.histogram('tool_execution_duration', duration, {
-                    tool: toolName,
-                });
                 span.recordException(error as Error);
                 throw error;
             }
@@ -396,41 +396,22 @@ export class ObservabilitySystem {
             ...context,
         };
 
-        // Log to console (always available) - using structured logging
-        this.logger.info(`[${level.toUpperCase()}] ${message}`, mergedContext);
-
-        // Log to MongoDB if available
-        if (this.mongodbExporter) {
-            // Convert to TraceItem format for MongoDB exporter
-            const traceItem = {
-                name: `log.${level}`,
-                context: {
-                    traceId: 'log-' + Date.now(),
-                    spanId: 'log-' + Date.now(),
-                    traceFlags: 0,
-                },
-                attributes: {
-                    [LOG_ATTRIBUTES.LEVEL]: level,
-                    [LOG_ATTRIBUTES.MESSAGE]: message,
-                    ...(mergedContext.correlationId && {
-                        correlationId: mergedContext.correlationId,
-                    }),
-                    ...(mergedContext.tenantId && {
-                        tenantId: mergedContext.tenantId,
-                    }),
-                    ...(mergedContext.executionId && {
-                        executionId: mergedContext.executionId,
-                    }),
-                    ...(mergedContext.sessionId && {
-                        sessionId: mergedContext.sessionId,
-                    }),
-                } as Record<string, string | number | boolean>,
-                startTime: Date.now(),
-                endTime: Date.now(),
-                duration: 0,
-                status: { code: 'ok' as const },
-            };
-            this.mongodbExporter.exportTelemetry(traceItem);
+        // Route to correct severity; logger handles processors (e.g., MongoDB)
+        switch (level) {
+            case 'debug':
+                this.logger.debug(message, mergedContext);
+                break;
+            case 'info':
+                this.logger.info(message, mergedContext);
+                break;
+            case 'warn':
+                this.logger.warn(message, mergedContext);
+                break;
+            case 'error':
+                this.logger.error(message, undefined, mergedContext);
+                break;
+            default:
+                this.logger.info(message, mergedContext);
         }
     }
 
@@ -443,7 +424,6 @@ export class ObservabilitySystem {
             active: number;
             totalTracked: number;
         };
-        metrics: ReturnType<MetricsSystem['getMetrics']>;
         buffers?: {
             traces: number;
             logs: number;
@@ -455,7 +435,6 @@ export class ObservabilitySystem {
                 active: executionTracker.getActiveExecutions().length,
                 totalTracked: executionTracker.getActiveExecutions().length, // Simplified
             },
-            metrics: this.metrics.getMetrics(),
             buffers: undefined, // MongoDB exporter doesn't provide buffer sizes
         };
     }
@@ -576,7 +555,7 @@ export class ObservabilitySystem {
                     batchSize: this.config.mongodb.batchSize || 100,
                     flushIntervalMs:
                         this.config.mongodb.flushIntervalMs || 30000,
-                    ttlDays: this.config.mongodb.ttlDays || 30,
+                    ttlDays: this.config.mongodb.ttlDays ?? 30,
                 };
 
                 this.mongodbExporter = createMongoDBExporter(mongoConfig);
@@ -604,10 +583,6 @@ export class ObservabilitySystem {
                 // Add MongoDB exporter as log processor
                 addLogProcessor(this.mongodbExporter);
 
-                // Setup MongoDB metrics exporter
-                this.mongodbMetricsExporter =
-                    createMongoDBMetricsExporter(mongoConfig);
-
                 this.logger.info(
                     'MongoDB exporter configured (needs initialization)',
                 );
@@ -626,6 +601,14 @@ export class ObservabilitySystem {
      * Setup error processors for automatic error handling
      */
     private setupErrorProcessors(): void {
+        // Idempotent guard to avoid multiple handler registrations
+        const anyProcess = process as any;
+        if (anyProcess.__kodusObsHandlersInstalled) {
+            this.logger.debug('Error processors already configured');
+            return;
+        }
+        anyProcess.__kodusObsHandlersInstalled = true;
+
         // Capture uncaught exceptions
         process.on('uncaughtException', (error) => {
             this.handleGlobalError(error, 'uncaught_exception');
@@ -701,18 +684,6 @@ export class ObservabilitySystem {
             }
         }
 
-        if (this.mongodbMetricsExporter) {
-            try {
-                await this.mongodbMetricsExporter.initialize();
-                this.logger.info(
-                    'MongoDB metrics exporter initialized successfully',
-                );
-            } catch (error) {
-                this.logger.error(
-                    'Failed to initialize MongoDB metrics exporter',
-                    error as Error,
-                );
-            }
-        }
+        // Metrics exporter removed — no initialization
     }
 }

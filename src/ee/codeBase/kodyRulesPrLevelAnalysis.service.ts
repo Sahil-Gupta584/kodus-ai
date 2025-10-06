@@ -969,6 +969,7 @@ export class KodyRulesPrLevelAnalysisService
                 organizationId: organizationAndTeamData.organizationId,
                 prNumber,
                 chunkIndex,
+                type: 'byok',
             });
 
             if (!analysis) {
@@ -1332,6 +1333,7 @@ export class KodyRulesPrLevelAnalysisService
                 organizationId: organizationAndTeamData.organizationId,
                 prNumber,
                 ruleId: rule?.uuid,
+                type: 'byok',
             });
 
             if (!grouping) {

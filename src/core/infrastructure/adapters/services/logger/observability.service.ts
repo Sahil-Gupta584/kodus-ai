@@ -39,7 +39,7 @@ export class ObservabilityService {
     private static readonly DEFAULT_SETTINGS = {
         batchSize: 100,
         flushIntervalMs: 5000,
-        ttlDays: 30,
+        ttlDays: 0,
         samplingRate: 1,
         spanTimeoutMs: 10 * 60 * 1000,
     };
@@ -73,13 +73,13 @@ export class ObservabilityService {
                 database: config.database,
                 ...(collections && { collections }),
                 batchSize:
-                    options.customSettings?.batchSize ||
+                    options.customSettings?.batchSize ??
                     ObservabilityService.DEFAULT_SETTINGS.batchSize,
                 flushIntervalMs:
-                    options.customSettings?.flushIntervalMs ||
+                    options.customSettings?.flushIntervalMs ??
                     ObservabilityService.DEFAULT_SETTINGS.flushIntervalMs,
                 ttlDays:
-                    options.customSettings?.ttlDays ||
+                    options.customSettings?.ttlDays ??
                     ObservabilityService.DEFAULT_SETTINGS.ttlDays,
                 enableObservability: true,
             },
@@ -88,7 +88,7 @@ export class ObservabilityService {
                 serviceName: options.serviceName,
                 sampling: {
                     rate:
-                        options.customSettings?.samplingRate ||
+                        options.customSettings?.samplingRate ??
                         ObservabilityService.DEFAULT_SETTINGS.samplingRate,
                     strategy: 'probabilistic' as const,
                 },
@@ -103,7 +103,7 @@ export class ObservabilityService {
         };
     }
 
-    initializeObservability(
+    async initializeObservability(
         config: DatabaseConnection,
         options: ObservabilityConfig,
     ) {
@@ -115,12 +115,20 @@ export class ObservabilityService {
         if (!obs) {
             const obsConfig = this.createObservabilityConfig(config, options);
             obs = getObservability(obsConfig);
-            obs.initialize();
+            try {
+                await obs.initialize();
+            } catch (e) {
+                // segue operação sem derrubar a app; logs ainda vão ao console
+            }
             this.instances.set(key, obs);
         }
 
         if (correlationId) {
             const ctx = obs.createContext(correlationId);
+            if (options.threadId) {
+                // mapear threadId para sessionId para facilitar correlação
+                (ctx as any).sessionId = options.threadId;
+            }
             obs.setContext(ctx);
         }
 
@@ -184,7 +192,7 @@ export class ObservabilityService {
         return IdGenerator.correlationId();
     }
 
-    ensureContext(
+    async ensureContext(
         config: DatabaseConnection,
         serviceName: string,
         correlationId?: string,
@@ -216,10 +224,12 @@ export class ObservabilityService {
     ) {
         const obs = getObservability();
         const span = obs.getCurrentSpan();
+
         if (span) {
             obs.withSpan(span, () => {
                 if (tokenTracker) {
                     const tokenUsages = tokenTracker.getTokenUsages() as any;
+
                     if (reset) {
                         tokenTracker.reset();
                     }

@@ -17,10 +17,6 @@ export class GetRulesLimitStatusUseCase {
 
     async execute(): Promise<{
         total: number;
-        limit: number | null;
-        remaining: number | null;
-        canAddMore: boolean;
-        isLimited: boolean;
     }> {
         const organizationId = this.request.user.organization.uuid;
 

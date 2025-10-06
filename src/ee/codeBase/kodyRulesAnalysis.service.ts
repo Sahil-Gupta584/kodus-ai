@@ -331,6 +331,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
             this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData.organizationId,
                 prNumber: prNumber,
+                type: 'byok',
             });
 
             if (!extraction) {
@@ -501,6 +502,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
             this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData.organizationId,
                 prNumber: prNumber,
+                type: 'byok',
             });
 
             const generatedKodyRulesSuggestions = this.processLLMResponse(

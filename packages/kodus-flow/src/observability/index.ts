@@ -16,8 +16,6 @@ export {
     getExecutionTracking,
 } from './execution-tracker.js';
 
-export * from './exporters/index.js';
-
 let globalObservability: ObservabilitySystem | undefined;
 
 export function getObservability(
@@ -52,5 +50,6 @@ export function applyErrorToSpan(span: any, error: Error) {
 export {
     getExecutionTraceability,
     getExecutionSummary,
-    TraceabilityResponse,
 } from './traceability.js';
+
+export type { TraceabilityResponse } from './traceability.js';

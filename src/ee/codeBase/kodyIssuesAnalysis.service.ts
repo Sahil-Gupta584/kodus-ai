@@ -115,6 +115,7 @@ export class KodyIssuesAnalysisService {
             this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData.organizationId,
                 prNumber: pullRequest.number,
+                type: 'byok',
             });
 
             if (!result) {
@@ -219,6 +220,7 @@ export class KodyIssuesAnalysisService {
             this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: context.organizationAndTeamData.organizationId,
                 prNumber: context.pullRequest.number,
+                type: 'byok',
             });
 
             if (!result) {
