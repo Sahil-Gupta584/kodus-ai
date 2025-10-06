@@ -7,7 +7,8 @@ import {
     ITokenUsageRepository,
     TokenUsageQueryContract,
     UsageSummaryContract,
-} from '@/core/domain/tokenUsage/contracts/token-usage.repository.contract';
+} from '@/core/domain/tokenUsage/contracts/tokenUsage.repository.contract';
+// debug counts removed
 
 @Injectable()
 export class TokenUsageRepository implements ITokenUsageRepository {
@@ -19,61 +20,10 @@ export class TokenUsageRepository implements ITokenUsageRepository {
     async getDailyUsage(
         query: TokenUsageQueryContract,
     ): Promise<DailyUsageResultContract[]> {
-        const { organizationId, start, end, prNumber, timezone = 'UTC' } = query;
-
-        const baseMatch: Record<string, any> = {
-            $and: [
-                {
-                    $or: [
-                        {
-                            'metadata.organizationAndTeamData.organizationId':
-                                organizationId,
-                        },
-                        {
-                            'organizationAndTeamData.organizationId':
-                                organizationId,
-                        },
-                        { 'metadata.organizationId': organizationId },
-                        { organizationId: organizationId },
-                    ],
-                },
-                typeof prNumber === 'number'
-                    ? {
-                          $or: [
-                              { 'metadata.prNumber': prNumber },
-                              { 'metadata.pullRequestId': prNumber },
-                              { prNumber: prNumber },
-                              { pullRequestId: prNumber },
-                          ],
-                      }
-                    : {},
-                {
-                    $or: [
-                        { 'metadata.tokenUsages.0': { $exists: true } },
-                        { 'tokenUsages.0': { $exists: true } },
-                    ],
-                },
-            ],
-        };
+        const { timezone = 'UTC' } = query;
 
         const pipeline = [
-            { $match: baseMatch },
-            {
-                $addFields: {
-                    __createdAt: {
-                        $ifNull: ['$createdAt', { $toDate: '$timestamp' }],
-                    },
-                },
-            },
-            { $match: { __createdAt: { $gte: start, $lte: end } } },
-            {
-                $addFields: {
-                    __tokenUsages: {
-                        $ifNull: ['$metadata.tokenUsages', '$tokenUsages'],
-                    },
-                },
-            },
-            { $unwind: '$__tokenUsages' },
+            ...this._createBasePipeline(query),
             {
                 $addFields: {
                     __day: {
@@ -82,43 +32,6 @@ export class TokenUsageRepository implements ITokenUsageRepository {
                             date: '$__createdAt',
                             timezone,
                         },
-                    },
-                    __usage: '$__tokenUsages',
-                },
-            },
-            {
-                $project: {
-                    __day: 1,
-                    __input: {
-                        $ifNull: [
-                            '$__usage.input_tokens',
-                            { $ifNull: ['$__usage.promptTokens', 0] },
-                        ],
-                    },
-                    __output: {
-                        $ifNull: [
-                            '$__usage.output_tokens',
-                            { $ifNull: ['$__usage.completionTokens', 0] },
-                        ],
-                    },
-                    __totalComputed: {
-                        $ifNull: [
-                            '$__usage.total_tokens',
-                            { $ifNull: ['$__usage.totalTokens', null] },
-                        ],
-                    },
-                    __outputReasoning: {
-                        $ifNull: ['$__usage.output_reasoning_tokens', 0],
-                    },
-                },
-            },
-            {
-                $addFields: {
-                    __total: {
-                        $ifNull: [
-                            '$__totalComputed',
-                            { $add: ['$__input', '$__output'] },
-                        ],
                     },
                 },
             },
@@ -144,104 +57,14 @@ export class TokenUsageRepository implements ITokenUsageRepository {
             },
         ];
 
-        // @ts-ignore generic output
         return this.logModel.aggregate(pipeline).exec();
     }
 
     async getSummary(
         query: TokenUsageQueryContract,
     ): Promise<UsageSummaryContract> {
-        const { organizationId, start, end, prNumber } = query;
-
-        const baseMatch: Record<string, any> = {
-            $and: [
-                {
-                    $or: [
-                        {
-                            'metadata.organizationAndTeamData.organizationId':
-                                organizationId,
-                        },
-                        {
-                            'organizationAndTeamData.organizationId':
-                                organizationId,
-                        },
-                        { 'metadata.organizationId': organizationId },
-                        { organizationId: organizationId },
-                    ],
-                },
-                typeof prNumber === 'number'
-                    ? {
-                          $or: [
-                              { 'metadata.prNumber': prNumber },
-                              { 'metadata.pullRequestId': prNumber },
-                              { prNumber: prNumber },
-                              { pullRequestId: prNumber },
-                          ],
-                      }
-                    : {},
-                {
-                    $or: [
-                        { 'metadata.tokenUsages.0': { $exists: true } },
-                        { 'tokenUsages.0': { $exists: true } },
-                    ],
-                },
-            ],
-        };
-
         const pipeline = [
-            { $match: baseMatch },
-            {
-                $addFields: {
-                    __createdAt: {
-                        $ifNull: ['$createdAt', { $toDate: '$timestamp' }],
-                    },
-                },
-            },
-            { $match: { __createdAt: { $gte: start, $lte: end } } },
-            {
-                $addFields: {
-                    __tokenUsages: {
-                        $ifNull: ['$metadata.tokenUsages', '$tokenUsages'],
-                    },
-                },
-            },
-            { $unwind: '$__tokenUsages' },
-            { $addFields: { __usage: '$__tokenUsages' } },
-            {
-                $project: {
-                    __input: {
-                        $ifNull: [
-                            '$__usage.input_tokens',
-                            { $ifNull: ['$__usage.promptTokens', 0] },
-                        ],
-                    },
-                    __output: {
-                        $ifNull: [
-                            '$__usage.output_tokens',
-                            { $ifNull: ['$__usage.completionTokens', 0] },
-                        ],
-                    },
-                    __totalComputed: {
-                        $ifNull: [
-                            '$__usage.total_tokens',
-                            { $ifNull: ['$__usage.totalTokens', null] },
-                        ],
-                    },
-                    __outputReasoning: {
-                        $ifNull: ['$__usage.output_reasoning_tokens', 0],
-                    },
-                },
-            },
-            {
-                $addFields: {
-                    __total: {
-                        $ifNull: [
-                            '$__totalComputed',
-                            { $add: ['$__input', '$__output'] },
-                        ],
-                    },
-                },
-            },
+            ...this._createBasePipeline(query),
             {
                 $group: {
                     _id: null,
@@ -272,4 +95,126 @@ export class TokenUsageRepository implements ITokenUsageRepository {
             }
         );
     }
+
+    private _createBasePipeline(query: TokenUsageQueryContract): any[] {
+        const { organizationId, start, end, prNumber } = query;
+
+        const dateFilter = {
+            $or: [
+                { createdAt: { $gte: start, $lte: end } },
+                {
+                    $and: [
+                        { createdAt: { $exists: false } },
+                        {
+                            $expr: {
+                                $and: [
+                                    {
+                                        $gte: [
+                                            { $toDate: '$timestamp' },
+                                            start,
+                                        ],
+                                    },
+                                    { $lte: [{ $toDate: '$timestamp' }, end] },
+                                ],
+                            },
+                        },
+                    ],
+                },
+            ],
+        };
+
+        const baseMatch: Record<string, any> = {
+            $and: [
+                {
+                    $or: [
+                        {
+                            'metadata.organizationAndTeamData.organizationId':
+                                organizationId,
+                        },
+                        {
+                            'organizationAndTeamData.organizationId':
+                                organizationId,
+                        },
+                        { 'metadata.organizationId': organizationId },
+                        { organizationId: organizationId },
+                    ],
+                },
+                typeof prNumber === 'number'
+                    ? {
+                          $or: [
+                              { 'metadata.prNumber': prNumber },
+                              { 'metadata.pullRequestId': prNumber },
+                              { prNumber: prNumber },
+                              { pullRequestId: prNumber },
+                          ],
+                      }
+                    : {},
+                {
+                    $or: [
+                        { 'metadata.tokenUsages.0': { $exists: true } },
+                        { 'tokenUsages.0': { $exists: true } },
+                    ],
+                },
+                dateFilter,
+            ],
+        };
+
+        return [
+            { $match: baseMatch },
+            {
+                $addFields: {
+                    __createdAt: {
+                        $ifNull: ['$createdAt', { $toDate: '$timestamp' }],
+                    },
+                },
+            },
+            {
+                $addFields: {
+                    __tokenUsages: {
+                        $ifNull: ['$metadata.tokenUsages', '$tokenUsages'],
+                    },
+                },
+            },
+            { $unwind: '$__tokenUsages' },
+            { $addFields: { __usage: '$__tokenUsages' } },
+            {
+                $project: {
+                    __createdAt: 1,
+                    __input: {
+                        $ifNull: [
+                            '$__usage.input_tokens',
+                            { $ifNull: ['$__usage.promptTokens', 0] },
+                        ],
+                    },
+                    __output: {
+                        $ifNull: [
+                            '$__usage.output_tokens',
+                            { $ifNull: ['$__usage.completionTokens', 0] },
+                        ],
+                    },
+                    __totalComputed: {
+                        $ifNull: [
+                            '$__usage.total_tokens',
+                            { $ifNull: ['$__usage.totalTokens', null] },
+                        ],
+                    },
+                    __outputReasoning: {
+                        $ifNull: ['$__usage.output_reasoning_tokens', 0],
+                    },
+                },
+            },
+            {
+                $addFields: {
+                    __total: {
+                        $ifNull: [
+                            '$__totalComputed',
+                            { $add: ['$__input', '$__output'] },
+                        ],
+                    },
+                },
+            },
+        ];
+    }
+
+    // debug counts removed
 }

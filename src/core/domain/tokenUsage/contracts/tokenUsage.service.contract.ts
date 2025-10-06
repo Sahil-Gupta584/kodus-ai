@@ -3,7 +3,7 @@ import type {
     ITokenUsageRepository,
     TokenUsageQueryContract,
     UsageSummaryContract,
-} from './token-usage.repository.contract';
+} from './tokenUsage.repository.contract';
 
 export const TOKEN_USAGE_SERVICE_TOKEN = Symbol('TokenUsageService');
 
@@ -15,4 +15,3 @@ export interface ITokenUsageService
 
     getSummary(query: TokenUsageQueryContract): Promise<UsageSummaryContract>;
 }
-

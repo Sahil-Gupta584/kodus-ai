@@ -30,4 +30,3 @@ export interface ITokenUsageRepository {
 
     getSummary(query: TokenUsageQueryContract): Promise<UsageSummaryContract>;
 }
-

@@ -3,15 +3,15 @@ import type {
     DailyUsageResultContract,
     TokenUsageQueryContract,
     UsageSummaryContract,
-} from '@/core/domain/tokenUsage/contracts/token-usage.repository.contract';
+} from '@/core/domain/tokenUsage/contracts/tokenUsage.repository.contract';
 import {
     ITokenUsageService,
     TOKEN_USAGE_SERVICE_TOKEN,
-} from '@/core/domain/tokenUsage/contracts/token-usage.service.contract';
+} from '@/core/domain/tokenUsage/contracts/tokenUsage.service.contract';
 import {
     ITokenUsageRepository,
     TOKEN_USAGE_REPOSITORY_TOKEN,
-} from '@/core/domain/tokenUsage/contracts/token-usage.repository.contract';
+} from '@/core/domain/tokenUsage/contracts/tokenUsage.repository.contract';
 
 @Injectable()
 export class TokenUsageService implements ITokenUsageService {
@@ -31,4 +31,6 @@ export class TokenUsageService implements ITokenUsageService {
     ): Promise<UsageSummaryContract> {
         return this.repository.getSummary(query);
     }
+
+    // debug counts removed
 }
