@@ -27,6 +27,7 @@ export const MODELS_WITHOUT_TEMPERATURE = new Set([
     'o1-mini-2024-09-12',
     'o1',
     'o1-2024-12-17',
+    'o1-2025-09-12',
 
     // OpenAI o3 series
     'o3-mini',
@@ -37,6 +38,9 @@ export const MODELS_WITHOUT_TEMPERATURE = new Set([
     // OpenAI o4 series
     'o4-mini',
     'o4-mini-2025-04-16',
+
+    // OpenAI gpt-5 series
+    'gpt-5',
 
     // OpenAI o3-pro
     'o3-pro',
@@ -54,6 +58,7 @@ const WITHOUT_TEMPERATURE_PATTERNS: RegExp[] = [
     /^o1(\b|[-_@])/, // all o1*
     /^o3(\b|[-_@])/, // all o3*
     /^o4(\b|[-_@])/, // all o4*
+    /^gpt-5(\b|[-_@])/, // all gpt-5*
 ];
 
 // Modelos que suportam reasoning
@@ -100,11 +105,27 @@ export const MODELS_WITH_REASONING = new Map<string, ReasoningConfig>([
     ['claude-3-7-sonnet-20250219', budget()],
 ]);
 
+// Models that do not support OpenAI Responses API JSON mode (response_format)
+const MODELS_WITHOUT_JSON_MODE = new Set([
+    'gpt-4',
+    'gpt-4-0314',
+    'gpt-4-0613',
+    'gpt-4-32k',
+    'gpt-4-32k-0314',
+    'gpt-4-32k-0613',
+    'gpt-3.5-turbo',
+    'gpt-3.5-turbo-0301',
+    'gpt-3.5-turbo-0613',
+    'gpt-3.5-turbo-16k',
+    'gpt-3.5-turbo-16k-0613',
+]);
+
 const REASONING_PATTERN_RULES: Array<[RegExp, ReasoningConfig]> = [
     // OpenAI families (level)
     [/^o1(\b|[-_@])/, level()],
     [/^o3(\b|[-_@])/, level()],
     [/^o4(\b|[-_@])/, level()],
+    [/^gpt-5(\b|[-_@])/, level()],
     [/deep-research/i, level()],
 
     // Gemini 2.5 (budget)
@@ -197,6 +218,18 @@ export function getModelCapabilities(model: string): ModelCapabilities {
         reasoningConfig,
         defaultMaxTokens,
     };
+}
+
+export function supportsJsonMode(model: string | undefined | null): boolean {
+    if (!model) {
+        return false;
+    }
+
+    if (MODELS_WITHOUT_JSON_MODE.has(model)) {
+        return false;
+    }
+
+    return true;
 }
 
 export function supportsReasoning(model: string): boolean {

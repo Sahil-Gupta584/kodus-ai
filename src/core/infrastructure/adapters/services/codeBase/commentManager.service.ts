@@ -189,8 +189,9 @@ export class CommentManagerService implements ICommentManagerService {
 
                 const userPrompt = `<changedFilesContext>${JSON.stringify(baseContext?.changedFiles, null, 2) || 'No files changed'}</changedFilesContext>`;
 
+                const runName = 'generateSummaryPR';
                 this.observabilityService.startSpan(
-                    `${CommentManagerService.name}::generateSummaryPR`,
+                    `${CommentManagerService.name}::${runName}`,
                 );
 
                 const promptRunner = new BYOKPromptRunnerService(
@@ -218,11 +219,18 @@ export class CommentManagerService implements ICommentManagerService {
                         teamId: organizationAndTeamData?.teamId,
                         pullRequestId: pullRequest?.number,
                         repositoryId: repository?.id,
-                        provider: LLMModelProvider.GEMINI_2_5_FLASH,
-                        fallbackProvider,
+                        provider:
+                            byokConfigValue?.main?.provider ||
+                            LLMModelProvider.GEMINI_2_5_FLASH,
+                        fallbackProvider:
+                            byokConfigValue?.fallback?.provider ||
+                            fallbackProvider,
+                        model: byokConfigValue?.main?.model,
+                        fallbackModel: byokConfigValue?.fallback?.model,
+                        runName,
                     })
                     .addCallbacks([this.tokenTracker])
-                    .setRunName('generateSummaryPR')
+                    .setRunName(runName)
                     .setTemperature(0)
                     .execute();
 
@@ -230,6 +238,7 @@ export class CommentManagerService implements ICommentManagerService {
                     organizationId: organizationAndTeamData?.organizationId,
                     prNumber: pullRequest?.number,
                     repositoryId: repository?.id,
+                    runName,
                 });
 
                 if (!result) {
@@ -935,8 +944,9 @@ ${reviewOptions}
 
             const userPrompt = `<codeSuggestionsContext>${JSON.stringify(baseContext?.codeSuggestions, null, 2) || 'No code suggestions provided'}</codeSuggestionsContext>`;
 
+            const runName = 'repeatedCodeReviewSuggestionClustering';
             this.observabilityService.startSpan(
-                `${CommentManagerService.name}::repeatedCodeReviewSuggestionClustering`,
+                `${CommentManagerService.name}::${runName}`,
             );
 
             const promptRunner = new BYOKPromptRunnerService(
@@ -963,17 +973,22 @@ ${reviewOptions}
                     organizationId: organizationAndTeamData?.organizationId,
                     teamId: organizationAndTeamData?.teamId,
                     pullRequestId: prNumber,
-                    provider,
-                    fallbackProvider,
+                    provider: byokConfig?.main?.provider || provider,
+                    model: byokConfig?.main?.model,
+                    fallbackProvider:
+                        byokConfig?.fallback?.provider || fallbackProvider,
+                    fallbackModel: byokConfig?.fallback?.model,
+                    runName,
                 })
                 .addCallbacks([this.tokenTracker])
-                .setRunName('repeatedCodeReviewSuggestionClustering')
+                .setRunName(runName)
                 .setTemperature(0)
                 .execute();
 
             this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: organizationAndTeamData?.organizationId,
                 prNumber,
+                runName,
             });
 
             if (!result) {
@@ -985,8 +1000,9 @@ ${reviewOptions}
                     metadata: {
                         organizationAndTeamData,
                         prNumber,
-                        provider,
-                        fallbackProvider,
+                        provider: byokConfig?.main?.provider || provider,
+                        fallbackProvider:
+                            byokConfig?.fallback?.provider || fallbackProvider,
                     },
                 });
                 throw new Error(message);

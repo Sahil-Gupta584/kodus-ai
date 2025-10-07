@@ -97,11 +97,12 @@ export class CodeAstAnalysisService
         try {
             const provider = LLMModelProvider.NOVITA_DEEPSEEK_V3_0324;
             const fallbackProvider = LLMModelProvider.OPENAI_GPT_4O;
+            const runName = 'CodeASTAnalysisAI';
 
             const payload = await this.prepareAnalysisContext(context);
 
             this.observabilityService.startSpan(
-                `${CodeAstAnalysisService.name}::analyzeASTWithAI`,
+                `${CodeAstAnalysisService.name}::${runName}`,
             );
 
             const analysis = await this.promptRunnerService
@@ -122,16 +123,18 @@ export class CodeAstAnalysisService
                         context?.organizationAndTeamData?.organizationId,
                     teamId: context?.organizationAndTeamData?.teamId,
                     pullRequestId: context?.pullRequest?.number,
+                    runName,
                 })
                 .setTemperature(0)
                 .addCallbacks([this.tokenTracker])
-                .setRunName('CodeASTAnalysisAI')
+                .setRunName(runName)
                 .execute();
 
             this.observabilityService.endSpan(this.tokenTracker, {
                 organizationId: context.organizationAndTeamData.organizationId,
                 prNumber: context.pullRequest.number,
                 type: 'system',
+                runName,
             });
 
             if (!analysis) {

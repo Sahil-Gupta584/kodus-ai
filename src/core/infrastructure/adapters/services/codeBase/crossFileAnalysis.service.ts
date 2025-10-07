@@ -445,10 +445,10 @@ export class CrossFileAnalysisService {
 
         const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
-        const runName = `crossFileAnalyzeCodeWithAI`;
+        const runName = 'crossFileAnalyzeCodeWithAI';
 
         this.observabilityService.startSpan(
-            `${CrossFileAnalysisService.name}::processChunk`,
+            `${CrossFileAnalysisService.name}::${runName}`,
         );
 
         const promptRunner = new BYOKPromptRunnerService(
@@ -482,16 +482,26 @@ export class CrossFileAnalysisService {
             .addMetadata({
                 organizationAndTeamData,
                 prNumber,
-                provider: provider,
-                fallbackProvider: fallbackProvider,
+                provider:
+                    context?.codeReviewConfig?.byokConfig?.main?.provider ||
+                    provider,
+                model: context?.codeReviewConfig?.byokConfig?.main?.model,
+                fallbackProvider:
+                    context?.codeReviewConfig?.byokConfig?.fallback?.provider ||
+                    fallbackProvider,
+                fallbackModel:
+                    context?.codeReviewConfig?.byokConfig?.fallback?.model,
                 analysisType,
+                runName,
             })
+            .setRunName(runName)
             .execute();
 
         this.observabilityService.endSpan(this.tokenTracker, {
             organizationId: organizationAndTeamData?.organizationId,
             prNumber,
             analysisType,
+            runName,
         });
 
         if (!analysis) {

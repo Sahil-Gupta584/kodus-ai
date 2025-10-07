@@ -49,11 +49,11 @@ import {
 } from '@/core/infrastructure/adapters/services/codeBase/crossFileAnalysis.service';
 import { TokenChunkingModule } from './tokenChunking.module';
 import { MessageTemplateProcessor } from '@/core/infrastructure/adapters/services/codeBase/utils/services/messageTemplateProcessor.service';
-import { KodyFineTuningContextModule } from '@/core/infrastructure/adapters/services/kodyFineTuning/fineTuningContext/kodyFineTuningContext.module';
 import { KodyFineTuningService } from '@/core/infrastructure/adapters/services/kodyFineTuning/kodyFineTuning.service';
 import { LicenseModule } from '@/ee/license/license.module';
 import { LicenseService } from '@/ee/license/license.service';
 import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
+import { KodyFineTuningContextModule } from './kodyFineTuningContext.module';
 
 @Module({
     imports: [

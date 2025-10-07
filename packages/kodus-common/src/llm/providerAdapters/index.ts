@@ -10,6 +10,7 @@ export {
     supportsTemperature,
     getReasoningType,
     supportsBudgetReasoning,
+    supportsJsonMode,
 } from './capabilities';
 export type { ReasoningConfig, ModelCapabilities } from './modelTypes';
 

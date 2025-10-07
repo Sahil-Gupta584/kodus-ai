@@ -1,5 +1,6 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { resolveModelOptions } from './resolver';
+import { supportsJsonMode } from './capabilities';
 import { AdapterBuildParams, ProviderAdapter } from './types';
 
 export class OpenAIAdapter implements ProviderAdapter {
@@ -11,6 +12,13 @@ export class OpenAIAdapter implements ProviderAdapter {
             maxReasoningTokens: options?.maxReasoningTokens,
         });
 
+        const reasoningEffort =
+            resolved.supportsReasoning &&
+            resolved.reasoningType === 'level' &&
+            resolved.resolvedReasoningLevel
+                ? resolved.resolvedReasoningLevel
+                : undefined;
+
         const payload: ConstructorParameters<typeof ChatOpenAI>[0] = {
             modelName: model,
             openAIApiKey: apiKey,
@@ -20,10 +28,19 @@ export class OpenAIAdapter implements ProviderAdapter {
             ...(resolved.temperature !== undefined
                 ? { temperature: resolved.temperature }
                 : {}),
-            ...(resolved.supportsReasoning &&
-            resolved.reasoningType === 'level' &&
-            resolved.resolvedReasoningLevel
-                ? { reasoning: { effort: resolved.resolvedReasoningLevel } }
+            ...(reasoningEffort
+                ? {
+                      reasoning: { effort: reasoningEffort },
+                      reasoningEffort,
+                  }
+                : {}),
+            ...(resolved.supportsReasoning && resolved.reasoningType === 'level'
+                ? { useResponsesApi: true }
+                : {}),
+            ...(options?.jsonMode && supportsJsonMode(model)
+                ? {
+                      response_format: { type: 'json_object' as const },
+                  }
                 : {}),
             callbacks: options?.callbacks,
             configuration: {

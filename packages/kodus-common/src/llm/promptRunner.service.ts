@@ -141,26 +141,35 @@ export class PromptRunnerService {
         try {
             this.validateParams(params);
 
-            const { fallbackProvider, byokFallbackConfig } = params;
+            const { fallbackProvider, byokConfig, byokFallbackConfig } = params;
 
             const mainChain = this.createProviderChain<Payload, OutputType>(
                 params,
             );
-
             if (!mainChain) {
                 throw new Error('Main chain could not be created');
             }
 
-            // Considerar tanto fallbackProvider quanto byokFallbackConfig
+            // Se não houver fallback / byokFallback, só retorna mainChain ou com config,
+            // mas se byokConfig existir, evitar aplicar withConfig
             if (!fallbackProvider && !byokFallbackConfig) {
-                return mainChain.withConfig(params);
+                const sanitizedParams = { ...params };
+
+                if (byokConfig) {
+                    delete sanitizedParams?.maxReasoningTokens;
+                    delete sanitizedParams?.byokConfig;
+                    delete sanitizedParams?.byokFallbackConfig;
+                    delete sanitizedParams?.jsonMode;
+                    delete sanitizedParams?.json;
+                }
+
+                return mainChain.withConfig(sanitizedParams);
             }
 
             const fallbackChain = this.createProviderChain<Payload, OutputType>(
                 params,
                 true,
             );
-
             if (!fallbackChain) {
                 throw new Error('Fallback chain could not be created');
             }
@@ -169,7 +178,19 @@ export class PromptRunnerService {
                 fallbacks: [fallbackChain],
             });
 
-            return withFallbacks.withConfig(params);
+            const sanitizedParams = { ...params };
+
+            if (byokConfig) {
+                if (byokConfig) {
+                    delete sanitizedParams?.maxReasoningTokens;
+                    delete sanitizedParams?.byokConfig;
+                    delete sanitizedParams?.byokFallbackConfig;
+                    delete sanitizedParams?.jsonMode;
+                    delete sanitizedParams?.json;
+                }
+            }
+
+            return withFallbacks.withConfig(sanitizedParams);
         } catch (error) {
             this.logger.error({
                 message: 'Error creating chain',

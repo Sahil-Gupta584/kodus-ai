@@ -86,8 +86,9 @@ export class CommentAnalysisService {
                 return [];
             }
 
+            const runName = 'commentCategorizer';
             this.observabilityService.startSpan(
-                `${CommentAnalysisService.name}::categorizeComments`,
+                `${CommentAnalysisService.name}::${runName}`,
             );
 
             const categorizedCommentsRes = await this.promptRunnerService
@@ -112,13 +113,15 @@ export class CommentAnalysisService {
                 .addMetadata({
                     context: CommentAnalysisService.name,
                     metadata: params,
+                    runName,
                 })
                 .addCallbacks([this.tokenTracker])
-                .setRunName('commentCategorizer')
+                .setRunName(runName)
                 .execute();
 
             this.observabilityService.endSpan(this.tokenTracker, {
                 type: 'system',
+                runName,
             });
 
             const categorizedComments = categorizedCommentsRes?.suggestions;
@@ -196,8 +199,9 @@ export class CommentAnalysisService {
                 return [];
             }
 
+            const runName = 'generateKodyRules';
             this.observabilityService.startSpan(
-                `${CommentAnalysisService.name}::generateKodyRules`,
+                `${CommentAnalysisService.name}::${runName}`,
             );
 
             const generatedRes = await this.promptRunnerService
@@ -223,9 +227,10 @@ export class CommentAnalysisService {
                 .addMetadata({
                     context: CommentAnalysisService.name,
                     metadata: params,
+                    runName,
                 })
+                .setRunName(runName)
                 .addCallbacks([this.tokenTracker])
-                .setRunName('kodyRulesGenerator')
                 .execute();
 
             const generated = generatedRes?.rules as Partial<IKodyRule>[];
@@ -279,6 +284,7 @@ export class CommentAnalysisService {
                     .addMetadata({
                         context: CommentAnalysisService.name,
                         metadata: params,
+                        runName,
                     })
                     .addCallbacks([this.tokenTracker])
                     .setRunName('kodyRulesGeneratorDuplicateFilter')
@@ -329,12 +335,15 @@ export class CommentAnalysisService {
                 .addMetadata({
                     context: CommentAnalysisService.name,
                     metadata: params,
+                    runName,
                 })
                 .addCallbacks([this.tokenTracker])
                 .setRunName('kodyRulesGeneratorQualityFilter')
                 .execute();
 
-            this.observabilityService.endSpan(this.tokenTracker);
+            this.observabilityService.endSpan(this.tokenTracker, {
+                runName,
+            });
 
             const filteredRulesUuids = filteredRulesUuidsRes?.uuids;
 
@@ -418,8 +427,9 @@ export class CommentAnalysisService {
         try {
             const { comments } = params;
 
+            const runName = 'commentIrrelevanceFilter';
             this.observabilityService.startSpan(
-                `${CommentAnalysisService.name}::filterComments`,
+                `${CommentAnalysisService.name}::${runName}`,
             );
 
             const filteredCommentsIdsRes = await this.promptRunnerService
@@ -444,12 +454,15 @@ export class CommentAnalysisService {
                 .addMetadata({
                     context: CommentAnalysisService.name,
                     metadata: params,
+                    runName,
                 })
                 .addCallbacks([this.tokenTracker])
-                .setRunName('commentIrrelevanceFilter')
+                .setRunName(runName)
                 .execute();
 
-            this.observabilityService.endSpan(this.tokenTracker);
+            this.observabilityService.endSpan(this.tokenTracker, {
+                runName,
+            });
 
             const filteredCommentsIds = filteredCommentsIdsRes?.ids;
 

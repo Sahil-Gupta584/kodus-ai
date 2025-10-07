@@ -36,7 +36,7 @@ import { TeamAutomationModule } from './teamAutomation.module';
 import { PullRequestMessagesModule } from './pullRequestMessages.module';
 import { ValidateNewCommitsStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/validate-new-commits.stage';
 import { ResolveConfigStage } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/stages/resolve-config.stage';
-import { KodyFineTuningContextModule } from '@/core/infrastructure/adapters/services/kodyFineTuning/fineTuningContext/kodyFineTuningContext.module';
+import { KodyFineTuningContextModule } from './kodyFineTuningContext.module';
 
 @Module({
     imports: [
