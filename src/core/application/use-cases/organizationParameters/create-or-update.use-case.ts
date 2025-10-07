@@ -74,7 +74,7 @@ export class CreateOrUpdateOrganizationParametersUseCase implements IUseCase {
         processedConfigValue = this.encryptByokConfigApiKey(configValue);
 
         const mergedConfigValue = {
-            ...getConfigValue.configValue,
+            ...getConfigValue?.configValue,
             ...processedConfigValue,
         };
 

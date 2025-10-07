@@ -8,8 +8,8 @@ import { GlobalParametersModule } from './global-parameters.module';
 import { SuggestionEmbeddedDatabaseRepository } from '@/core/infrastructure/adapters/services/kodyFineTuning/suggestionEmbedded.repository';
 import { KodyFineTuningService } from '@/core/infrastructure/adapters/services/kodyFineTuning/kodyFineTuning.service';
 import { SuggestionEmbeddedService } from '@/core/infrastructure/adapters/services/kodyFineTuning/suggestionEmbedded/suggestionEmbedded.service';
-import { SUGGESTION_EMBEDDED_REPOSITORY_TOKEN } from '@/core/infrastructure/adapters/services/kodyFineTuning/domain/suggestionEmbedded/contracts/suggestionEmbedded.repository.contract';
-import { SUGGESTION_EMBEDDED_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/kodyFineTuning/domain/suggestionEmbedded/contracts/suggestionEmbedded.service.contract';
+import { SUGGESTION_EMBEDDED_REPOSITORY_TOKEN } from '@/core/domain/kodyFineTuning/suggestionEmbedded/contracts/suggestionEmbedded.repository.contract';
+import { SUGGESTION_EMBEDDED_SERVICE_TOKEN } from '@/core/domain/kodyFineTuning/suggestionEmbedded/contracts/suggestionEmbedded.service.contract';
 
 @Module({
     imports: [

@@ -1,10 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { ChatOpenAI } from '@langchain/openai';
-import { ChatAnthropic } from '@langchain/anthropic';
-import { ChatGoogle } from '@langchain/google-gauth';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { Callbacks } from '@langchain/core/callbacks/manager';
-import { getModelCapabilities, supportsTemperature } from './modelCapabilities';
+import { getAdapter } from './providerAdapters/index';
 
 export enum BYOKProvider {
     OPENAI = 'openai',
@@ -44,180 +41,38 @@ export class BYOKProviderService {
             callbacks?: Callbacks;
             jsonMode?: boolean;
             maxReasoningTokens?: number;
+            reasoningLevel?: 'low' | 'medium' | 'high';
         },
     ): BaseChatModel {
         const { provider, apiKey, model, baseURL } = config.main;
+        const adapter = getAdapter(provider);
 
-        const defaultOptions: Record<string, unknown> = {
-            maxTokens: options?.maxTokens ?? -1,
-            callbacks: options?.callbacks ?? [],
-            temperature: options?.temperature ?? 0,
-            maxReasoningTokens: options?.maxReasoningTokens ?? 1,
-        };
-
-        const capabilities = getModelCapabilities(model);
-        console.log('@@capabilities 1111', capabilities);
-
-        if (!supportsTemperature(model)) {
-            delete defaultOptions.temperature;
+        if (provider === BYOKProvider.OPENAI_COMPATIBLE && !baseURL) {
+            throw new Error(
+                'baseURL is required for OpenAI Compatible provider',
+            );
         }
 
-        // Cria commonOptions sem maxReasoningTokens (usado apenas no Gemini)
-        const commonOptions: Record<string, any> = {
-            maxTokens: defaultOptions.maxTokens,
-            callbacks: defaultOptions.callbacks,
-        };
-
-        if (defaultOptions.temperature !== undefined) {
-            commonOptions.temperature = defaultOptions.temperature;
-        }
-
-        switch (provider) {
-            case BYOKProvider.OPENAI:
-                return new ChatOpenAI({
-                    modelName: model,
-                    openAIApiKey: apiKey,
-                    ...commonOptions,
-                    configuration: {
-                        apiKey: apiKey,
-                    },
-                });
-
-            case BYOKProvider.OPENAI_COMPATIBLE:
-                if (!baseURL) {
-                    throw new Error(
-                        'baseURL is required for OpenAI Compatible provider',
-                    );
-                }
-                return new ChatOpenAI({
-                    modelName: model,
-                    openAIApiKey: apiKey,
-                    ...commonOptions,
-                    configuration: {
-                        baseURL: baseURL,
-                        apiKey: apiKey,
-                    },
-                });
-
-            case BYOKProvider.OPEN_ROUTER:
-                return new ChatOpenAI({
-                    modelName: model,
-                    openAIApiKey: apiKey,
-                    ...commonOptions,
-                    configuration: {
-                        baseURL: 'https://openrouter.ai/api/v1',
-                        apiKey: apiKey,
-                    },
-                });
-
-            case BYOKProvider.ANTHROPIC: {
-                const defaultMaxTokensByModel: Record<string, number> = {
-                    'claude-opus-4-1-20250805': 15000,
-                    'claude-opus-4-20250514': 15000,
-                    'claude-sonnet-4-5-20250929': 15000,
-                    'claude-sonnet-4-20250514': 15000,
-                    'claude-3-7-sonnet-20250219': 15000,
-                    'claude-3-5-sonnet-20241022': 8192,
-                    'claude-3-5-haiku-20241022': 8192,
-                    'claude-3-5-sonnet-20240620': 8192,
-                    'claude-3-haiku-20240307': 4096,
-                    'claude-3-opus-20240229': 4096,
-                };
-                const maxTokensOptions = defaultMaxTokensByModel[model] ?? 4096;
-
-                return new ChatAnthropic({
-                    modelName: model,
-                    anthropicApiKey: apiKey,
-                    temperature: commonOptions.temperature as number,
-                    maxTokens: maxTokensOptions,
-                    callbacks: commonOptions.callbacks as Callbacks,
-                });
-            }
-
-            case BYOKProvider.GOOGLE_GEMINI: {
-                // Gemini usa maxOutputTokens ao invés de maxTokens e requer valores positivos
-                const capabilities = getModelCapabilities(model);
-                console.log('@@capabilities', capabilities);
-                const geminiOptions: Record<string, unknown> = {
-                    model: model,
-                    apiKey: apiKey,
-                    callbacks: defaultOptions.callbacks,
-                };
-
-                if (defaultOptions.temperature !== undefined) {
-                    geminiOptions.temperature = defaultOptions.temperature;
-                }
-
-                // Só passa maxOutputTokens se for um valor válido (> 0)
-                const maxTokens = defaultOptions.maxTokens as number;
-                if (maxTokens > 0) {
-                    geminiOptions.maxOutputTokens = maxTokens;
-                }
-
-                // Só passa maxReasoningTokens se for um valor válido (> 0)
-                if (capabilities && capabilities.supportsReasoning) {
-                    const maxReasoningTokens =
-                        typeof capabilities.reasoningConfig?.options ===
-                            'object' &&
-                        !Array.isArray(capabilities.reasoningConfig.options) &&
-                        'default' in capabilities.reasoningConfig.options
-                            ? capabilities.reasoningConfig.options.default
-                            : 1;
-                    geminiOptions.maxReasoningTokens = maxReasoningTokens;
-                }
-
-                // Configurar JSON mode se necessário
-                if (options?.jsonMode) {
-                    geminiOptions.responseMimeType = 'application/json';
-                }
-
-                return new ChatGoogle(geminiOptions);
-            }
-
-            case BYOKProvider.NOVITA: {
-                const novitaMaxTokens = commonOptions.maxTokens as number;
-                return this.createNovitaProvider({
-                    model,
-                    apiKey,
-                    temperature:
-                        (commonOptions.temperature as number | undefined) ?? 0,
-                    maxTokens: novitaMaxTokens > 0 ? novitaMaxTokens : 4096,
-                    callbacks: commonOptions.callbacks as Callbacks,
-                });
-            }
-
-            case BYOKProvider.GOOGLE_VERTEX:
-                throw new Error(
-                    'Google Vertex BYOK requires special credential handling - not implemented yet',
-                );
-
-            default:
-                // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-                throw new Error(`Unsupported BYOK provider: ${provider}`);
-        }
-    }
-
-    /**
-     * Creates a Novita provider instance
-     * Using OpenAI compatible interface since Novita supports OpenAI API format
-     */
-    private createNovitaProvider(params: {
-        model: string;
-        apiKey: string;
-        temperature: number;
-        maxTokens: number;
-        callbacks: Callbacks;
-    }): BaseChatModel {
-        return new ChatOpenAI({
-            modelName: params.model,
-            temperature: params.temperature,
-            maxTokens: params.maxTokens,
-            callbacks: params.callbacks,
-            configuration: {
-                baseURL: 'https://api.novita.ai/v3/openai',
-                apiKey: params.apiKey,
+        const modelInstance = adapter.build({
+            model,
+            apiKey,
+            baseURL:
+                provider === BYOKProvider.OPENAI_COMPATIBLE
+                    ? baseURL
+                    : provider === BYOKProvider.OPEN_ROUTER
+                      ? 'https://openrouter.ai/api/v1'
+                      : undefined,
+            options: {
+                temperature: options?.temperature,
+                maxTokens: options?.maxTokens,
+                jsonMode: options?.jsonMode,
+                maxReasoningTokens: options?.maxReasoningTokens,
+                reasoningLevel: options?.reasoningLevel,
+                callbacks: options?.callbacks as Callbacks,
             },
         });
+
+        return modelInstance;
     }
 
     /**

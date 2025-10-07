@@ -24,6 +24,7 @@ import { PermissionValidationService } from '@/ee/shared/services/permissionVali
 
 type TestModelsRequest = {
     teamId: string;
+    organizationId: string;
     prNumber?: number;
     provider?: LLMModelProvider | string;
     model?: string;
@@ -57,7 +58,8 @@ export class ModelTestController {
     async testModels(
         @Body() body: TestModelsRequest,
     ): Promise<AIAnalysisResult> {
-        const organizationId = this.request?.user?.organization?.uuid;
+        const organizationId =
+            body?.organizationId ?? this.request?.user?.organization?.uuid;
         if (!organizationId) {
             throw new BadRequestException(
                 'organizationId not found in request',
