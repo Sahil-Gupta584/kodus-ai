@@ -5,10 +5,10 @@ import {
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOneOptions, FindManyOptions } from 'typeorm';
-import { ISuggestionEmbeddedRepository } from './domain/suggestionEmbedded/contracts/suggestionEmbedded.repository.contract';
+import { ISuggestionEmbeddedRepository } from '@/core/domain/kodyFineTuning/suggestionEmbedded/contracts/suggestionEmbedded.repository.contract';
 import { SuggestionEmbeddedModel } from '@/core/infrastructure/adapters/repositories/typeorm/schema/suggestionEmbedded.model';
-import { ISuggestionEmbedded } from './domain/suggestionEmbedded/interfaces/suggestionEmbedded.interface';
-import { SuggestionEmbeddedEntity } from './domain/suggestionEmbedded/entities/suggestionEmbedded.entity';
+import { ISuggestionEmbedded } from '@/core/domain/kodyFineTuning/suggestionEmbedded/interfaces/suggestionEmbedded.interface';
+import { SuggestionEmbeddedEntity } from '@/core/domain/kodyFineTuning/suggestionEmbedded/entities/suggestionEmbedded.entity';
 
 @Injectable()
 export class SuggestionEmbeddedDatabaseRepository

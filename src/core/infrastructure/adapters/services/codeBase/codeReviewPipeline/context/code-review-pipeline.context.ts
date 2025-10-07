@@ -14,7 +14,7 @@ import { PipelineContext } from '../../../pipeline/interfaces/pipeline-context.i
 import { TaskStatus } from '@kodus/kodus-proto/task';
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
-import { IClusterizedSuggestion } from '../../../kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
+import { IClusterizedSuggestion } from '@/core/domain/kodyFineTuning/interfaces/kodyFineTuning.interface';
 
 export interface CodeReviewPipelineContext extends PipelineContext {
     organizationAndTeamData: OrganizationAndTeamData;

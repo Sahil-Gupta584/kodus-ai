@@ -7,7 +7,7 @@ import { Injectable } from '@nestjs/common';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { CodeSuggestion } from '@/config/types/general/codeReview.type';
 import { IKodyFineTuningContextPreparationService } from '@/shared/interfaces/kody-fine-tuning-context-preparation.interface';
-import { IClusterizedSuggestion } from '@/core/infrastructure/adapters/services/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
+import { IClusterizedSuggestion } from '@/core/domain/kodyFineTuning/interfaces/kodyFineTuning.interface';
 
 /**
  * Abstract base class for Kody fine tuning context preparation

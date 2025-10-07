@@ -23,18 +23,18 @@ import {
 
 import { kmeans } from 'ml-kmeans';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { FeedbackType } from './domain/enums/feedbackType.enum';
-import { IClusterizedSuggestion } from './domain/interfaces/kodyFineTuning.interface';
-import { FineTuningType } from './domain/enums/fineTuningType.enum';
-import { FineTuningDecision } from './domain/enums/fineTuningDecision.enum';
+import { FeedbackType } from '@/core/domain/kodyFineTuning/enums/feedbackType.enum';
+import { IClusterizedSuggestion } from '@/core/domain/kodyFineTuning/interfaces/kodyFineTuning.interface';
+import { FineTuningType } from '@/core/domain/kodyFineTuning/enums/fineTuningType.enum';
+import { FineTuningDecision } from '@/core/domain/kodyFineTuning/enums/fineTuningDecision.enum';
 import {
     ISuggestionEmbeddedService,
     SUGGESTION_EMBEDDED_SERVICE_TOKEN,
-} from './domain/suggestionEmbedded/contracts/suggestionEmbedded.service.contract';
+} from '@/core/domain/kodyFineTuning/suggestionEmbedded/contracts/suggestionEmbedded.service.contract';
 import { IGlobalParametersService } from '@/core/domain/global-parameters/contracts/global-parameters.service.contract';
 import { GLOBAL_PARAMETERS_SERVICE_TOKEN } from '@/core/domain/global-parameters/contracts/global-parameters.service.contract';
 import { GlobalParametersKey } from '@/shared/domain/enums/global-parameters-key.enum';
-import { ISuggestionEmbedded } from './domain/suggestionEmbedded/interfaces/suggestionEmbedded.interface';
+import { ISuggestionEmbedded } from '@/core/domain/kodyFineTuning/suggestionEmbedded/interfaces/suggestionEmbedded.interface';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 
 @Injectable()

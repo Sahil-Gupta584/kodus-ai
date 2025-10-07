@@ -13,7 +13,7 @@ import {
     ISuggestionService,
     SUGGESTION_SERVICE_TOKEN,
 } from '@/core/domain/codeBase/contracts/SuggestionService.contract';
-import { IClusterizedSuggestion } from '../domain/interfaces/kodyFineTuning.interface';
+import { IClusterizedSuggestion } from '@/core/domain/kodyFineTuning/interfaces/kodyFineTuning.interface';
 
 /**
  * Enterprise implementation of fine tuning service

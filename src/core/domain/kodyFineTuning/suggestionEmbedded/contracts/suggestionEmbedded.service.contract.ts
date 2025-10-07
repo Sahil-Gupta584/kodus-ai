@@ -6,7 +6,7 @@ import { ISuggestionToEmbed } from '@/core/domain/pullRequests/interfaces/pullRe
 import {
     SuggestionEmbeddedFeedbacks,
     SuggestionEmbeddedFeedbacksWithLanguage,
-} from '../../../suggestionEmbedded/suggestionEmbedded.service';
+} from '@/core/infrastructure/adapters/services/kodyFineTuning/suggestionEmbedded/suggestionEmbedded.service';
 
 export const SUGGESTION_EMBEDDED_SERVICE_TOKEN = Symbol(
     'SuggestionEmbeddedService',

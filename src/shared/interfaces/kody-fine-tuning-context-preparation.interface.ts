@@ -4,7 +4,7 @@
  */
 
 import { CodeSuggestion } from '@/config/types/general/codeReview.type';
-import { IClusterizedSuggestion } from '@/core/infrastructure/adapters/services/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
+import { IClusterizedSuggestion } from '@/core/domain/kodyFineTuning/interfaces/kodyFineTuning.interface';
 
 export const KODY_FINE_TUNING_CONTEXT_PREPARATION_TOKEN = Symbol(
     'KodyFineTuningContextPreparation',
