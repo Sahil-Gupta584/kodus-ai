@@ -38,6 +38,7 @@ import {
 } from '@/ee/codeBase/kodyRulesAnalysis.service';
 import { GlobalParametersModule } from './global-parameters.module';
 import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeBase.controller';
+import { ModelTestController } from '@/core/infrastructure/http/controllers/model-test.controller';
 import {
     KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN,
     KodyRulesPrLevelAnalysisService,
@@ -135,6 +136,6 @@ import { PermissionValidationModule } from '@/ee/shared/permission-validation.mo
         CommentAnalysisService,
         MessageTemplateProcessor,
     ],
-    controllers: [CodeBaseController],
+    controllers: [CodeBaseController, ModelTestController],
 })
 export class CodebaseModule {}

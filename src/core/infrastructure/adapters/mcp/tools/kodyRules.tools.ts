@@ -75,31 +75,33 @@ export class KodyRulesTools {
                 success: z.boolean(),
                 count: z.number(),
                 data: z.array(
-                    z.looseObject({
-                        uuid: z.string().optional(),
-                        title: z.string().optional(),
-                        rule: z.string().optional(),
-                        path: z.string().optional(),
-                        status: z.enum(KodyRulesStatus).optional(),
-                        severity: z.string().optional(),
-                        label: z.string().optional(),
-                        type: z.string().optional(),
-                        examples: z
-                            .array(
-                                z.looseObject({
-                                    snippet: z.string(),
-                                    isCorrect: z.boolean(),
-                                }),
-                            )
-                            .optional(),
-                        repositoryId: z.string().optional(),
-                        origin: z.enum(KodyRulesOrigin).optional(),
-                        createdAt: z.date().optional(),
-                        updatedAt: z.date().optional(),
-                        reason: z.string().nullable().optional(),
-                        scope: z.enum(KodyRulesScope).optional(),
-                        directoryId: z.string().nullable().optional(),
-                    }),
+                    z
+                        .object({
+                            uuid: z.string().optional(),
+                            title: z.string().optional(),
+                            rule: z.string().optional(),
+                            path: z.string().optional(),
+                            status: z.nativeEnum(KodyRulesStatus).optional(),
+                            severity: z.string().optional(),
+                            label: z.string().optional(),
+                            type: z.string().optional(),
+                            examples: z
+                                .array(
+                                    z.object({
+                                        snippet: z.string(),
+                                        isCorrect: z.boolean(),
+                                    }),
+                                )
+                                .optional(),
+                            repositoryId: z.string().optional(),
+                            origin: z.nativeEnum(KodyRulesOrigin).optional(),
+                            createdAt: z.date().optional(),
+                            updatedAt: z.date().optional(),
+                            reason: z.string().nullable().optional(),
+                            scope: z.nativeEnum(KodyRulesScope).optional(),
+                            directoryId: z.string().nullable().optional(),
+                        })
+                        .passthrough(),
                 ),
             }),
             execute: wrapToolHandler(
@@ -157,31 +159,33 @@ export class KodyRulesTools {
                 success: z.boolean(),
                 count: z.number(),
                 data: z.array(
-                    z.looseObject({
-                        uuid: z.string().optional(),
-                        title: z.string().optional(),
-                        rule: z.string().optional(),
-                        path: z.string().optional(),
-                        status: z.enum(KodyRulesStatus).optional(),
-                        severity: z.string().optional(),
-                        label: z.string().optional(),
-                        type: z.string().optional(),
-                        examples: z
-                            .array(
-                                z.looseObject({
-                                    snippet: z.string(),
-                                    isCorrect: z.boolean(),
-                                }),
-                            )
-                            .optional(),
-                        repositoryId: z.string().optional(),
-                        origin: z.enum(KodyRulesOrigin).optional(),
-                        createdAt: z.date().optional(),
-                        updatedAt: z.date().optional(),
-                        reason: z.string().nullable().optional(),
-                        scope: z.enum(KodyRulesScope).optional(),
-                        directoryId: z.string().nullable().optional(),
-                    }),
+                    z
+                        .object({
+                            uuid: z.string().optional(),
+                            title: z.string().optional(),
+                            rule: z.string().optional(),
+                            path: z.string().optional(),
+                            status: z.nativeEnum(KodyRulesStatus).optional(),
+                            severity: z.string().optional(),
+                            label: z.string().optional(),
+                            type: z.string().optional(),
+                            examples: z
+                                .array(
+                                    z.object({
+                                        snippet: z.string(),
+                                        isCorrect: z.boolean(),
+                                    }),
+                                )
+                                .optional(),
+                            repositoryId: z.string().optional(),
+                            origin: z.nativeEnum(KodyRulesOrigin).optional(),
+                            createdAt: z.date().optional(),
+                            updatedAt: z.date().optional(),
+                            reason: z.string().nullable().optional(),
+                            scope: z.nativeEnum(KodyRulesScope).optional(),
+                            directoryId: z.string().nullable().optional(),
+                        })
+                        .passthrough(),
                 ),
             }),
             execute: wrapToolHandler(
@@ -238,12 +242,12 @@ export class KodyRulesTools {
                             'Detailed description of the coding rule/standard to enforce (e.g., "All React components should use arrow function syntax")',
                         ),
                     severity: z
-                        .enum(KodyRuleSeverity)
+                        .nativeEnum(KodyRuleSeverity)
                         .describe(
                             'Rule severity level: determines how violations are handled (ERROR, WARNING, INFO)',
                         ),
                     scope: z
-                        .enum(KodyRulesScope)
+                        .nativeEnum(KodyRulesScope)
                         .describe(
                             'Rule scope: pull_request (analyzes entire PR context), file (analyzes individual files one by one)',
                         ),
@@ -326,11 +330,13 @@ export class KodyRulesTools {
             outputSchema: z.object({
                 success: z.boolean(),
                 count: z.number(),
-                data: z.looseObject({
-                    uuid: z.string(),
-                    title: z.string(),
-                    rule: z.string(),
-                }),
+                data: z
+                    .object({
+                        uuid: z.string(),
+                        title: z.string(),
+                        rule: z.string(),
+                    })
+                    .passthrough(),
             }),
             execute: wrapToolHandler(
                 async (args: InputType): Promise<CreateKodyRuleResponse> => {
@@ -419,13 +425,13 @@ export class KodyRulesTools {
                             'Updated detailed description of the coding rule/standard to enforce',
                         ),
                     severity: z
-                        .enum(KodyRuleSeverity)
+                        .nativeEnum(KodyRuleSeverity)
                         .optional()
                         .describe(
                             'Updated rule severity level: determines how violations are handled (ERROR, WARNING, INFO)',
                         ),
                     scope: z
-                        .enum(KodyRulesScope)
+                        .nativeEnum(KodyRulesScope)
                         .optional()
                         .describe(
                             'Updated rule scope: pull_request (analyzes entire PR context), file (analyzes individual files one by one)',
@@ -472,7 +478,7 @@ export class KodyRulesTools {
                             'Updated directory unique identifier - used with FILE scope to target specific directory',
                         ),
                     status: z
-                        .enum(KodyRulesStatus)
+                        .nativeEnum(KodyRulesStatus)
                         .optional()
                         .describe(
                             'Updated rule status: active, pending, rejected, or deleted',
@@ -493,12 +499,14 @@ export class KodyRulesTools {
             outputSchema: z.object({
                 success: z.boolean(),
                 count: z.number(),
-                data: z.looseObject({
-                    uuid: z.string(),
-                    title: z.string(),
-                    rule: z.string(),
-                    status: z.enum(KodyRulesStatus),
-                }),
+                data: z
+                    .object({
+                        uuid: z.string(),
+                        title: z.string(),
+                        rule: z.string(),
+                        status: z.nativeEnum(KodyRulesStatus),
+                    })
+                    .passthrough(),
             }),
             execute: wrapToolHandler(
                 async (args: InputType): Promise<CreateKodyRuleResponse> => {
