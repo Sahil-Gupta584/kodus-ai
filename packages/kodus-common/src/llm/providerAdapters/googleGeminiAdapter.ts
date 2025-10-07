@@ -1,6 +1,7 @@
 import { ChatGoogle } from '@langchain/google-gauth';
 import { resolveModelOptions } from './resolver';
 import { buildJsonModeOptions } from './jsonMode';
+import { supportsBudgetReasoning } from './capabilities';
 import { AdapterBuildParams, ProviderAdapter } from './types';
 
 export class GoogleGeminiAdapter implements ProviderAdapter {
@@ -9,7 +10,14 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
         const resolved = resolveModelOptions(model, {
             temperature: options?.temperature,
             maxTokens: options?.maxTokens,
+            maxReasoningTokens: options?.maxReasoningTokens,
         });
+
+        const reasoningSupported =
+            supportsBudgetReasoning(model) &&
+            resolved.supportsReasoning &&
+            resolved.reasoningType === 'budget' &&
+            typeof resolved.resolvedReasoningTokens === 'number';
 
         const payload: ConstructorParameters<typeof ChatGoogle>[0] = {
             model,
@@ -22,9 +30,7 @@ export class GoogleGeminiAdapter implements ProviderAdapter {
                 : {}),
             callbacks: options?.callbacks,
             ...buildJsonModeOptions('google_gemini', options?.jsonMode),
-            ...(resolved.supportsReasoning &&
-            resolved.reasoningType === 'budget' &&
-            resolved.resolvedReasoningTokens
+            ...(reasoningSupported
                 ? { maxReasoningTokens: resolved.resolvedReasoningTokens }
                 : {}),
         };
