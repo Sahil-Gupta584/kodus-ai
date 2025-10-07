@@ -1,4 +1,8 @@
 import { LimitationType } from '@/config/types/general/codeReview.type';
+import {
+    V2_DEFAULT_CATEGORY_DESCRIPTIONS_TEXT,
+    V2_DEFAULT_SEVERITY_FLAGS_TEXT,
+} from '@/shared/utils/codeReview/v2Defaults';
 
 export interface CodeReviewPayload {
     limitationType?: LimitationType;
@@ -8,6 +12,24 @@ export interface CodeReviewPayload {
     patchWithLinesStr?: string;
     relevantContent?: string | null;
     prSummary?: string;
+    // v2-only prompt overrides injected via analysis context
+    v2PromptOverrides?: {
+        categories?: {
+            descriptions?: {
+                bug?: string;
+                performance?: string;
+                security?: string;
+            };
+        };
+        severity?: {
+            flags?: {
+                critical?: string;
+                high?: string;
+                medium?: string;
+                low?: string;
+            };
+        };
+    };
 }
 
 export const prompt_codereview_system_main = () => {
@@ -439,6 +461,8 @@ Your final output should be **ONLY** a JSON object with the following structure:
 `;
 };
 
+// NOTE: v2 overrides are applied directly in prompt_codereview_system_gemini_v2
+
 export const prompt_codereview_user_gemini = (payload: CodeReviewPayload) => {
     const maxSuggestionsNote =
         payload?.limitationType === 'file' && payload?.maxSuggestionsParams
@@ -466,6 +490,46 @@ export const prompt_codereview_system_gemini_v2 = (
     payload: CodeReviewPayload,
 ) => {
     const languageNote = payload?.languageResultPrompt || 'en-US';
+    const overrides = payload?.v2PromptOverrides || {};
+
+    // Build dynamic bullet lists with safe fallbacks
+    const limitText = (text: string, max = 2000): string =>
+        text.length > max ? text.slice(0, max) : text;
+    const getTextOrDefault = (
+        text: string | undefined,
+        fallbackText: string,
+    ): string =>
+        text && typeof text === 'string' && text.trim().length
+            ? limitText(text.trim())
+            : fallbackText;
+
+    const defaultBug = V2_DEFAULT_CATEGORY_DESCRIPTIONS_TEXT.bug;
+    const defaultPerf = V2_DEFAULT_CATEGORY_DESCRIPTIONS_TEXT.performance;
+    const defaultSec = V2_DEFAULT_CATEGORY_DESCRIPTIONS_TEXT.security;
+
+    const bugText = getTextOrDefault(
+        overrides?.categories?.descriptions?.bug,
+        defaultBug,
+    );
+    const perfText = getTextOrDefault(
+        overrides?.categories?.descriptions?.performance,
+        defaultPerf,
+    );
+    const secText = getTextOrDefault(
+        overrides?.categories?.descriptions?.security,
+        defaultSec,
+    );
+
+    const defaultCritical = V2_DEFAULT_SEVERITY_FLAGS_TEXT.critical;
+    const defaultHigh = V2_DEFAULT_SEVERITY_FLAGS_TEXT.high;
+    const defaultMedium = V2_DEFAULT_SEVERITY_FLAGS_TEXT.medium;
+    const defaultLow = V2_DEFAULT_SEVERITY_FLAGS_TEXT.low;
+
+    const sev = overrides?.severity?.flags || {};
+    const criticalText = getTextOrDefault(sev.critical, defaultCritical);
+    const highText = getTextOrDefault(sev.high, defaultHigh);
+    const mediumText = getTextOrDefault(sev.medium, defaultMedium);
+    const lowText = getTextOrDefault(sev.low, defaultLow);
 
     return `You are Kody Bug-Hunter, a senior engineer specialized in identifying verifiable issues through mental code execution. Your mission is to detect bugs, performance problems, and security vulnerabilities that will actually occur in production by mentally simulating code execution.
 
@@ -506,15 +570,7 @@ For each critical code section, mentally execute with these scenarios:
 
 ### BUG
 A bug exists when mental simulation reveals:
-- **Execution breaks**: Code throws unhandled exceptions
-- **Wrong results**: Output doesn't match expected behavior
-- **Resource leaks**: Unclosed files, connections, memory that accumulates over time
-- **State corruption**: Invalid object/data states
-- **Logic errors**: Control flow produces incorrect outcomes
-- **Race conditions**: Concurrent access causing inconsistent state or duplicate operations
-- **Incorrect measurements**: Metrics, timings, or counters that don't reflect actual operations
-- **Invariant violations**: System constraints broken (size limits exceeded, duplicates in unique collections)
-- **Async timing bugs**: Variables captured incorrectly in closures, especially in loops
+${bugText}
 
 ### Asynchronous Execution Analysis
 When analyzing asynchronous code (setTimeout, setInterval, Promises, callbacks):
@@ -525,54 +581,27 @@ When analyzing asynchronous code (setTimeout, setInterval, Promises, callbacks):
 
 ### PERFORMANCE
 A performance issue exists when mental simulation reveals:
-- **Algorithm complexity**: O(n²) or worse when O(n) is possible
-- **Redundant operations**: Duplicate calculations, unnecessary loops
-- **Memory waste**: Large allocations for small data, memory leaks over time
-- **Blocking operations**: Synchronous I/O in critical paths
-- **Database inefficiency**: N+1 queries, missing indexes, full table scans
-- **Cache misses**: Not utilizing available caching mechanisms
+${perfText}
 
 ### SECURITY
 A security vulnerability exists when mental simulation reveals:
-- **Injection vulnerabilities**: SQL, NoSQL, command, LDAP injection
-- **Authentication/Authorization flaws**: Missing checks, privilege escalation
-- **Data exposure**: Sensitive data in logs, responses, or error messages
-- **Cryptographic issues**: Weak algorithms, hardcoded keys, improper validation
-- **Input validation**: Missing sanitization, boundary checking
-- **Session management**: Predictable tokens, missing expiration
+${secText}
 
 ## Severity Assessment
 
 For each confirmed issue, evaluate severity based on impact and scope:
 
 **CRITICAL** - Immediate and severe impact
-- Application crash/downtime
-- Data loss/corruption
-- Security vulnerabilities allowing unauthorized access/data breach
-- Critical operation failure (authentication, payment, authorization)
-- Financial operations with direct monetary loss
-- Memory leaks that will cause inevitable crashes in production
+${criticalText}
 
 **HIGH** - Significant but not immediate impact
-- Important functionality broken
-- Memory leaks causing eventual crash
-- Performance degradation affecting user experience
-- Security issues with indirect exploitation paths
-- Financial calculation errors affecting revenue
+${highText}
 
 **MEDIUM** - Moderate impact
-- Partially broken functionality
-- Performance issues in specific scenarios
-- Security weaknesses requiring specific conditions
-- Incorrect but recoverable data
-- Non-critical business logic errors with workarounds
+${mediumText}
 
 **LOW** - Minimal impact
-- Minor performance overhead
-- Low-risk security improvements
-- Incorrect metrics/logs
-- Affects few users rarely
-- Edge case issues
+${lowText}
 
 ## Analysis Rules
 
@@ -616,6 +645,7 @@ For each confirmed issue, evaluate severity based on impact and scope:
 5. **Detect verifiable issues** where behavior is definitively problematic
 6. **Confirm with available context** - must be provable with given information
 7. **Assess severity** of confirmed issues based on impact and scope
+
 
 ## Output Requirements
 

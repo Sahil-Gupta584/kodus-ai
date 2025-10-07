@@ -150,6 +150,65 @@ class PathInstructionDto {
     instructions?: string;
 }
 
+// -------------------- v2 Prompt Overrides DTOs (must be declared before usage) --------------------
+class V2PromptOverridesSeverityFlagsDto {
+    @IsOptional()
+    @IsString()
+    critical?: string;
+
+    @IsOptional()
+    @IsString()
+    high?: string;
+
+    @IsOptional()
+    @IsString()
+    medium?: string;
+
+    @IsOptional()
+    @IsString()
+    low?: string;
+}
+
+class V2PromptOverridesSeverityDto {
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => V2PromptOverridesSeverityFlagsDto)
+    flags?: V2PromptOverridesSeverityFlagsDto;
+}
+
+class V2PromptOverridesCategoriesDescriptionsDto {
+    @IsOptional()
+    @IsString()
+    bug?: string;
+
+    @IsOptional()
+    @IsString()
+    performance?: string;
+
+    @IsOptional()
+    @IsString()
+    security?: string;
+}
+
+class V2PromptOverridesCategoriesDto {
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => V2PromptOverridesCategoriesDescriptionsDto)
+    descriptions?: V2PromptOverridesCategoriesDescriptionsDto;
+}
+
+class V2PromptOverridesDto {
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => V2PromptOverridesCategoriesDto)
+    categories?: V2PromptOverridesCategoriesDto;
+
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => V2PromptOverridesSeverityDto)
+    severity?: V2PromptOverridesSeverityDto;
+}
+
 class CodeReviewConfigWithoutLLMProviderDto {
     @IsOptional()
     @IsString()
@@ -230,6 +289,12 @@ class CodeReviewConfigWithoutLLMProviderDto {
     @IsOptional()
     @IsEnum(CodeReviewVersion)
     codeReviewVersion?: CodeReviewVersion = CodeReviewVersion.v2;
+
+    // v2-only prompt overrides (categories and severity guidance)
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => V2PromptOverridesDto)
+    v2PromptOverrides?: V2PromptOverridesDto;
 }
 
 export class CreateOrUpdateCodeReviewParameterDto {

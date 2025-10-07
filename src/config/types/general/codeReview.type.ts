@@ -315,6 +315,35 @@ export type CodeReviewConfig = {
     runOnDraft?: boolean;
     codeReviewVersion?: CodeReviewVersion;
     byokConfig?: BYOKConfig;
+    /**
+     * Optional overrides for v2 prompts (categories and severity guidance only).
+     * These influence only the v2 system prompt used during suggestion generation.
+     */
+    v2PromptOverrides?: {
+        categories?: {
+            /**
+             * Additional or replacement description bullets for each label.
+             * Labels are fixed to: bug, performance, security.
+             */
+            descriptions?: {
+                bug?: string;
+                performance?: string;
+                security?: string;
+            };
+        };
+        severity?: {
+            /**
+             * Optional flag bullet points per level to guide classification.
+             * Levels are fixed to: critical, high, medium, low.
+             */
+            flags?: {
+                critical?: string;
+                high?: string;
+                medium?: string;
+                low?: string;
+            };
+        };
+    };
     // This is the default branch of the repository, used only during the review process
     // This field is populated dynamically from the API (GitHub/GitLab) and should NOT be saved to the database
     // It represents the repository's default branch (e.g., 'main', 'develop') that comes from the code management platform

@@ -286,6 +286,12 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     globalConfig.runOnDraft ??
                     this.DEFAULT_CONFIG.runOnDraft,
                 codeReviewVersion: codeReviewVersion,
+                // v2-only prompt overrides (categories and severity guidance). Read from repo/global parameters.
+                v2PromptOverrides: this.sanitizeV2PromptOverrides(
+                    repoConfig?.v2PromptOverrides ??
+                        globalConfig?.v2PromptOverrides ??
+                        this.DEFAULT_CONFIG?.v2PromptOverrides,
+                ),
             };
 
             return config;
@@ -298,6 +304,53 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             });
             throw new Error('Error getting code review config parameters');
         }
+    }
+
+    private sanitizeV2PromptOverrides(
+        overrides: CodeReviewConfig['v2PromptOverrides'],
+    ): CodeReviewConfig['v2PromptOverrides'] {
+        if (!overrides) return undefined;
+
+        const sanitizeString = (value: any): string | undefined => {
+            if (typeof value === 'string' && value.trim().length > 0) {
+                return value.trim();
+            }
+            return undefined;
+        };
+
+        const categories = overrides.categories?.descriptions
+            ? {
+                  descriptions: {
+                      bug: sanitizeString(
+                          overrides.categories.descriptions.bug,
+                      ),
+                      performance: sanitizeString(
+                          overrides.categories.descriptions.performance,
+                      ),
+                      security: sanitizeString(
+                          overrides.categories.descriptions.security,
+                      ),
+                  },
+              }
+            : undefined;
+
+        const severity = overrides.severity?.flags
+            ? {
+                  flags: {
+                      critical: sanitizeString(
+                          overrides.severity.flags.critical,
+                      ),
+                      high: sanitizeString(overrides.severity.flags.high),
+                      medium: sanitizeString(overrides.severity.flags.medium),
+                      low: sanitizeString(overrides.severity.flags.low),
+                  },
+              }
+            : undefined;
+
+        return {
+            categories,
+            severity,
+        };
     }
 
     getDefaultConfigs(): CodeReviewConfig {
@@ -1454,6 +1507,11 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 directoryId: directoryConfig.id,
                 directoryPath: directoryConfig.path,
                 codeReviewVersion: codeReviewVersion,
+                v2PromptOverrides: this.sanitizeV2PromptOverrides(
+                    (kodusConfigFile as any)?.v2PromptOverrides ??
+                        (directoryConfig as any)?.v2PromptOverrides ??
+                        this.DEFAULT_CONFIG?.v2PromptOverrides,
+                ),
             };
 
             return config;
