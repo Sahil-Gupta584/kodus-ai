@@ -311,18 +311,25 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
     ): CodeReviewConfig['v2PromptOverrides'] {
         if (!overrides) return undefined;
 
+        const sanitizeString = (value: any): string | undefined => {
+            if (typeof value === 'string' && value.trim().length > 0) {
+                return value.trim();
+            }
+            return undefined;
+        };
+
         const categories = overrides.categories?.descriptions
             ? {
                   descriptions: {
-                      bug:
-                          overrides.categories.descriptions.bug?.trim() ||
-                          undefined,
-                      performance:
-                          overrides.categories.descriptions.performance?.trim() ||
-                          undefined,
-                      security:
-                          overrides.categories.descriptions.security?.trim() ||
-                          undefined,
+                      bug: sanitizeString(
+                          overrides.categories.descriptions.bug,
+                      ),
+                      performance: sanitizeString(
+                          overrides.categories.descriptions.performance,
+                      ),
+                      security: sanitizeString(
+                          overrides.categories.descriptions.security,
+                      ),
                   },
               }
             : undefined;
@@ -330,13 +337,12 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         const severity = overrides.severity?.flags
             ? {
                   flags: {
-                      critical:
-                          overrides.severity.flags.critical?.trim() ||
-                          undefined,
-                      high: overrides.severity.flags.high?.trim() || undefined,
-                      medium:
-                          overrides.severity.flags.medium?.trim() || undefined,
-                      low: overrides.severity.flags.low?.trim() || undefined,
+                      critical: sanitizeString(
+                          overrides.severity.flags.critical,
+                      ),
+                      high: sanitizeString(overrides.severity.flags.high),
+                      medium: sanitizeString(overrides.severity.flags.medium),
+                      low: sanitizeString(overrides.severity.flags.low),
                   },
               }
             : undefined;

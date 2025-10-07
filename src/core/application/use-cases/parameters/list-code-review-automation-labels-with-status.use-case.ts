@@ -36,16 +36,15 @@ export class ListCodeReviewAutomationLabelsWithStatusUseCase {
             !teamId ||
             !repositoryId
         ) {
-            return labels;
+            return { labels };
         }
+        const organizationId = this.request?.user?.organization?.uuid;
+        const config = await this.codeBaseConfigService.getConfig(
+            { organizationId, teamId },
+            { name: '', id: repositoryId },
+        );
 
         try {
-            const organizationId = this.request?.user?.organization?.uuid;
-            const config = await this.codeBaseConfigService.getConfig(
-                { organizationId, teamId },
-                { name: '', id: repositoryId },
-            );
-
             const ov = config?.v2PromptOverrides || {};
             const has = (t?: string) => !!(t && t.trim().length);
 
@@ -73,15 +72,23 @@ export class ListCodeReviewAutomationLabelsWithStatusUseCase {
                 },
             } as const;
 
-            return { ...labels, overridesStatus };
+            return { labels, overridesStatus };
         } catch (error) {
             this.logger.warn({
-                message: 'Failed to enrich labels with overrides status; returning labels only',
+                message:
+                    'Failed to enrich labels with overrides status; returning labels only',
                 context: ListCodeReviewAutomationLabelsWithStatusUseCase.name,
+
                 error,
-                metadata: { teamId, repositoryId },
+                metadata: {
+                    organizationAndTeamData: {
+                        organizationId,
+                        teamId,
+                    },
+                    repositoryId,
+                },
             });
-            return labels;
+            return { labels };
         }
     }
 }

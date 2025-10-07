@@ -493,12 +493,15 @@ export const prompt_codereview_system_gemini_v2 = (
     const overrides = payload?.v2PromptOverrides || {};
 
     // Build dynamic bullet lists with safe fallbacks
-    const limitText = (text: string, max = 2000) =>
+    const limitText = (text: string, max = 2000): string =>
         text.length > max ? text.slice(0, max) : text;
     const getTextOrDefault = (
         text: string | undefined,
         fallbackText: string,
-    ) => (text && text.trim().length ? limitText(text.trim()) : fallbackText);
+    ): string =>
+        text && typeof text === 'string' && text.trim().length
+            ? limitText(text.trim())
+            : fallbackText;
 
     const defaultBug = V2_DEFAULT_CATEGORY_DESCRIPTIONS_TEXT.bug;
     const defaultPerf = V2_DEFAULT_CATEGORY_DESCRIPTIONS_TEXT.performance;
