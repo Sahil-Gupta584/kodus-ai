@@ -285,9 +285,10 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         try {
             const provider = LLMModelProvider.GEMINI_2_5_FLASH;
             const fallbackProvider = LLMModelProvider.GEMINI_2_5_PRO;
+            const runName = 'extractKodyRuleIdsFromContent';
 
             this.observabilityService.startSpan(
-                `${KodyRulesAnalysisService.name}::extractKodyRuleIdsFromContent`,
+                `${KodyRulesAnalysisService.name}::${runName}`,
             );
 
             const promptRunner = new BYOKPromptRunnerService(
@@ -316,15 +317,19 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                     organizationId: organizationAndTeamData?.organizationId,
                     teamId: organizationAndTeamData?.teamId,
                     pullRequestId: prNumber,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
+                    provider: byokConfig?.main?.provider || provider,
+                    fallbackProvider:
+                        byokConfig?.fallback?.provider || fallbackProvider,
+                    model: byokConfig?.main?.model,
+                    fallbackModel: byokConfig?.fallback?.model,
+                    runName,
                 })
                 .addCallbacks([this.tokenTracker])
                 .addTags([
                     ...this.buildTags(provider, 'primary'),
                     ...this.buildTags(fallbackProvider, 'fallback'),
                 ])
-                .setRunName('extractKodyRuleIdsFromContent')
+                .setRunName(runName)
                 .setTemperature(0)
                 .execute();
 
@@ -332,6 +337,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 organizationId: organizationAndTeamData.organizationId,
                 prNumber: prNumber,
                 type: 'byok',
+                runName,
             });
 
             if (!extraction) {
@@ -422,8 +428,9 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         };
 
         try {
+            const runName = 'kodyRulesAnalyzeCodeWithAI';
             this.observabilityService.startSpan(
-                `${KodyRulesAnalysisService.name}::analyzeCodeWithAI`,
+                `${KodyRulesAnalysisService.name}::${runName}`,
             );
 
             const classifier = this.getClassifier(
@@ -503,6 +510,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 organizationId: organizationAndTeamData.organizationId,
                 prNumber: prNumber,
                 type: 'byok',
+                runName,
             });
 
             const generatedKodyRulesSuggestions = this.processLLMResponse(
@@ -587,8 +595,11 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                     context?.organizationAndTeamData?.organizationId,
                 teamId: context?.organizationAndTeamData?.teamId,
                 pullRequestId: context?.pullRequest?.number,
-                provider,
-                fallbackProvider,
+                provider: byokConfig?.main?.provider || provider,
+                fallbackProvider:
+                    byokConfig?.fallback?.provider || fallbackProvider,
+                model: byokConfig?.main?.model,
+                fallbackModel: byokConfig?.fallback?.model,
             })
             .addCallbacks([this.tokenTracker])
             .addTags([
@@ -630,8 +641,11 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                     context?.organizationAndTeamData?.organizationId,
                 teamId: context?.organizationAndTeamData?.teamId,
                 pullRequestId: context?.pullRequest?.number,
-                provider,
-                fallbackProvider,
+                provider: byokConfig?.main?.provider || provider,
+                fallbackProvider:
+                    byokConfig?.fallback?.provider || fallbackProvider,
+                model: byokConfig?.main?.model,
+                fallbackModel: byokConfig?.fallback?.model,
             })
             .addCallbacks([this.tokenTracker])
             .addTags([
@@ -673,8 +687,11 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                     context?.organizationAndTeamData?.organizationId,
                 teamId: context?.organizationAndTeamData?.teamId,
                 pullRequestId: context?.pullRequest?.number,
-                provider,
-                fallbackProvider,
+                provider: byokConfig?.main?.provider || provider,
+                fallbackProvider:
+                    byokConfig?.fallback?.provider || fallbackProvider,
+                model: byokConfig?.main?.model,
+                fallbackModel: byokConfig?.fallback?.model,
             })
             .addCallbacks([this.tokenTracker])
             .addTags([
@@ -715,8 +732,11 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                     context?.organizationAndTeamData?.organizationId,
                 teamId: context?.organizationAndTeamData?.teamId,
                 pullRequestId: context?.pullRequest?.number,
-                provider,
-                fallbackProvider,
+                provider: byokConfig?.main?.provider || provider,
+                fallbackProvider:
+                    byokConfig?.fallback?.provider || fallbackProvider,
+                model: byokConfig?.main?.model,
+                fallbackModel: byokConfig?.fallback?.model,
             })
             .addCallbacks([this.tokenTracker])
             .addTags([

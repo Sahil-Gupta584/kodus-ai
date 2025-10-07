@@ -856,8 +856,9 @@ export class KodyRulesSyncService {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<Array<Partial<CreateKodyRuleDto>>> {
         try {
+            const runName = 'kodyRulesFileToRules';
             this.observabilityService.startSpan(
-                `${KodyRulesSyncService.name}::convertFileToKodyRules`,
+                `${KodyRulesSyncService.name}::${runName}`,
             );
 
             const validationResult =
@@ -921,7 +922,8 @@ export class KodyRulesSyncService {
                     prompt: `File: ${params.filePath}\n\nContent:\n${params.content}`,
                 })
                 .addCallbacks([this.tokenTracker])
-                .setRunName('kodyRulesFileToRules')
+                .addMetadata({ runName })
+                .setRunName(runName)
                 .execute();
 
             this.observabilityService.endSpan(this.tokenTracker, {
@@ -929,6 +931,7 @@ export class KodyRulesSyncService {
                 filePath: params.filePath,
                 fallback: false,
                 type: 'byok',
+                runName,
             });
 
             let normalizedResult: any[] = [];
@@ -954,8 +957,9 @@ export class KodyRulesSyncService {
             }));
         } catch (error) {
             try {
+                const fallbackRunName = 'kodyRulesFileToRulesRaw';
                 this.observabilityService.startSpan(
-                    `${KodyRulesSyncService.name}::convertFileToKodyRules`,
+                    `${KodyRulesSyncService.name}::${fallbackRunName}`,
                 );
 
                 const validationResult =
@@ -1000,7 +1004,8 @@ export class KodyRulesSyncService {
                         prompt: `File: ${params.filePath}\n\nContent:\n${params.content}`,
                     })
                     .addCallbacks([this.tokenTracker])
-                    .setRunName('kodyRulesFileToRulesRaw')
+                    .addMetadata({ runName: fallbackRunName })
+                    .setRunName(fallbackRunName)
                     .execute();
 
                 this.observabilityService.endSpan(this.tokenTracker, {
@@ -1008,6 +1013,7 @@ export class KodyRulesSyncService {
                     filePath: params.filePath,
                     fallback: true,
                     type: 'byok',
+                    runName: fallbackRunName,
                 });
 
                 const parsed = this.extractJsonArray(raw);

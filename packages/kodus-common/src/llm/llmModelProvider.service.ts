@@ -34,7 +34,6 @@ export class LLMProviderService {
 
     getLLMProvider(options: LLMProviderOptions): LLMProviderReturn {
         try {
-            // Validar se BYOK tem dados válidos antes de tentar usar
             if (options.byokConfig?.main?.apiKey) {
                 const byokProvider =
                     this.byokProviderService.createBYOKProvider(
@@ -45,7 +44,6 @@ export class LLMProviderService {
                         },
                     );
 
-                // Aplicar JSON mode para OpenAI
                 if (options.jsonMode && byokProvider instanceof ChatOpenAI) {
                     return byokProvider.withConfig({
                         response_format: { type: 'json_object' },

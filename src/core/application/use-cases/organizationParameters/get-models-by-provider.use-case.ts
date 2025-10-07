@@ -135,7 +135,7 @@ export class GetModelsByProviderUseCase {
                 },
             );
 
-            return {
+            const models = {
                 provider: BYOKProvider.OPENAI,
                 models: response.data.data.map((model: OpenAIModel) => {
                     const capabilities = getModelCapabilities(model.id);
@@ -151,6 +151,8 @@ export class GetModelsByProviderUseCase {
                     return modelResult;
                 }),
             };
+
+            return models;
         } catch (error) {
             throw new BadRequestException(
                 `Erro ao buscar modelos OpenAI: ${(error as Error).message}`,
@@ -206,9 +208,34 @@ export class GetModelsByProviderUseCase {
                     .map((model: GeminiModel) => {
                         const modelId = model.name.split('/')[1];
                         const capabilities = getModelCapabilities(modelId);
+
+                        const formatModelName = (str: string): string => {
+                            return str
+                                .split('-')
+                                .map((word, index) => {
+                                    if (index === 0) {
+                                        // Primeira palavra sempre capitalizada
+                                        return (
+                                            word.charAt(0).toUpperCase() +
+                                            word.slice(1).toLowerCase()
+                                        );
+                                    }
+                                    // Números com pontos mantêm como estão
+                                    if (/^\d+\.\d+$/.test(word)) {
+                                        return word;
+                                    }
+                                    // Outras palavras capitalizam primeira letra
+                                    return (
+                                        word.charAt(0).toUpperCase() +
+                                        word.slice(1).toLowerCase()
+                                    );
+                                })
+                                .join(' ');
+                        };
+
                         return {
                             id: modelId,
-                            name: model.displayName || model.name,
+                            name: formatModelName(modelId),
                             ...(capabilities.supportsReasoning && {
                                 supportsReasoning: true,
                                 reasoningConfig: capabilities.reasoningConfig,

@@ -1,5 +1,6 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { resolveModelOptions } from './resolver';
+import { supportsJsonMode } from './capabilities';
 import { AdapterBuildParams, ProviderAdapter } from './types';
 
 export class NovitaAdapter implements ProviderAdapter {
@@ -12,16 +13,29 @@ export class NovitaAdapter implements ProviderAdapter {
 
         const maxTokens = resolved.resolvedMaxTokens ?? 4096;
 
+        const reasoningEffort =
+            resolved.supportsReasoning &&
+            resolved.reasoningType === 'level' &&
+            resolved.resolvedReasoningLevel
+                ? resolved.resolvedReasoningLevel
+                : undefined;
+
         const payload: ConstructorParameters<typeof ChatOpenAI>[0] = {
             modelName: model,
             ...(resolved.temperature !== undefined
                 ? { temperature: resolved.temperature }
                 : {}),
             ...(maxTokens ? { maxTokens } : {}),
-            ...(resolved.supportsReasoning &&
-            resolved.reasoningType === 'level' &&
-            resolved.resolvedReasoningLevel
-                ? { reasoning: { effort: resolved.resolvedReasoningLevel } }
+            ...(reasoningEffort
+                ? {
+                      reasoning: { effort: reasoningEffort },
+                      reasoningEffort,
+                  }
+                : {}),
+            ...(options?.jsonMode && supportsJsonMode(model)
+                ? {
+                      response_format: { type: 'json_object' as const },
+                  }
                 : {}),
             callbacks: options?.callbacks,
             configuration: {

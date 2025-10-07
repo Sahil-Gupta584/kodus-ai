@@ -932,8 +932,9 @@ export class KodyRulesPrLevelAnalysisService
         );
 
         try {
+            const runName = 'prLevelKodyRulesAnalyzer';
             this.observabilityService.startSpan(
-                `${KodyRulesPrLevelAnalysisService.name}::processChunk`,
+                `${KodyRulesPrLevelAnalysisService.name}::${runName}`,
             );
 
             const analysis = await promptRunner
@@ -952,16 +953,24 @@ export class KodyRulesPrLevelAnalysisService
                 .addMetadata({
                     organizationAndTeamData,
                     prNumber,
-                    provider: provider,
-                    fallbackProvider,
+                    provider:
+                        context?.codeReviewConfig?.byokConfig?.main?.provider ||
+                        provider,
+                    fallbackProvider:
+                        context?.codeReviewConfig?.byokConfig?.fallback
+                            ?.provider || fallbackProvider,
+                    model: context?.codeReviewConfig?.byokConfig?.main?.model,
+                    fallbackModel:
+                        context?.codeReviewConfig?.byokConfig?.fallback?.model,
                     chunkIndex,
+                    runName,
                 })
                 .addTags([
                     ...this.buildTags(provider, 'primary'),
                     ...this.buildTags(fallbackProvider, 'fallback'),
                 ])
                 .addCallbacks([this.tokenTracker])
-                .setRunName('prLevelKodyRulesAnalyzer')
+                .setRunName(runName)
                 .setTemperature(0)
                 .execute();
 
@@ -970,6 +979,7 @@ export class KodyRulesPrLevelAnalysisService
                 prNumber,
                 chunkIndex,
                 type: 'byok',
+                runName,
             });
 
             if (!analysis) {
@@ -1271,6 +1281,7 @@ export class KodyRulesPrLevelAnalysisService
         try {
             const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
 
+            const runName = 'prLevelKodyRulesGrouper';
             const promptRunner = new BYOKPromptRunnerService(
                 this.promptRunnerService,
                 provider,
@@ -1279,7 +1290,7 @@ export class KodyRulesPrLevelAnalysisService
             );
 
             this.observabilityService.startSpan(
-                `${KodyRulesPrLevelAnalysisService.name}::processRuleGrouping`,
+                `${KodyRulesPrLevelAnalysisService.name}::${runName}`,
             );
 
             const grouping = await promptRunner
@@ -1317,10 +1328,14 @@ export class KodyRulesPrLevelAnalysisService
                     organizationAndTeamData,
                     prNumber,
                     ruleId: rule?.uuid,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
+                    provider: byokConfig?.main?.provider || provider,
+                    fallbackProvider:
+                        byokConfig?.fallback?.provider || fallbackProvider,
+                    model: byokConfig?.main?.model,
+                    fallbackModel: byokConfig?.fallback?.model,
+                    runName,
                 })
-                .setRunName('prLevelKodyRulesGrouper')
+                .setRunName(runName)
                 .setTemperature(0)
                 .addCallbacks([this.tokenTracker])
                 .addTags([
@@ -1334,6 +1349,7 @@ export class KodyRulesPrLevelAnalysisService
                 prNumber,
                 ruleId: rule?.uuid,
                 type: 'byok',
+                runName,
             });
 
             if (!grouping) {

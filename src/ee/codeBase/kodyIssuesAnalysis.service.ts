@@ -62,8 +62,9 @@ export class KodyIssuesAnalysisService {
             const provider = LLMModelProvider.GEMINI_2_5_PRO;
             const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
 
+            const runName = 'mergeSuggestionsIntoIssues';
             this.observabilityService.startSpan(
-                `${KodyIssuesAnalysisService.name}::mergeSuggestionsIntoIssues`,
+                `${KodyIssuesAnalysisService.name}::${runName}`,
             );
 
             const promptRunner = new BYOKPromptRunnerService(
@@ -100,8 +101,12 @@ export class KodyIssuesAnalysisService {
                 .addMetadata({
                     organizationAndTeamData: organizationAndTeamData,
                     prNumber: pullRequest.number,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
+                    provider: byokConfig?.main?.provider || provider,
+                    fallbackProvider:
+                        byokConfig?.fallback?.provider || fallbackProvider,
+                    model: byokConfig?.main?.model,
+                    fallbackModel: byokConfig?.fallback?.model,
+                    runName,
                 })
                 .setRunName('mergeSuggestionsIntoIssues')
                 .addTags([
@@ -116,6 +121,7 @@ export class KodyIssuesAnalysisService {
                 organizationId: organizationAndTeamData.organizationId,
                 prNumber: pullRequest.number,
                 type: 'byok',
+                runName,
             });
 
             if (!result) {
@@ -168,8 +174,9 @@ export class KodyIssuesAnalysisService {
                 byokConfig,
             );
 
+            const runName = 'resolveExistingIssues';
             this.observabilityService.startSpan(
-                `${KodyIssuesAnalysisService.name}::resolveExistingIssues`,
+                `${KodyIssuesAnalysisService.name}::${runName}`,
             );
 
             const result = await promptRunner
@@ -188,8 +195,12 @@ export class KodyIssuesAnalysisService {
                 .addMetadata({
                     organizationAndTeamData: context.organizationAndTeamData,
                     prNumber: context.pullRequest.number,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
+                    provider: byokConfig?.main?.provider || provider,
+                    fallbackProvider:
+                        byokConfig?.fallback?.provider || fallbackProvider,
+                    model: byokConfig?.main?.model,
+                    fallbackModel: byokConfig?.fallback?.model,
+                    runName,
                 })
                 .setParser(ParserType.STRING)
                 .setLLMJsonMode(true)
@@ -205,10 +216,14 @@ export class KodyIssuesAnalysisService {
                 .addMetadata({
                     organizationAndTeamData: context.organizationAndTeamData,
                     prNumber: context.pullRequest.number,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
+                    provider: byokConfig?.main?.provider || provider,
+                    fallbackProvider:
+                        byokConfig?.fallback?.provider || fallbackProvider,
+                    model: byokConfig?.main?.model,
+                    fallbackModel: byokConfig?.fallback?.model,
+                    runName,
                 })
-                .setRunName('resolveExistingIssues')
+                .setRunName(runName)
                 .addTags([
                     ...this.buildTags(provider, 'primary'),
                     ...this.buildTags(fallbackProvider, 'fallback'),
@@ -221,6 +236,7 @@ export class KodyIssuesAnalysisService {
                 organizationId: context.organizationAndTeamData.organizationId,
                 prNumber: context.pullRequest.number,
                 type: 'byok',
+                runName,
             });
 
             if (!result) {

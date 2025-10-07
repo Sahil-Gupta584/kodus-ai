@@ -3,34 +3,46 @@
  * Kodus Tech. All rights reserved.
  */
 
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { KodyFineTuningService } from '@/core/infrastructure/adapters/services/kodyFineTuning/kodyFineTuning.service';
 import { CodeSuggestion } from '@/config/types/general/codeReview.type';
 import { CodeReviewPipelineContext } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/context/code-review-pipeline.context';
-import { BaseKodyFineTuningContextPreparation } from '@/core/infrastructure/adapters/services/kodyFineTuning1/base-fine-tuning.service';
-import {
-    ISuggestionService,
-    SUGGESTION_SERVICE_TOKEN,
-} from '@/core/domain/codeBase/contracts/SuggestionService.contract';
 import { IClusterizedSuggestion } from '@/core/domain/kodyFineTuning/interfaces/kodyFineTuning.interface';
-
+import { IKodyFineTuningContextPreparationService } from '@/shared/interfaces/kody-fine-tuning-context-preparation.interface';
 /**
  * Enterprise implementation of fine tuning service
  * Extends the base class and adds advanced functionality
  * Available only in the cloud version or with an enterprise license
  */
 @Injectable()
-export class KodyFineTuningContextPreparationServiceEE extends BaseKodyFineTuningContextPreparation {
-    private context: CodeReviewPipelineContext;
-
+export class KodyFineTuningContextPreparationService
+    implements IKodyFineTuningContextPreparationService
+{
     constructor(
-        @Inject(SUGGESTION_SERVICE_TOKEN)
-        private readonly suggestionService: ISuggestionService,
         private readonly kodyFineTuningService: KodyFineTuningService,
         protected readonly logger: PinoLoggerService,
-    ) {
-        super(logger);
+    ) {}
+
+    prepareKodyFineTuningContext(
+        organizationId: string,
+        prNumber: number,
+        repository: { id: string; full_name: string },
+        suggestionsToAnalyze: CodeSuggestion[],
+        isFineTuningEnabled: boolean,
+        clusterizedSuggestions: IClusterizedSuggestion[],
+    ): Promise<{
+        keepedSuggestions: Partial<CodeSuggestion>[];
+        discardedSuggestions: Partial<CodeSuggestion>[];
+    }> {
+        return this.prepareKodyFineTuningContextInternal(
+            organizationId,
+            prNumber,
+            repository,
+            suggestionsToAnalyze,
+            isFineTuningEnabled,
+            clusterizedSuggestions,
+        );
     }
 
     /**
@@ -116,7 +128,7 @@ export class KodyFineTuningContextPreparationServiceEE extends BaseKodyFineTunin
             this.logger.error({
                 message: 'Error performing fine tuning analysis',
                 error,
-                context: KodyFineTuningContextPreparationServiceEE.name,
+                context: KodyFineTuningContextPreparationService.name,
                 metadata: {
                     organizationId,
                     prNumber,

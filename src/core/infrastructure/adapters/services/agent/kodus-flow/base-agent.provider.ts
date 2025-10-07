@@ -73,7 +73,6 @@ export abstract class BaseAgentProvider {
                 const provider = resolveProvider(options?.model);
                 const fallbackProvider = LLMModelProvider.OPENAI_GPT_4O;
 
-                // Create BYOKPromptRunnerService with BYOK config
                 const promptRunner = new BYOKPromptRunnerService(
                     self.promptRunnerService,
                     provider,
@@ -81,12 +80,10 @@ export abstract class BaseAgentProvider {
                     self.byokConfig,
                 );
 
-                // Start building the prompt
                 let builder = promptRunner
                     .builder()
                     .setParser(ParserType.STRING);
 
-                // Add each message with its appropriate role
                 for (const msg of lcMessages) {
                     const role =
                         msg.type === 'system'
@@ -118,15 +115,16 @@ export abstract class BaseAgentProvider {
                         organizationId:
                             self.organizationAndTeamData?.organizationId,
                         teamId: self.organizationAndTeamData?.teamId,
-                        provider: provider,
-                        fallbackProvider: self.byokConfig?.fallback
-                            ? fallbackProvider
-                            : undefined,
+                        provider: self.byokConfig?.main?.provider || provider,
+                        fallbackProvider:
+                            self.byokConfig?.fallback?.provider ||
+                            fallbackProvider,
+                        model: self.byokConfig?.main?.model,
+                        fallbackModel: self.byokConfig?.fallback?.model,
                     })
                     .setRunName(`${moduleName}`)
                     .execute();
 
-                // Convert result to AIMessage format expected by the agent
                 return {
                     content: result,
                     additional_kwargs: {},
