@@ -4,7 +4,7 @@ import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatGoogle } from '@langchain/google-gauth';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { Callbacks } from '@langchain/core/callbacks/manager';
-import { supportsTemperature } from './modelCapabilities';
+import { getModelCapabilities, supportsTemperature } from './modelCapabilities';
 
 export enum BYOKProvider {
     OPENAI = 'openai',
@@ -55,12 +55,15 @@ export class BYOKProviderService {
             maxReasoningTokens: options?.maxReasoningTokens ?? 1,
         };
 
+        const capabilities = getModelCapabilities(model);
+        console.log('@@capabilities 1111', capabilities);
+
         if (!supportsTemperature(model)) {
             delete defaultOptions.temperature;
         }
 
         // Cria commonOptions sem maxReasoningTokens (usado apenas no Gemini)
-        const commonOptions: Record<string, unknown> = {
+        const commonOptions: Record<string, any> = {
             maxTokens: defaultOptions.maxTokens,
             callbacks: defaultOptions.callbacks,
         };
@@ -107,15 +110,34 @@ export class BYOKProviderService {
                     },
                 });
 
-            case BYOKProvider.ANTHROPIC:
+            case BYOKProvider.ANTHROPIC: {
+                const defaultMaxTokensByModel: Record<string, number> = {
+                    'claude-opus-4-1-20250805': 15000,
+                    'claude-opus-4-20250514': 15000,
+                    'claude-sonnet-4-5-20250929': 15000,
+                    'claude-sonnet-4-20250514': 15000,
+                    'claude-3-7-sonnet-20250219': 15000,
+                    'claude-3-5-sonnet-20241022': 8192,
+                    'claude-3-5-haiku-20241022': 8192,
+                    'claude-3-5-sonnet-20240620': 8192,
+                    'claude-3-haiku-20240307': 4096,
+                    'claude-3-opus-20240229': 4096,
+                };
+                const maxTokensOptions = defaultMaxTokensByModel[model] ?? 4096;
+
                 return new ChatAnthropic({
                     modelName: model,
                     anthropicApiKey: apiKey,
-                    ...commonOptions,
+                    temperature: commonOptions.temperature as number,
+                    maxTokens: maxTokensOptions,
+                    callbacks: commonOptions.callbacks as Callbacks,
                 });
+            }
 
             case BYOKProvider.GOOGLE_GEMINI: {
                 // Gemini usa maxOutputTokens ao invés de maxTokens e requer valores positivos
+                const capabilities = getModelCapabilities(model);
+                console.log('@@capabilities', capabilities);
                 const geminiOptions: Record<string, unknown> = {
                     model: model,
                     apiKey: apiKey,
@@ -133,9 +155,14 @@ export class BYOKProviderService {
                 }
 
                 // Só passa maxReasoningTokens se for um valor válido (> 0)
-                const maxReasoningTokens =
-                    defaultOptions.maxReasoningTokens as number;
-                if (maxReasoningTokens > 0) {
+                if (capabilities && capabilities.supportsReasoning) {
+                    const maxReasoningTokens =
+                        typeof capabilities.reasoningConfig?.options ===
+                            'object' &&
+                        !Array.isArray(capabilities.reasoningConfig.options) &&
+                        'default' in capabilities.reasoningConfig.options
+                            ? capabilities.reasoningConfig.options.default
+                            : 1;
                     geminiOptions.maxReasoningTokens = maxReasoningTokens;
                 }
 

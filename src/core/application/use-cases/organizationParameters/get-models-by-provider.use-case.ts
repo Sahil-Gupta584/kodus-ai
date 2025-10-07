@@ -197,7 +197,7 @@ export class GetModelsByProviderUseCase {
                 },
             );
 
-            return {
+            const models = {
                 provider: BYOKProvider.GOOGLE_GEMINI,
                 models: response.data.models
                     .filter((model: GeminiModel) =>
@@ -216,6 +216,8 @@ export class GetModelsByProviderUseCase {
                         };
                     }),
             };
+
+            return models;
         } catch (error) {
             throw new BadRequestException(
                 `Erro ao buscar modelos Gemini: ${(error as Error).message}`,

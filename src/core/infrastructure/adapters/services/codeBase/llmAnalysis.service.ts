@@ -642,7 +642,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                                 data.relevantLinesEnd &&
                                 data.action,
                             {
-                                error: 'All fields are required',
+                                message: 'All fields are required',
                             },
                         ),
                 ),
