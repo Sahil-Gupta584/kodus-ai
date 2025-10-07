@@ -374,6 +374,8 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             organizationAndTeamData: context?.organizationAndTeamData,
             relevantContent: fileContext?.relevantContent,
             prSummary: context?.pullRequest?.body,
+            // v2-only prompt customization (categories and severity guidance)
+            v2PromptOverrides: context?.codeReviewConfig?.v2PromptOverrides,
         };
 
         return baseContext;
