@@ -65,6 +65,20 @@ export class KodyIssuesManagementService
 
     async processClosedPr(params: contextToGenerateIssues): Promise<void> {
         try {
+            // Validação centralizada de permissões
+            const validationResult =
+                await this.permissionValidationService.validateExecutionPermissions(
+                    params.organizationAndTeamData,
+                    undefined, // sem validação de usuário específico
+                    KodyIssuesManagementService.name,
+                );
+
+            if (!validationResult.allowed) {
+                return;
+            }
+
+            const byokConfig = validationResult.byokConfig ?? null;
+
             const issuesConfig = await this.parametersService.findByKey(
                 ParametersKey.ISSUE_CREATION_CONFIG,
                 params.organizationAndTeamData,
@@ -112,7 +126,7 @@ export class KodyIssuesManagementService
                         params,
                         filePath,
                         suggestionsByFile[filePath],
-                        BYOKConfig
+                        byokConfig
                     );
                 }
             } else {
@@ -127,7 +141,7 @@ export class KodyIssuesManagementService
             await this.resolveExistingIssues(
                 params,
                 params.prFiles,
-                BYOKConfig,
+                byokConfig,
             );
 
             await this.pullRequestsService.updateSyncedWithIssuesFlag(
