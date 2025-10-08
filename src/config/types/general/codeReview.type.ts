@@ -12,6 +12,7 @@ import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullReque
 import { ConfigLevel } from './pullRequestMessages.type';
 import z from 'zod';
 import { CodeReviewPipelineContext } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/context/code-review-pipeline.context';
+import { DeepPartial } from 'typeorm';
 
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
@@ -309,7 +310,6 @@ export type CodeReviewConfig = {
     reviewModeConfig?: ReviewModeConfig;
     ideRulesSyncEnabled?: boolean;
     kodyFineTuningConfig?: KodyFineTuningConfig;
-    isCommitMode?: boolean;
     configLevel?: ConfigLevel;
     directoryId?: string;
     directoryPath?: string;
@@ -341,13 +341,8 @@ export type CodeReviewConfigWithRepositoryInfo = Omit<
 };
 
 // Omit every configuration that isn't present on the kodus configuration file.
-export type KodusConfigFile = Omit<
-    CodeReviewConfig,
-    | 'llmProvider'
-    | 'languageResultPrompt'
-    | 'kodyRules'
-    | 'kodusConfigFileOverridesWebPreferences'
-    | 'kodyRulesGeneratorEnabled'
+export type KodusConfigFile = DeepPartial<
+    Omit<CodeReviewConfig, 'llmProvider' | 'languageResultPrompt' | 'kodyRules'>
 > & {
     version: string;
 };

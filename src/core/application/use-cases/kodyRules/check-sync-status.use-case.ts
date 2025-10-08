@@ -37,8 +37,8 @@ import { SendRulesNotificationUseCase } from './send-rules-notification.use-case
 import { REQUEST } from '@nestjs/core';
 import {
     ICodeRepository,
-    ICodeReviewParameter,
-    IRepositoryCodeReviewConfig,
+    CodeReviewParameter,
+    RepositoryCodeReviewConfig,
 } from '@/config/types/general/codeReviewConfig.type';
 
 @Injectable()
@@ -86,13 +86,13 @@ export class CheckSyncStatusUseCase {
         );
 
         try {
-            const codeReviewConfigs: ICodeReviewParameter =
+            const codeReviewConfigs: CodeReviewParameter =
                 await this.getCodeReviewConfigs(organizationAndTeamData);
 
             const currentRepositoryConfig = codeReviewConfigs.repositories.find(
-                (repository: IRepositoryCodeReviewConfig) =>
+                (repository: RepositoryCodeReviewConfig) =>
                     repository.id === repositoryId,
-            ) as IRepositoryCodeReviewConfig;
+            ) as RepositoryCodeReviewConfig;
 
             // Se não encontrou o repositório, retorna configuração padrão
             if (!currentRepositoryConfig) {
@@ -100,7 +100,7 @@ export class CheckSyncStatusUseCase {
             }
 
             const ideRulesSyncEnabled =
-                currentRepositoryConfig.ideRulesSyncEnabled;
+                currentRepositoryConfig.configs.ideRulesSyncEnabled;
 
             if (!ideRulesSyncEnabled) {
                 const rules =
@@ -118,7 +118,7 @@ export class CheckSyncStatusUseCase {
             }
 
             const kodyRulesGeneratorEnabled =
-                currentRepositoryConfig.kodyRulesGeneratorEnabled;
+                currentRepositoryConfig.configs.kodyRulesGeneratorEnabled;
 
             if (
                 platformConfig.configValue.kodyLearningStatus ===
@@ -149,7 +149,7 @@ export class CheckSyncStatusUseCase {
 
     private async getCodeReviewConfigs(
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<ICodeReviewParameter> {
+    ): Promise<CodeReviewParameter> {
         const codeReviewConfig = await this.parametersService.findByKey(
             ParametersKey.CODE_REVIEW_CONFIG,
             organizationAndTeamData,

@@ -13,16 +13,9 @@ import {
 } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import {
-    BehaviourForExistingDescription,
-    BehaviourForNewCommits,
     CodeReviewConfigWithoutLLMProvider,
     CodeReviewVersion,
-    GroupingModeSuggestions,
-    LimitationType,
-    SuggestionControlConfig,
-    SummaryConfig,
 } from '@/config/types/general/codeReview.type';
-import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import {
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
     ICodeReviewSettingsLogService,
@@ -34,8 +27,9 @@ import {
 } from '@/config/types/general/codeReviewSettingsLog.type';
 import {
     ICodeRepository,
-    ICodeReviewParameter,
-    IRepositoryCodeReviewConfig,
+    CodeReviewParameter,
+    DirectoryCodeReviewConfig,
+    RepositoryCodeReviewConfig,
 } from '@/config/types/general/codeReviewConfig.type';
 import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
 import {
@@ -43,10 +37,18 @@ import {
     ResourceType,
 } from '@/core/domain/permissions/enums/permissions.enum';
 import { UserRequest } from '@/config/types/http/user-request.type';
+import { DeepPartial } from 'typeorm';
+import { getDefaultKodusConfigFile } from '@/shared/utils/validateCodeReviewConfigFile';
+import { produce } from 'immer';
+import { deepDifference, deepMerge } from '@/shared/utils/deep';
+import {
+    CODE_BASE_CONFIG_SERVICE_TOKEN,
+    ICodeBaseConfigService,
+} from '@/core/domain/codeBase/contracts/CodeBaseConfigService.contract';
 
 interface CodeReviewParameterBody {
     organizationAndTeamData: OrganizationAndTeamData;
-    configValue: any;
+    configValue: DeepPartial<CodeReviewConfigWithoutLLMProvider>;
     repositoryId?: string;
     directoryId?: string;
 }
@@ -69,6 +71,9 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         private readonly logger: PinoLoggerService,
 
         private readonly authorizationService: AuthorizationService,
+
+        @Inject(CODE_BASE_CONFIG_SERVICE_TOKEN)
+        private readonly codeBaseConfigService: ICodeBaseConfigService,
     ) {}
 
     async execute(
@@ -94,59 +99,32 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 repoIds: [repositoryId],
             });
 
-            if (configValue?.codeReviewVersion === CodeReviewVersion.v2) {
-                configValue.reviewOptions.kody_rules = true;
-            }
-
-            const codeReviewConfigs: ICodeReviewParameter =
-                await this.getCodeReviewConfigs(organizationAndTeamData);
+            const codeReviewConfigs = await this.getCodeReviewConfigs(
+                organizationAndTeamData,
+            );
             const codeRepositories = await this.getFormattedRepositories(
                 organizationAndTeamData,
             );
 
-            const filteredRepositoryInfo = this.filterRepositoryInfo(
-                codeRepositories,
-            ) as IRepositoryCodeReviewConfig[];
+            const filteredRepositoryInfo =
+                this.filterRepositoryInfo(codeRepositories);
 
-            if (!codeReviewConfigs) {
-                return await this.createNewConfig(
+            if (!codeReviewConfigs || !codeReviewConfigs.configs) {
+                return await this.createNewGlobalConfig(
                     organizationAndTeamData,
                     configValue,
                     filteredRepositoryInfo,
                 );
             }
 
-            this.updateExistingGlobalConfig(
-                codeReviewConfigs,
-                filteredRepositoryInfo,
-            );
+            this.mergeRepositories(codeReviewConfigs, filteredRepositoryInfo);
 
-            // Se tem directoryId, atualiza configuração de diretório
-            if (directoryId) {
-                return await this.updateDirectoryConfig(
-                    organizationAndTeamData,
-                    codeReviewConfigs,
-                    repositoryId,
-                    directoryId,
-                    configValue,
-                );
-            }
-
-            // Se tem repositoryId, atualiza configuração de repositório
-            if (repositoryId) {
-                return await this.updateSpecificRepositoryConfig(
-                    organizationAndTeamData,
-                    codeReviewConfigs,
-                    repositoryId,
-                    configValue,
-                );
-            }
-
-            // Senão, atualiza configuração global
-            return await this.updateGlobalConfig(
+            return await this.handleConfigUpdate(
                 organizationAndTeamData,
                 codeReviewConfigs,
                 configValue,
+                repositoryId,
+                directoryId,
             );
         } catch (error) {
             this.handleError(error, body);
@@ -154,157 +132,9 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         }
     }
 
-    private async updateDirectoryConfig(
-        organizationAndTeamData: OrganizationAndTeamData,
-        codeReviewConfigs: ICodeReviewParameter,
-        repositoryId: string,
-        directoryId: string,
-        configValue: CodeReviewConfigWithoutLLMProvider,
-    ) {
-        if (configValue?.codeReviewVersion === CodeReviewVersion.v2) {
-            configValue.reviewOptions.kody_rules = true;
-        }
-
-        const targetRepository = codeReviewConfigs.repositories.find(
-            (repository: any) => repository.id === repositoryId,
-        );
-
-        if (!targetRepository || !targetRepository.directories) {
-            throw new Error('Repository or directories not found');
-        }
-
-        const currentDirectoryConfig = targetRepository.directories.find(
-            (directory: any) => directory.id === directoryId,
-        );
-
-        if (!currentDirectoryConfig) {
-            throw new Error('Directory configuration not found');
-        }
-
-        const updatedDirectories = targetRepository.directories.map(
-            (directory: any) => {
-                if (directory.id === directoryId) {
-                    return {
-                        ...directory,
-                        ...configValue,
-                        summary: {
-                            ...this.getDefaultPRSummaryConfig(),
-                            ...directory.summary,
-                            ...configValue?.summary,
-                        },
-                        suggestionControl: {
-                            ...this.getDefaultSuggestionControlConfig(),
-                            ...directory.suggestionControl,
-                            ...configValue?.suggestionControl,
-                        },
-                        isSelected: true,
-                    };
-                }
-                return directory;
-            },
-        );
-
-        const updatedRepositories = codeReviewConfigs.repositories.map(
-            (repository: any) => {
-                if (repository.id === repositoryId) {
-                    return {
-                        ...repository,
-                        directories: updatedDirectories,
-                    };
-                }
-                return repository;
-            },
-        );
-
-        const updatedCodeReviewConfigValue = {
-            repositories: updatedRepositories,
-            global: codeReviewConfigs.global,
-        };
-
-        await this.parametersService.createOrUpdateConfig(
-            ParametersKey.CODE_REVIEW_CONFIG,
-            updatedCodeReviewConfigValue,
-            organizationAndTeamData,
-        );
-
-        await this.logDirectoryUpdate(
-            organizationAndTeamData,
-            currentDirectoryConfig,
-            configValue,
-            targetRepository,
-        );
-
-        return true;
-    }
-
-    private async logDirectoryUpdate(
-        organizationAndTeamData: OrganizationAndTeamData,
-        currentDirectoryConfig: any,
-        newConfig: CodeReviewConfigWithoutLLMProvider,
-        repository: any,
-    ) {
-        try {
-            this.codeReviewSettingsLogService.registerCodeReviewConfigLog({
-                organizationAndTeamData,
-                userInfo: {
-                    userId: this.request.user.uuid,
-                    userEmail: this.request.user.email,
-                },
-                oldConfig: currentDirectoryConfig,
-                newConfig: newConfig,
-                actionType: ActionType.EDIT,
-                configLevel: ConfigLevel.DIRECTORY,
-                repository: {
-                    id: repository.id,
-                    name: repository.name,
-                },
-                directory: {
-                    id: currentDirectoryConfig.id,
-                    path: currentDirectoryConfig.path,
-                },
-            });
-        } catch (error) {
-            this.logger.error({
-                message: 'Error saving code review settings log for directory',
-                error: error,
-                context: UpdateOrCreateCodeReviewParameterUseCase.name,
-                metadata: {
-                    organizationAndTeamData: organizationAndTeamData,
-                    functionName: 'updateDirectoryConfig',
-                },
-            });
-        }
-    }
-
-    private getDefaultPRSummaryConfig(): SummaryConfig {
-        return {
-            generatePRSummary: true,
-            customInstructions: '',
-            behaviourForExistingDescription:
-                BehaviourForExistingDescription.CONCATENATE,
-            behaviourForNewCommits: BehaviourForNewCommits.NONE,
-        };
-    }
-
-    private getDefaultSuggestionControlConfig(): SuggestionControlConfig {
-        return {
-            groupingMode: GroupingModeSuggestions.FULL,
-            limitationType: LimitationType.PR,
-            maxSuggestions: 9,
-            severityLevelFilter: SeverityLevel.HIGH,
-            applyFiltersToKodyRules: false,
-            severityLimits: {
-                low: 0,
-                medium: 0,
-                high: 0,
-                critical: 0,
-            },
-        };
-    }
-
     private async getCodeReviewConfigs(
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<ICodeReviewParameter> {
+    ): Promise<CodeReviewParameter> {
         const codeReviewConfig = await this.parametersService.findByKey(
             ParametersKey.CODE_REVIEW_CONFIG,
             organizationAndTeamData,
@@ -326,82 +156,45 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             id: repository.id,
             name: repository.name,
             isSelected: false,
-            directories: repository.directories,
+            directories: repository.directories ?? [],
+            configs: {},
         }));
     }
 
-    private async createNewConfig(
+    private async createNewGlobalConfig(
         organizationAndTeamData: OrganizationAndTeamData,
-        configValue: CodeReviewConfigWithoutLLMProvider,
-        filteredRepositoryInfo: IRepositoryCodeReviewConfig[],
+        configValue: DeepPartial<CodeReviewConfigWithoutLLMProvider>,
+        filteredRepositoryInfo: RepositoryCodeReviewConfig[],
     ) {
-        const defaultSuggestionControl =
-            this.getDefaultSuggestionControlConfig();
+        const defaultConfig = getDefaultKodusConfigFile();
 
-        const updatedConfigValue = {
-            global: {
-                ...configValue,
-                codeReviewVersion:
-                    configValue?.codeReviewVersion ?? CodeReviewVersion.v2,
-                summary: !configValue.summary
-                    ? this.getDefaultPRSummaryConfig()
-                    : {
-                          ...this.getDefaultPRSummaryConfig(),
-                          ...configValue.summary,
-                      },
-                suggestionControl: !configValue.suggestionControl
-                    ? defaultSuggestionControl
-                    : {
-                          ...defaultSuggestionControl,
-                          ...configValue.suggestionControl,
-                          applyFiltersToKodyRules:
-                              configValue.suggestionControl
-                                  .applyFiltersToKodyRules ?? false,
-                      },
-                isCommitMode: configValue?.isCommitMode ?? false,
-            },
+        const updatedConfigValue = deepDifference(defaultConfig, configValue);
+
+        const updatedConfig = {
+            id: 'global',
+            name: 'Global',
+            isSelected: true,
+            configs: updatedConfigValue,
             repositories: filteredRepositoryInfo,
-        };
+        } as CodeReviewParameter;
 
         return await this.parametersService.createOrUpdateConfig(
             ParametersKey.CODE_REVIEW_CONFIG,
-            updatedConfigValue,
+            updatedConfig,
             organizationAndTeamData,
         );
     }
 
-    private updateExistingGlobalConfig(
-        codeReviewConfigs: ICodeReviewParameter,
-        filteredRepositoryInfo: IRepositoryCodeReviewConfig[],
-    ) {
-        if (!codeReviewConfigs.repositories) {
-            codeReviewConfigs.repositories = filteredRepositoryInfo;
-        }
-
-        if (!codeReviewConfigs.global.summary) {
-            codeReviewConfigs.global.summary = this.getDefaultPRSummaryConfig();
-        }
-
-        if (!codeReviewConfigs.global.suggestionControl) {
-            codeReviewConfigs.global.suggestionControl =
-                this.getDefaultSuggestionControlConfig();
-        } else {
-            const sc = codeReviewConfigs.global.suggestionControl;
-            sc.applyFiltersToKodyRules = sc.applyFiltersToKodyRules ?? false;
-        }
-
-        this.mergeRepositories(codeReviewConfigs, filteredRepositoryInfo);
-    }
-
     private mergeRepositories(
-        codeReviewConfigs: ICodeReviewParameter,
-        filteredRepositoryInfo: IRepositoryCodeReviewConfig[],
+        codeReviewConfigs: CodeReviewParameter,
+        filteredRepositoryInfo: RepositoryCodeReviewConfig[],
     ) {
         const existingRepoIds = new Set(
-            codeReviewConfigs.repositories.map((repo) => repo.id),
+            (codeReviewConfigs.repositories || []).map((repo) => repo.id),
         );
+
         const updatedRepositories = [
-            ...codeReviewConfigs.repositories,
+            ...(codeReviewConfigs.repositories || []),
             ...filteredRepositoryInfo.filter(
                 (repo) => !existingRepoIds.has(repo.id),
             ),
@@ -410,40 +203,61 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         codeReviewConfigs.repositories = updatedRepositories;
     }
 
-    private async updateGlobalConfig(
+    private async handleConfigUpdate(
         organizationAndTeamData: OrganizationAndTeamData,
-        codeReviewConfigs: ICodeReviewParameter,
-        newGlobalInfo: CodeReviewConfigWithoutLLMProvider,
+        codeReviewConfigs: CodeReviewParameter,
+        newConfigValue: DeepPartial<CodeReviewConfigWithoutLLMProvider>,
+        repositoryId?: string,
+        directoryId?: string,
     ) {
-        const defaultSuggestionControl =
-            this.getDefaultSuggestionControlConfig();
+        const resolver = new ConfigResolver(
+            codeReviewConfigs,
+            this.codeBaseConfigService,
+            organizationAndTeamData,
+        );
 
-        const updatedCodeReviewConfigValue = {
-            global: {
-                ...codeReviewConfigs.global,
-                ...newGlobalInfo,
-                summary: {
-                    ...codeReviewConfigs.global.summary,
-                    ...newGlobalInfo?.summary,
-                },
-                suggestionControl: {
-                    ...defaultSuggestionControl,
-                    ...codeReviewConfigs.global.suggestionControl,
-                    ...newGlobalInfo?.suggestionControl,
-                    applyFiltersToKodyRules:
-                        newGlobalInfo?.suggestionControl
-                            ?.applyFiltersToKodyRules ??
-                        codeReviewConfigs.global.suggestionControl
-                            ?.applyFiltersToKodyRules ??
-                        false,
-                },
-                isCommitMode:
-                    newGlobalInfo?.isCommitMode ??
-                    codeReviewConfigs.global.isCommitMode ??
-                    false,
-            },
-            repositories: codeReviewConfigs.repositories,
-        };
+        const parentConfig = await resolver.getResolvedParentConfig(
+            repositoryId,
+            directoryId,
+        );
+
+        let oldConfig: DeepPartial<CodeReviewConfigWithoutLLMProvider> = {};
+        let level: ConfigLevel;
+        let repository: RepositoryCodeReviewConfig | undefined;
+        let directory: DirectoryCodeReviewConfig | undefined;
+
+        if (directoryId && repositoryId) {
+            level = ConfigLevel.DIRECTORY;
+            repository = resolver.findRepository(repositoryId);
+            directory = resolver.findDirectory(repository, directoryId);
+            oldConfig = directory.configs ?? {};
+        } else if (repositoryId) {
+            level = ConfigLevel.REPOSITORY;
+            repository = resolver.findRepository(repositoryId);
+            oldConfig = repository.configs ?? {};
+        } else {
+            level = ConfigLevel.GLOBAL;
+            oldConfig = codeReviewConfigs.configs ?? {};
+        }
+
+        const newResolvedConfig = deepMerge(
+            parentConfig,
+            oldConfig,
+            newConfigValue,
+        );
+
+        const newDelta = deepDifference(parentConfig, newResolvedConfig);
+
+        const updater = resolver.createUpdater(
+            newDelta,
+            repositoryId,
+            directoryId,
+        );
+
+        const updatedCodeReviewConfigValue = produce(
+            codeReviewConfigs,
+            updater,
+        );
 
         await this.parametersService.createOrUpdateConfig(
             ParametersKey.CODE_REVIEW_CONFIG,
@@ -451,119 +265,78 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             organizationAndTeamData,
         );
 
+        await this.logConfigUpdate({
+            organizationAndTeamData,
+            oldConfig,
+            newConfig: newConfigValue,
+            level,
+            sourceFunctionName: `handleConfigUpdate[${level}]`,
+            repository,
+            directory,
+        });
+
+        return true;
+    }
+
+    private async logConfigUpdate(options: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        oldConfig: DeepPartial<CodeReviewConfigWithoutLLMProvider>;
+        newConfig: DeepPartial<CodeReviewConfigWithoutLLMProvider>;
+        level: ConfigLevel;
+        sourceFunctionName: string;
+        repository?: RepositoryCodeReviewConfig;
+        directory?: DirectoryCodeReviewConfig;
+    }) {
+        const {
+            organizationAndTeamData,
+            oldConfig,
+            newConfig,
+            level,
+            sourceFunctionName,
+            repository,
+            directory,
+        } = options;
+
         try {
-            this.codeReviewSettingsLogService.registerCodeReviewConfigLog({
+            const logPayload: any = {
                 organizationAndTeamData,
                 userInfo: {
                     userId: this.request.user.uuid,
                     userEmail: this.request.user.email,
                 },
-                oldConfig: codeReviewConfigs.global,
-                newConfig: newGlobalInfo,
+                oldConfig,
+                newConfig,
                 actionType: ActionType.EDIT,
-                configLevel: ConfigLevel.GLOBAL,
-            });
-        } catch (error) {
-            this.logger.error({
-                message: 'Error saving code review settings log',
-                error: error,
-                context: UpdateOrCreateCodeReviewParameterUseCase.name,
-                metadata: {
-                    organizationAndTeamData: organizationAndTeamData,
-                    functionName: 'updateGlobalConfig',
-                },
-            });
-        }
+                configLevel: level,
+            };
 
-        return true;
-    }
-
-    private async updateSpecificRepositoryConfig(
-        organizationAndTeamData: OrganizationAndTeamData,
-        codeReviewConfigs: ICodeReviewParameter,
-        repositoryId: string,
-        configValue: CodeReviewConfigWithoutLLMProvider,
-    ) {
-        if (configValue?.codeReviewVersion === CodeReviewVersion.v2) {
-            configValue.reviewOptions.kody_rules = true;
-        }
-
-        const currentRepositoryConfig = codeReviewConfigs.repositories.find(
-            (repository: any) => repository.id === repositoryId,
-        );
-
-        const updatedRepositories = codeReviewConfigs.repositories.map(
-            (repository: any) => {
-                if (repository.id === repositoryId) {
-                    if (!repository.summary) {
-                        return {
-                            ...repository,
-                            ...configValue,
-                            summary: this.getDefaultPRSummaryConfig(),
-                            isSelected: true,
-                        };
-                    }
-                    return {
-                        ...repository,
-                        ...configValue,
-                        summary: {
-                            ...repository.summary,
-                            ...configValue?.summary,
-                        },
-                        isSelected: true,
-                    };
-                }
-                return repository;
-            },
-        );
-
-        const updatedCodeReviewConfigValue = {
-            repositories: updatedRepositories,
-            global: codeReviewConfigs.global,
-        };
-
-        await this.parametersService.createOrUpdateConfig(
-            ParametersKey.CODE_REVIEW_CONFIG,
-            updatedCodeReviewConfigValue,
-            organizationAndTeamData,
-        );
-
-        try {
-            const newRepositoryConfig = updatedRepositories.find(
-                (repository: any) => repository.id === repositoryId,
-            );
-
-            if (currentRepositoryConfig && newRepositoryConfig) {
-                this.codeReviewSettingsLogService.registerCodeReviewConfigLog({
-                    organizationAndTeamData,
-                    userInfo: {
-                        userId: this.request.user.uuid,
-                        userEmail: this.request.user.email,
-                    },
-                    oldConfig: currentRepositoryConfig,
-                    newConfig: newRepositoryConfig,
-                    actionType: ActionType.EDIT,
-                    configLevel: ConfigLevel.REPOSITORY,
-                    repository: {
-                        id: newRepositoryConfig.id,
-                        name: newRepositoryConfig.name,
-                    },
-                });
+            if (repository) {
+                logPayload.repository = {
+                    id: repository.id,
+                    name: repository.name,
+                };
             }
+            if (directory) {
+                logPayload.directory = {
+                    id: directory.id,
+                    path: directory.path,
+                };
+            }
+
+            await this.codeReviewSettingsLogService.registerCodeReviewConfigLog(
+                logPayload,
+            );
         } catch (error) {
             this.logger.error({
-                message: 'Error saving code review settings log',
+                message: `Error saving code review settings log for ${level.toLowerCase()} level`,
                 error: error,
                 context: UpdateOrCreateCodeReviewParameterUseCase.name,
                 metadata: {
                     organizationAndTeamData: organizationAndTeamData,
-                    repositoryId: repositoryId,
-                    functionName: 'updateSpecificRepositoryConfig',
+                    functionName: sourceFunctionName,
                 },
             });
         }
-
-        return true;
     }
 
     private handleError(error: any, body: CodeReviewParameterBody) {
@@ -578,5 +351,102 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
                 organizationAndTeamData: body.organizationAndTeamData,
             },
         });
+    }
+}
+
+class ConfigResolver {
+    private readonly defaultConfig = getDefaultKodusConfigFile();
+
+    constructor(
+        private readonly codeReviewConfigs: CodeReviewParameter,
+        private readonly codeBaseConfigService: ICodeBaseConfigService,
+        private readonly organizationAndTeamData: OrganizationAndTeamData,
+    ) {}
+
+    public findRepository(repositoryId: string): RepositoryCodeReviewConfig {
+        const repo = this.codeReviewConfigs.repositories.find(
+            (r) => r.id === repositoryId,
+        );
+        if (!repo) {
+            throw new Error('Repository configuration not found');
+        }
+        return repo;
+    }
+
+    public findDirectory(
+        repository: RepositoryCodeReviewConfig,
+        directoryId: string,
+    ): DirectoryCodeReviewConfig {
+        const dir = repository.directories?.find((d) => d.id === directoryId);
+        if (!dir) {
+            throw new Error('Directory configuration not found');
+        }
+        return dir;
+    }
+
+    public async getResolvedParentConfig(
+        repositoryId?: string,
+        directoryId?: string,
+    ): Promise<DeepPartial<CodeReviewConfigWithoutLLMProvider>> {
+        if (directoryId && repositoryId) {
+            return this.getResolvedRepositoryConfig(repositoryId);
+        }
+        if (repositoryId) {
+            return this.getResolvedGlobalConfig();
+        }
+
+        return this.defaultConfig as CodeReviewConfigWithoutLLMProvider;
+    }
+
+    public createUpdater(
+        newDelta: DeepPartial<CodeReviewConfigWithoutLLMProvider>,
+        repositoryId?: string,
+        directoryId?: string,
+    ): (draft: CodeReviewParameter) => void {
+        return (draft) => {
+            if (directoryId && repositoryId) {
+                const repoIndex = draft.repositories.findIndex(
+                    (r) => r.id === repositoryId,
+                );
+
+                const dirIndex = draft.repositories[
+                    repoIndex
+                ].directories.findIndex((d) => d.id === directoryId);
+
+                draft.repositories[repoIndex].isSelected = true;
+
+                draft.repositories[repoIndex].directories[dirIndex].configs =
+                    newDelta;
+
+                draft.repositories[repoIndex].directories[dirIndex].isSelected =
+                    true;
+            } else if (repositoryId) {
+                const repoIndex = draft.repositories.findIndex(
+                    (r) => r.id === repositoryId,
+                );
+
+                draft.repositories[repoIndex].configs = newDelta;
+
+                draft.repositories[repoIndex].isSelected = true;
+            } else {
+                draft.configs = newDelta;
+            }
+        };
+    }
+
+    private getResolvedGlobalConfig(): DeepPartial<CodeReviewConfigWithoutLLMProvider> {
+        return deepMerge(
+            this.defaultConfig as CodeReviewConfigWithoutLLMProvider,
+            this.codeReviewConfigs.configs ?? {},
+        );
+    }
+
+    private async getResolvedRepositoryConfig(
+        repositoryId: string,
+    ): Promise<DeepPartial<CodeReviewConfigWithoutLLMProvider>> {
+        const repository = this.findRepository(repositoryId);
+        const resolvedGlobal = this.getResolvedGlobalConfig();
+
+        return deepMerge(resolvedGlobal, repository.configs ?? {});
     }
 }

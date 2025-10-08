@@ -1,42 +1,113 @@
-version: '1.3'
-summary:
-    generatePRSummary: true
-    customInstructions: ''
-    behaviourForExistingDescription: 'concatenate'
-    behaviourForNewCommits: 'none'
+version: 2.0
+
+# general
+automatedReviewActive: true
+kodusConfigFileOverridesWebPreferences: false
+reviewCadence:
+    type: 'automatic' # automatic | auto_pause | manual
+    timeWindow: 15 # minutes
+    pushesToTrigger: 3
+pullRequestApprovalActive: false
+isRequestChangesActive: false # not on gitlab
+runOnDraft: true
 ignorePaths:
     - 'yarn.lock'
     - 'package-lock.json'
     - 'package.json'
     - '.env'
+ignoredTitleKeywords: []
 baseBranches: []
+
+# review categories
+codeReviewVersion: 'v2' # legacy | v2
 reviewOptions:
-    security: true
-    code_style: true
-    kody_rules: true
-    refactoring: true
-    error_handling: true
-    maintainability: true
-    potential_issues: true
-    documentation_and_comments: true
-    performance_and_optimization: true
-    breaking_changes: true
+    # v2 / legacy
     bug: true
     performance: true
+    security: true
+    breaking_changes: true
     cross_file: true
+    kody_rules: true
+
+    # legacy only
+    code_style: false
+    refactoring: false
+    error_handling: false
+    maintainability: false
+    potential_issues: false
+    documentation_and_comments: false
+    performance_and_optimization: false
+
+# suggestion control
 suggestionControl:
-    groupingMode: 'full'
-    limitationType: 'pr'
-    maxSuggestions: 9
-    severityLevelFilter: 'medium'
-    applyFiltersToKodyRules: true
-    severityLimits:
+    groupingMode: 'full' # minimal | full
+    applyFiltersToKodyRules: false
+    limitationType: 'pr' # file | pr | severity
+    maxSuggestions: 9 # min 7, no max
+    severityLevelFilter: 'high' # low | medium | high | critical
+    severityLimits: # when limitationType == severity
         low: 0
         medium: 0
         high: 0
         critical: 0
-ignoredTitleKeywords: []
-automatedReviewActive: true
-pullRequestApprovalActive: false
-isRequestChangesActive: false
-runOnDraft: true
+
+# PR summary
+summary:
+    generatePRSummary: true
+    behaviourForNewCommits: 'none'
+    behaviourForExistingDescription: 'replace'
+    customInstructions: ''
+
+# kody rules
+ideRulesSyncEnabled: false
+kodyRulesGeneratorEnabled: false
+
+# custom messages
+customMessages:
+    globalSettings:
+        hideComments: false # github only
+
+    startReviewMessage:
+        status: 'active' # active | inactive
+        content: |
+            # PR Summary (Comment created by [Kody](https://kodus.io) 🤖)
+
+            ## Code Review Started! 🚀
+
+            ✋ Hi, team! I'm already looking at the changed files and starting the review to ensure everything is in order. If you need more details, I'm here! [Kody](https://kodus.io)
+
+            @changedFiles
+
+            @changeSummary
+
+    endReviewMessage:
+        status: 'active' # active | inactive
+        content: |
+            ## Code Review Completed! 🔥
+
+            The code review was successfully completed based on your current configurations.
+
+
+
+            <details>
+            <summary>Kody Guide: Usage and Configuration</summary>
+
+            <details>
+            <summary>Interacting with Kody</summary>
+
+            - **Request a Review:** Ask Kody to review your PR manually by adding a comment with the \`@kody start-review\` command at the root of your PR.
+
+            - **Provide Feedback:** Help Kody learn and improve by reacting to its comments with a 👍 for helpful suggestions or a 👎 if improvements are needed.
+
+            </details>
+
+            <details>
+            <summary>Current Kody Configuration</summary>
+
+            @reviewOptions
+
+            </details>
+
+            **[Access your configuration settings here.](https://app.kodus.io/settings/code-review/global/general)**
+
+            </details>

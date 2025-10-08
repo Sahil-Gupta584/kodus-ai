@@ -803,7 +803,7 @@ export class KodyRulesSyncService {
                     repo.id === repositoryId.toString(),
             );
 
-            return repoConfig?.ideRulesSyncEnabled === true;
+            return repoConfig?.configs.ideRulesSyncEnabled === true;
         } catch {
             return false;
         }
@@ -1142,12 +1142,7 @@ export class KodyRulesSyncService {
                 return [];
             }
 
-            return repoConfig.directories
-                .filter(
-                    (d): d is { path: string } =>
-                        d && typeof d.path === 'string',
-                )
-                .map((d) => d.path);
+            return repoConfig.directories.map((d) => d.path);
         } catch {
             return [];
         }

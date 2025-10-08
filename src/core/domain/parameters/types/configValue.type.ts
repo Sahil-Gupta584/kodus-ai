@@ -1,4 +1,4 @@
-import { ICodeReviewParameter } from '@/config/types/general/codeReviewConfig.type';
+import { CodeReviewParameter } from '@/config/types/general/codeReviewConfig.type';
 import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 
@@ -55,7 +55,7 @@ export enum KodyLearningStatus {
 }
 
 export type ConfigValueMap = {
-    [ParametersKey.CODE_REVIEW_CONFIG]: ICodeReviewParameter;
+    [ParametersKey.CODE_REVIEW_CONFIG]: CodeReviewParameter;
     [ParametersKey.LANGUAGE_CONFIG]: LanguageValue;
     [ParametersKey.PLATFORM_CONFIGS]: PlatformConfigValue;
 } & {

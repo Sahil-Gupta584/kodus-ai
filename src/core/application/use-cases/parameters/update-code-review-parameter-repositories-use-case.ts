@@ -22,8 +22,8 @@ import {
     ConfigLevel,
 } from '@/config/types/general/codeReviewSettingsLog.type';
 import {
-    ICodeReviewParameter,
-    IRepositoryCodeReviewConfig,
+    CodeReviewParameter,
+    RepositoryCodeReviewConfig,
 } from '@/config/types/general/codeReviewConfig.type';
 interface ICodeRepository {
     avatar_url?: string;
@@ -118,7 +118,7 @@ export class UpdateCodeReviewParameterRepositoriesUseCase {
             const updatedCodeReviewConfigValue = {
                 ...codeReviewConfigs.configValue,
                 repositories: updatedRepositories,
-            } as ICodeReviewParameter;
+            } as CodeReviewParameter;
 
             const result = await this.parametersService.createOrUpdateConfig(
                 ParametersKey.CODE_REVIEW_CONFIG,

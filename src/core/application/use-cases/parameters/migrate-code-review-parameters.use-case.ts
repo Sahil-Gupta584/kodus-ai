@@ -1,0 +1,130 @@
+import { CodeReviewConfigWithoutLLMProvider } from '@/config/types/general/codeReview.type';
+import { CodeReviewParameter } from '@/config/types/general/codeReviewConfig.type';
+import {
+    IParametersService,
+    PARAMETERS_SERVICE_TOKEN,
+} from '@/core/domain/parameters/contracts/parameters.service.contract';
+import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
+import { Inject, Injectable } from '@nestjs/common';
+
+type OldReviewConfig = CodeReviewConfigWithoutLLMProvider & {
+    id?: string;
+    name?: string;
+    isSelected?: string;
+    repositories: (CodeReviewConfigWithoutLLMProvider & {
+        id: string;
+        name: string;
+        isSelected: string;
+        directories?: (CodeReviewConfigWithoutLLMProvider & {
+            id: string;
+            name: string;
+            isSelected: string;
+            path: string;
+        })[];
+    })[];
+};
+
+@Injectable()
+export class MigrateCodeReviewParametersUseCase {
+    constructor(
+        private readonly logger: PinoLoggerService,
+
+        @Inject(PARAMETERS_SERVICE_TOKEN)
+        private readonly parametersService: IParametersService,
+    ) {}
+
+    async execute() {
+        try {
+            const codeReviewConfigs = await this.parametersService.find({
+                configKey: ParametersKey.CODE_REVIEW_CONFIG,
+            });
+
+            for (const config of codeReviewConfigs) {
+                try {
+                    if (!config.configValue) continue;
+
+                    const oldConfig =
+                        config.configValue as unknown as OldReviewConfig;
+
+                    const newConfig = this.convertOldToNewFormat(oldConfig);
+
+                    await this.parametersService.update(
+                        { uuid: config.uuid },
+                        { configValue: newConfig },
+                    );
+
+                    this.logger.log({
+                        message: `Migrated config ${config.uuid} to new format`,
+                        metadata: { oldConfig, newConfig },
+                        context: this.execute.name,
+                        serviceName: MigrateCodeReviewParametersUseCase.name,
+                    });
+                } catch (error) {
+                    this.logger.error({
+                        message: `Error migrating config ${config.uuid}`,
+                        error,
+                        metadata: config,
+                        context: this.execute.name,
+                        serviceName: MigrateCodeReviewParametersUseCase.name,
+                    });
+                }
+            }
+
+            return true;
+        } catch (error) {
+            this.logger.error({
+                message: 'Error migrating code review parameters',
+                error,
+                context: this.execute.name,
+                serviceName: MigrateCodeReviewParametersUseCase.name,
+            });
+
+            throw error;
+        }
+    }
+
+    private convertOldToNewFormat(oldConfig: OldReviewConfig) {
+        const { repositories, id, name, isSelected, ...globalConfig } =
+            oldConfig;
+
+        const newRepos = repositories.map((repo) => {
+            const { directories, id, name, isSelected, ...repoConfig } = repo;
+
+            const newDirectories = (directories || []).map((dir) => {
+                const { id, name, isSelected, path, ...dirConfig } = dir;
+
+                return {
+                    id: dir.id,
+                    name: dir.name,
+                    isSelected: dir.isSelected,
+                    configs: {
+                        ...dirConfig,
+                    },
+                    path: dir.path,
+                };
+            });
+
+            return {
+                id: repo.id,
+                name: repo.name,
+                isSelected: repo.isSelected,
+                configs: {
+                    ...repoConfig,
+                },
+                directories: newDirectories,
+            };
+        });
+
+        const newConfig = {
+            configs: {
+                ...globalConfig,
+            },
+            id: 'global',
+            name: 'Global',
+            repositories: newRepos,
+        };
+
+        return newConfig as unknown as CodeReviewParameter;
+    }
+}

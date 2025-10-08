@@ -14,7 +14,7 @@ import { SaveAllTeamMetricsHistoryUseCase } from '../metrics/save-all-metrics-hi
 import { SaveAllOrganizationMetricsHistoryUseCase } from '../organizationMetrics/save-metrics-history.use-case';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { CodeReviewVersion } from '@/config/types/general/codeReview.type';
-import { ICodeReviewParameter } from '@/config/types/general/codeReviewConfig.type';
+import { CodeReviewParameter } from '@/config/types/general/codeReviewConfig.type';
 
 @Injectable()
 export class FinishSetupUseCase {
@@ -106,7 +106,7 @@ export class FinishSetupUseCase {
                                         severityLevelFilter:
                                             SeverityLevel.MEDIUM,
                                         codeReviewVersion: CodeReviewVersion.v2,
-                                    } as unknown as ICodeReviewParameter,
+                                    } as unknown as CodeReviewParameter,
                                     {
                                         teamId: teamId,
                                         organizationId: organizationId,

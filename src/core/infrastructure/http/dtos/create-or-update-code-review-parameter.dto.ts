@@ -22,46 +22,56 @@ import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 
 class ReviewOptionsDto {
     @IsBoolean()
-    security: boolean;
+    @IsOptional()
+    security?: boolean;
 
     @IsBoolean()
-    code_style: boolean;
+    @IsOptional()
+    code_style?: boolean;
 
     @IsBoolean()
-    refactoring: boolean;
+    @IsOptional()
+    refactoring?: boolean;
 
     @IsBoolean()
-    error_handling: boolean;
+    @IsOptional()
+    error_handling?: boolean;
 
     @IsBoolean()
-    maintainability: boolean;
+    @IsOptional()
+    maintainability?: boolean;
 
     @IsBoolean()
-    potential_issues: boolean;
+    @IsOptional()
+    potential_issues?: boolean;
 
     @IsBoolean()
-    documentation_and_comments: boolean;
+    @IsOptional()
+    documentation_and_comments?: boolean;
 
     @IsBoolean()
-    performance_and_optimization: boolean;
+    @IsOptional()
+    performance_and_optimization?: boolean;
 
     @IsBoolean()
-    kody_rules: boolean;
+    @IsOptional()
+    kody_rules?: boolean;
 
     @IsBoolean()
-    breaking_changes: boolean;
+    @IsOptional()
+    breaking_changes?: boolean;
 
     @IsOptional()
     @IsBoolean()
-    bug: boolean;
+    bug?: boolean;
 
     @IsOptional()
     @IsBoolean()
-    performance: boolean;
+    performance?: boolean;
 
     @IsOptional()
     @IsBoolean()
-    cross_file: boolean;
+    cross_file?: boolean;
 }
 
 class SummaryConfigDto {
@@ -74,6 +84,7 @@ class SummaryConfigDto {
     customInstructions?: string;
 
     @IsOptional()
+    @IsEnum(BehaviourForExistingDescription)
     behaviourForExistingDescription?: BehaviourForExistingDescription;
 
     @IsOptional()
@@ -116,7 +127,6 @@ class SuggestionControlConfigDto {
     @IsEnum(SeverityLevel)
     severityLevelFilter?: SeverityLevel;
 
-    // ✨ NOVA CONFIGURAÇÃO SIMPLIFICADA para controle de filtros nas Kody Rules
     @IsOptional()
     @IsBoolean()
     applyFiltersToKodyRules?: boolean;
@@ -129,7 +139,8 @@ class SuggestionControlConfigDto {
 
 class ReviewCadenceDto {
     @IsEnum(ReviewCadenceType)
-    type: ReviewCadenceType;
+    @IsOptional()
+    type?: ReviewCadenceType;
 
     @IsOptional()
     @IsNumber()
@@ -169,7 +180,7 @@ class CodeReviewConfigWithoutLLMProviderDto {
 
     @IsOptional()
     @IsArray()
-    ignorePaths?: string[] = [];
+    ignorePaths?: string[];
 
     @IsOptional()
     @ValidateNested()
@@ -178,11 +189,11 @@ class CodeReviewConfigWithoutLLMProviderDto {
 
     @IsOptional()
     @IsArray()
-    ignoredTitleKeywords?: string[] = [];
+    ignoredTitleKeywords?: string[];
 
     @IsOptional()
     @IsArray()
-    baseBranches?: string[] = [];
+    baseBranches?: string[];
 
     @IsOptional()
     @IsBoolean()
@@ -229,7 +240,7 @@ class CodeReviewConfigWithoutLLMProviderDto {
 
     @IsOptional()
     @IsEnum(CodeReviewVersion)
-    codeReviewVersion?: CodeReviewVersion = CodeReviewVersion.v2;
+    codeReviewVersion?: CodeReviewVersion;
 }
 
 export class CreateOrUpdateCodeReviewParameterDto {

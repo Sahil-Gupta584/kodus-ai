@@ -28,6 +28,21 @@ export class ParametersEntity<K extends ParametersKey>
         return new ParametersEntity(parameters);
     }
 
+    public toJson(): IParameters<K> {
+        return {
+            uuid: this._uuid,
+            configKey: this._configKey,
+            configValue: this._configValue,
+            team: this._team,
+            createdAt: this._createdAt,
+            updatedAt: this._updatedAt,
+        };
+    }
+
+    public toObject(): IParameters<K> {
+        return this.toJson();
+    }
+
     public get uuid() {
         return this._uuid;
     }

@@ -10,6 +10,13 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
 import { IParameters } from '@/core/domain/parameters/interfaces/parameters.interface';
 import { artifacts as teamArtifacts } from '@/core/infrastructure/adapters/services/teamArtifacts/artifactsStructure.json';
 import { organizationArtifacts } from '@/core/infrastructure/adapters/services/organizationArtifacts/organizationArtifactsStructure.json';
+import { getDefaultKodusConfigFile } from '@/shared/utils/validateCodeReviewConfigFile';
+import { CodeReviewConfigWithoutLLMProvider } from '@/config/types/general/codeReview.type';
+import {
+    CodeReviewParameter,
+    DirectoryCodeReviewConfig,
+    RepositoryCodeReviewConfig,
+} from '@/config/types/general/codeReviewConfig.type';
 
 @Injectable()
 export class FindByKeyParametersUseCase {
