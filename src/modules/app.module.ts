@@ -1,6 +1,4 @@
 import { GithubModule } from '@/modules/github.module';
-import { JiraModule } from '@/modules/jira.module';
-import { SlackModule } from '@/modules/slack.module';
 import { UsersModule } from '@/modules/user.module';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from './database.module';
@@ -74,14 +72,12 @@ import { UsageModule } from './usage.module';
         TeamMembersModule,
         GithubModule,
         GitlabModule,
-        JiraModule,
         OrganizationModule,
         HealthModule,
         ProfilesModule,
         TeamsModule,
         AutomationModule,
         TeamAutomationModule,
-        SlackModule,
         AutomationStrategyModule,
         AgentModule,
         AuthIntegrationModule,

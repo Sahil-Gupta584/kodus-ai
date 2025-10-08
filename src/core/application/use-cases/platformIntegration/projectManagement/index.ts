@@ -1,4 +1,3 @@
-import { SaveCategoryWorkItemsTypesUseCase } from '../../organizationParameters/save-category-workitems-types.use-case';
 import { CreateAuthIntegrationUseCase } from './create-auth-integration.use-case';
 import { CreateIntegrationUseCase } from './create-integration.use-case';
 import { CreateOrUpdateIntegrationConfigUseCase } from './create-or-update-auth-configs.use-case';
@@ -31,5 +30,4 @@ export default [
     CreateIntegrationUseCase,
     GetWorkitemTypesUseCase,
     FinishProjectConfigUseCase,
-    SaveCategoryWorkItemsTypesUseCase,
 ];

@@ -5,12 +5,10 @@ import { OrganizationParametersModel } from '@/core/infrastructure/adapters/repo
 import { OrganizationParametersService } from '@/core/infrastructure/adapters/services/organizationParameters.service';
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { JiraModule } from './jira.module';
 import { PromptService } from '@/core/infrastructure/adapters/services/prompt.service';
 import { IntegrationModule } from './integration.module';
 import { IntegrationConfigModule } from './integrationConfig.module';
 import { TeamsModule } from './team.module';
-import { SaveCategoryWorkItemsTypesUseCase } from '@/core/application/use-cases/organizationParameters/save-category-workitems-types.use-case';
 import { ProjectManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/projectManagement.service';
 import { PlatformIntegrationFactory } from '@/core/infrastructure/adapters/services/platformIntegration/platformIntegration.factory';
 import { ParametersModule } from './parameters.module';
@@ -25,7 +23,6 @@ import { LicenseModule } from '@/ee/license/license.module';
 @Module({
     imports: [
         TypeOrmModule.forFeature([OrganizationParametersModel]),
-        forwardRef(() => JiraModule),
         forwardRef(() => IntegrationModule),
         forwardRef(() => IntegrationConfigModule),
         forwardRef(() => TeamsModule),
@@ -33,7 +30,6 @@ import { LicenseModule } from '@/ee/license/license.module';
         forwardRef(() => LicenseModule),
     ],
     providers: [
-        SaveCategoryWorkItemsTypesUseCase,
         CreateOrUpdateOrganizationParametersUseCase,
         FindByKeyOrganizationParametersUseCase,
         GetModelsByProviderUseCase,
@@ -56,7 +52,6 @@ import { LicenseModule } from '@/ee/license/license.module';
     exports: [
         ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
         ORGANIZATION_PARAMETERS_REPOSITORY_TOKEN,
-        SaveCategoryWorkItemsTypesUseCase,
         OrganizationParametersService,
         GetModelsByProviderUseCase,
         DeleteByokConfigUseCase,

@@ -1,4 +1,3 @@
-import { CommitLeadTimeForChange } from '../types/codeManagement/commitLeadTimeForChange.type';
 import { Organization } from '../types/codeManagement/organization.type';
 import {
     PullRequestAuthor,
