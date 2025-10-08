@@ -55,7 +55,6 @@ interface PreparedFileData {
 
 @Injectable()
 export class CrossFileAnalysisService {
-    private readonly tokenTracker: TokenTrackingHandler;
     private readonly DEFAULT_USAGE_LLM_MODEL_PERCENTAGE = 70;
     private readonly DEFAULT_BATCH_CONFIG: BatchProcessingConfig = {
         maxConcurrentChunks: 10,
@@ -70,9 +69,7 @@ export class CrossFileAnalysisService {
 
         private readonly promptRunnerService: PromptRunnerService,
         private readonly observabilityService: ObservabilityService,
-    ) {
-        this.tokenTracker = new TokenTrackingHandler();
-    }
+    ) {}
 
     async analyzeCrossFileCode(
         organizationAndTeamData: OrganizationAndTeamData,
@@ -80,7 +77,6 @@ export class CrossFileAnalysisService {
         context: AnalysisContext,
         preparedFiles: PreparedFileData[],
     ): Promise<{ codeSuggestions: CodeSuggestion[] }> {
-        // Validações de segurança
         if (
             !preparedFiles ||
             !Array.isArray(preparedFiles) ||
@@ -121,8 +117,6 @@ export class CrossFileAnalysisService {
         const language =
             context.codeReviewConfig.languageResultPrompt || 'en-US';
         const provider = LLMModelProvider.OPENAI_GPT_4O_MINI;
-
-        this.tokenTracker.reset();
 
         try {
             // 1. Executar análise cross-file principal com arquivos preparados
@@ -429,9 +423,8 @@ export class CrossFileAnalysisService {
         prNumber: number,
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<CodeSuggestion[] | null> {
-        // Preparar payload baseado no tipo de análise usando patchWithLinesStr
+        // Monta o payload exatamente como antes
         let payload: any;
-
         if (analysisType === 'analyzeCodeWithAI') {
             const fileContexts =
                 this.convertFilesToFileChangeContext(preparedFilesChunk);
@@ -444,12 +437,14 @@ export class CrossFileAnalysisService {
         }
 
         const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
-
         const runName = 'crossFileAnalyzeCodeWithAI';
-
-        this.observabilityService.startSpan(
-            `${CrossFileAnalysisService.name}::${runName}`,
-        );
+        const spanName = `${CrossFileAnalysisService.name}::${runName}`;
+        const spanAttrs = {
+            organizationId: organizationAndTeamData?.organizationId,
+            prNumber,
+            analysisType,
+            chunkIndex,
+        };
 
         const promptRunner = new BYOKPromptRunnerService(
             this.promptRunnerService,
@@ -457,58 +452,83 @@ export class CrossFileAnalysisService {
             fallbackProvider,
             context?.codeReviewConfig?.byokConfig,
         );
-        let analysisBuilder = promptRunner.builder();
 
-        const analysis = await analysisBuilder
-            .setParser(ParserType.ZOD, CrossFileAnalysisSchema)
-            .setLLMJsonMode(true)
-            .setPayload(payload)
-            .addPrompt({
-                prompt: prompt_codereview_cross_file_analysis,
-                role: PromptRole.SYSTEM,
-            })
-            .addPrompt({
-                prompt: 'Please analyze the provided information and return the response in the specified format.',
-                role: PromptRole.USER,
-            })
-            .setTemperature(0)
-            .addTags([
-                ...this.buildTags(provider, 'primary', analysisType),
-                ...this.buildTags(fallbackProvider, 'fallback', analysisType),
-            ])
-            .addCallbacks([this.tokenTracker])
-            .setRunName(runName)
-            .setMaxReasoningTokens(5000)
-            .addMetadata({
-                organizationAndTeamData,
-                prNumber,
-                provider:
-                    context?.codeReviewConfig?.byokConfig?.main?.provider ||
-                    provider,
-                model: context?.codeReviewConfig?.byokConfig?.main?.model,
-                fallbackProvider:
-                    context?.codeReviewConfig?.byokConfig?.fallback?.provider ||
-                    fallbackProvider,
-                fallbackModel:
-                    context?.codeReviewConfig?.byokConfig?.fallback?.model,
+        try {
+            let analysisBuilder = promptRunner
+                .builder()
+                .setParser(ParserType.ZOD, CrossFileAnalysisSchema)
+                .setLLMJsonMode(true)
+                .setPayload(payload)
+                .addPrompt({
+                    prompt: prompt_codereview_cross_file_analysis,
+                    role: PromptRole.SYSTEM,
+                })
+                .addPrompt({
+                    prompt: 'Please analyze the provided information and return the response in the specified format.',
+                    role: PromptRole.USER,
+                })
+                .setTemperature(0)
+                .addTags([
+                    ...this.buildTags(provider, 'primary', analysisType),
+                    ...this.buildTags(
+                        fallbackProvider,
+                        'fallback',
+                        analysisType,
+                    ),
+                ])
+                .setRunName(runName)
+                .setMaxReasoningTokens(5000)
+                .addMetadata({
+                    organizationAndTeamData,
+                    prNumber,
+                    provider:
+                        context?.codeReviewConfig?.byokConfig?.main?.provider ||
+                        provider,
+                    model: context?.codeReviewConfig?.byokConfig?.main?.model,
+                    fallbackProvider:
+                        context?.codeReviewConfig?.byokConfig?.fallback
+                            ?.provider || fallbackProvider,
+                    fallbackModel:
+                        context?.codeReviewConfig?.byokConfig?.fallback?.model,
+                    analysisType,
+                    runName,
+                });
+
+            const { result: analysis } =
+                await this.observabilityService.runLLMInSpan({
+                    spanName,
+                    runName,
+                    attrs: spanAttrs,
+                    exec: (callbacks) =>
+                        analysisBuilder.addCallbacks(callbacks).execute(),
+                });
+
+            if (!analysis) {
+                const message = `Empty response from LLM for ${analysisType} on chunk ${chunkIndex + 1}`;
+                this.logger.error({
+                    message,
+                    context: CrossFileAnalysisService.name,
+                    metadata: {
+                        chunkIndex,
+                        prNumber,
+                        organizationAndTeamData,
+                        analysisType,
+                    },
+                });
+                throw new Error(message);
+            }
+
+            return this.processLLMResponse(
+                analysis,
                 analysisType,
-                runName,
-            })
-            .setRunName(runName)
-            .execute();
-
-        this.observabilityService.endSpan(this.tokenTracker, {
-            organizationId: organizationAndTeamData?.organizationId,
-            prNumber,
-            analysisType,
-            runName,
-        });
-
-        if (!analysis) {
-            const message = `Empty response from LLM for ${analysisType} on chunk ${chunkIndex + 1}`;
+                prNumber,
+                organizationAndTeamData,
+            );
+        } catch (error) {
             this.logger.error({
-                message,
+                message: `Error processing ${analysisType} on chunk ${chunkIndex + 1}`,
                 context: CrossFileAnalysisService.name,
+                error,
                 metadata: {
                     chunkIndex,
                     prNumber,
@@ -516,15 +536,8 @@ export class CrossFileAnalysisService {
                     analysisType,
                 },
             });
-            throw new Error(message);
+            throw error;
         }
-
-        return this.processLLMResponse(
-            analysis,
-            analysisType,
-            prNumber,
-            organizationAndTeamData,
-        );
     }
     //#endregion
 
