@@ -26,14 +26,16 @@ export class CodeReviewHandlerService {
 
     private readonly reactionMap = {
         [PlatformType.GITHUB]: {
-            [ReviewStatusReaction.START]: GitHubReaction.EYES,
+            [ReviewStatusReaction.START]: GitHubReaction.ROCKET,
             [ReviewStatusReaction.SUCCESS]: GitHubReaction.HOORAY,
             [ReviewStatusReaction.ERROR]: GitHubReaction.CONFUSED,
+            [ReviewStatusReaction.SKIP]: GitHubReaction.EYES,
         },
         [PlatformType.GITLAB]: {
-            [ReviewStatusReaction.START]: GitlabReaction.EYES,
+            [ReviewStatusReaction.START]: GitlabReaction.ROCKET,
             [ReviewStatusReaction.SUCCESS]: GitlabReaction.TADA,
             [ReviewStatusReaction.ERROR]: GitlabReaction.CONFUSED,
+            [ReviewStatusReaction.SKIP]: GitlabReaction.EYES,
         },
     };
 
@@ -123,6 +125,7 @@ export class CodeReviewHandlerService {
                 },
             });
 
+            // Add START reaction before pipeline
             await this.addStatusReaction(
                 initialContext,
                 ReviewStatusReaction.START,
@@ -132,11 +135,8 @@ export class CodeReviewHandlerService {
                 this.pipelineFactory.getPipeline('CodeReviewPipeline');
             const result = await pipeline.execute(initialContext);
 
-            await this.removeCurrentReaction(initialContext);
-            await this.addStatusReaction(
-                initialContext,
-                ReviewStatusReaction.SUCCESS,
-            );
+            // Handle reactions based on result status
+            await this.handleReactionsByStatus(initialContext, result);
 
             this.logger.log({
                 message: `Pipeline de code review concluído com sucesso para PR#${pullRequest.number}`,
@@ -191,6 +191,52 @@ export class CodeReviewHandlerService {
         }
     }
 
+    private async handleReactionsByStatus(
+        context: CodeReviewPipelineContext,
+        result: CodeReviewPipelineContext,
+    ): Promise<void> {
+        const status = result.statusInfo?.status;
+
+        // For SKIPPED: replace START with SKIP (👀 eyes)
+        if (status === AutomationStatus.SKIPPED) {
+            await this.removeCurrentReaction(context);
+            await this.addStatusReaction(context, ReviewStatusReaction.SKIP);
+            
+            this.logger.log({
+                message: `Review skipped for PR#${context.pullRequest.number} - adding skip reaction`,
+                context: CodeReviewHandlerService.name,
+                metadata: {
+                    skipReason: result.statusInfo?.message,
+                    organizationAndTeamData: context.organizationAndTeamData,
+                },
+            });
+            return;
+        }
+
+        // For ERROR: replace START with ERROR (😕 confused)
+        if (status === AutomationStatus.ERROR) {
+            await this.removeCurrentReaction(context);
+            await this.addStatusReaction(context, ReviewStatusReaction.ERROR);
+            
+            this.logger.log({
+                message: `Review failed for PR#${context.pullRequest.number} - adding error reaction`,
+                context: CodeReviewHandlerService.name,
+                metadata: {
+                    errorReason: result.statusInfo?.message,
+                    organizationAndTeamData: context.organizationAndTeamData,
+                },
+            });
+            return;
+        }
+
+        // For successful reviews, remove START and add SUCCESS
+        if (status === AutomationStatus.SUCCESS || status === AutomationStatus.IN_PROGRESS) {
+            await this.removeCurrentReaction(context);
+            await this.addStatusReaction(context, ReviewStatusReaction.SUCCESS);
+            return;
+        }
+    }
+
     private async addStatusReaction(
         context: CodeReviewPipelineContext,
         status: ReviewStatusReaction,
@@ -212,7 +258,7 @@ export class CodeReviewHandlerService {
                     organizationAndTeamData,
                     repository: { id: repository.id, name: repository.name },
                     prNumber: pullRequest.number,
-                    commentId: triggerCommentId as number,
+                    commentId: typeof triggerCommentId === 'string' ? parseInt(triggerCommentId, 10) : triggerCommentId,
                     reaction,
                 });
             } else {
@@ -260,7 +306,7 @@ export class CodeReviewHandlerService {
                     organizationAndTeamData,
                     repository: { id: repository.id, name: repository.name },
                     prNumber: pullRequest.number,
-                    commentId: triggerCommentId as number,
+                    commentId: typeof triggerCommentId === 'string' ? parseInt(triggerCommentId, 10) : triggerCommentId,
                     reactions: reactionsToRemove,
                 });
             } else {

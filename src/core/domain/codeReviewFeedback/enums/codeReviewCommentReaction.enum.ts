@@ -4,6 +4,7 @@ export enum GitHubReaction {
     EYES = 'eyes',
     HOORAY = 'hooray',
     CONFUSED = 'confused',
+    ROCKET = 'rocket',
 }
 
 export enum GitlabReaction {
@@ -12,6 +13,7 @@ export enum GitlabReaction {
     EYES = 'eyes',
     TADA = 'tada',
     CONFUSED = 'confused',
+    ROCKET = 'rocket',
 }
 
 export enum CountingType {
@@ -23,4 +25,5 @@ export enum ReviewStatusReaction {
     START = 'start',
     SUCCESS = 'success',
     ERROR = 'error',
+    SKIP = 'skip',
 }
