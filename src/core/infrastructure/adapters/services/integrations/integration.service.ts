@@ -15,7 +15,6 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { IntegrationCategory } from '@/shared/domain/enums/integration-category.enum';
 import { ProjectManagementService } from '../platformIntegration/projectManagement.service';
 import { CodeManagementService } from '../platformIntegration/codeManagement.service';
-import { CommunicationService } from '../platformIntegration/communication.service';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 
 @Injectable()
@@ -28,7 +27,6 @@ export class IntegrationService implements IIntegrationService {
 
         private readonly projectManagementService: ProjectManagementService,
         private readonly codeManagementService: CodeManagementService,
-        private readonly communicationService: CommunicationService,
     ) {}
 
     async checkConfigIntegration(
@@ -60,18 +58,13 @@ export class IntegrationService implements IIntegrationService {
         }[]
     > {
         try {
-            const [
-                communicationConnection,
-                projectManagementConnection,
-                codeManagementConnection,
-            ] = await Promise.all([
-                this.communicationService.verifyConnection(params),
-                this.projectManagementService.verifyConnection(params),
-                this.codeManagementService.verifyConnection(params),
-            ]);
+            const [projectManagementConnection, codeManagementConnection] =
+                await Promise.all([
+                    this.projectManagementService.verifyConnection(params),
+                    this.codeManagementService.verifyConnection(params),
+                ]);
 
             return [
-                communicationConnection,
                 projectManagementConnection,
                 codeManagementConnection,
             ]?.filter((connection) => connection);

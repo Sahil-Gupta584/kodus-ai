@@ -9,7 +9,6 @@ import {
     IExecuteAutomationService,
 } from '@/shared/domain/contracts/execute.automation.service.contracts';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { CommunicationService } from '@/core/infrastructure/adapters/services/platformIntegration/communication.service';
 import {
     IOrganizationAutomationService,
     ORGANIZATION_AUTOMATION_SERVICE_TOKEN,
@@ -26,8 +25,6 @@ export class RunOrganizationAutomationsUseCase {
 
         @Inject(EXECUTE_AUTOMATION_SERVICE_TOKEN)
         private readonly executeAutomation: IExecuteAutomationService,
-
-        private readonly communication: CommunicationService,
 
         private logger: PinoLoggerService,
     ) {}
@@ -73,13 +70,6 @@ export class RunOrganizationAutomationsUseCase {
                     },
                 });
                 new Error('No organization-level automation found enabled');
-
-                if (params && params.channelId && params.organizationId) {
-                    this.sendErrorMessageTemplate(
-                        params.organizationId,
-                        params.channelId,
-                    );
-                }
             }
 
             for (const organizationAutomation of organizationAutomations) {
@@ -105,23 +95,5 @@ export class RunOrganizationAutomationsUseCase {
                 },
             });
         }
-    }
-
-    private async sendErrorMessageTemplate(
-        organizationId: string,
-        channelId: string,
-    ): Promise<any> {
-        const template = await this.communication.handlerTemplateMessage({
-            methodName: 'getDefaultMessageErrorProcessCommands',
-            organizationId: organizationId,
-            errorMessage:
-                'No information found at the moment for processing the metrics.',
-        });
-
-        await this.communication.newBlockMessage({
-            organizationId,
-            blocks: template,
-            channelId: channelId,
-        });
     }
 }

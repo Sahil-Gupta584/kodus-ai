@@ -693,7 +693,8 @@ export class CommentManagerService implements ICommentManagerService {
                         codeReviewFeedbackData: {
                             commentId: createdComment?.id,
                             pullRequestReviewId:
-                                createdComment?.pull_request_review_id,
+                                createdComment?.pull_request_review_id ??
+                                createdComment?.pullRequestReviewId,
                             suggestionId: comment.suggestion.id,
                         },
                     });

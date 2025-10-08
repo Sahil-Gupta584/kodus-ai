@@ -12,7 +12,6 @@ import { ProfileConfigModule } from './profileConfig.module';
 import { UsersModule } from './user.module';
 import { OrganizationParametersModule } from './organizationParameters.module';
 import { OrganizationParametersService } from '@/core/infrastructure/adapters/services/organizationParameters.service';
-import { JiraModule } from './jira.module';
 import { PromptService } from '@/core/infrastructure/adapters/services/prompt.service';
 import { IntegrationModule } from './integration.module';
 import { IntegrationConfigModule } from './integrationConfig.module';
@@ -29,7 +28,6 @@ import { IntegrationModel } from '@/core/infrastructure/adapters/repositories/ty
         forwardRef(() => ProfileConfigModule),
         forwardRef(() => UsersModule),
         forwardRef(() => OrganizationParametersModule),
-        forwardRef(() => JiraModule),
         forwardRef(() => IntegrationModule),
         forwardRef(() => IntegrationConfigModule),
         forwardRef(() => ParametersModule),

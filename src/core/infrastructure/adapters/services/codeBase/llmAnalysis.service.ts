@@ -813,7 +813,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         const payload = { codePatch, codeSuggestions };
         const spanName = `${LLMAnalysisService.name}::${runName}`;
         const spanAttrs = {
-            type: 'byok',
+            type: 'system',
             organizationId: organizationAndTeamData?.organizationId,
             prNumber,
         };
@@ -912,7 +912,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         const payload = { file, codeDiff };
         const spanName = `${LLMAnalysisService.name}::${runName}`;
         const spanAttrs = {
-            type: 'byok',
+            type: 'system',
             organizationId: organizationAndTeamData?.organizationId,
             prNumber,
         };
