@@ -19,6 +19,10 @@ import { GitCloneParams } from '../types/codeManagement/gitCloneParams.type';
 import { Commit } from '@/config/types/general/commit.type';
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
 import { RepositoryFile } from '../types/codeManagement/repositoryFile.type';
+import {
+    GitHubReaction,
+    GitlabReaction,
+} from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
 
 export interface ICodeManagementService
     extends ICommonPlatformIntegrationService {
@@ -222,4 +226,34 @@ export interface ICodeManagementService
         repository: Partial<Repository>;
         prNumber: number;
     }): Promise<PullRequestReviewState | null>;
+
+    addReactionToPR?(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id?: string; name?: string };
+        prNumber: number;
+        reaction: GitHubReaction | GitlabReaction;
+    }): Promise<void>;
+
+    addReactionToComment?(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id?: string; name?: string };
+        prNumber: number;
+        commentId: number;
+        reaction: GitHubReaction | GitlabReaction;
+    }): Promise<void>;
+
+    removeReactionsFromPR?(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id?: string; name?: string };
+        prNumber: number;
+        reactions: (GitHubReaction | GitlabReaction)[];
+    }): Promise<void>;
+
+    removeReactionsFromComment?(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id?: string; name?: string };
+        prNumber: number;
+        commentId: number;
+        reactions: (GitHubReaction | GitlabReaction)[];
+    }): Promise<void>;
 }

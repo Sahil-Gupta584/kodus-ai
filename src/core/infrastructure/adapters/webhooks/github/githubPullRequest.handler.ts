@@ -357,6 +357,7 @@ export class GitHubPullRequestHandler implements IWebhookEventHandler {
                         ...payload,
                         action: 'synchronize',
                         origin: 'command',
+                        triggerCommentId: comment?.id,
                         pull_request:
                             pullRequestData ||
                             pullRequest ||

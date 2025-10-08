@@ -62,7 +62,7 @@ import { decrypt, encrypt } from '@/shared/utils/crypto';
 import { AuthMode } from '@/core/domain/platformIntegrations/enums/codeManagement/authMode.enum';
 import { CodeManagementConnectionStatus } from '@/shared/utils/decorators/validate-code-management-integration.decorator';
 import { CacheService } from '@/shared/utils/cache/cache.service';
-import { GitHubReaction } from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
+import { GitHubReaction, GitlabReaction } from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
 import {
     getTranslationsForLanguageByCategory,
     TranslationsCategory,
@@ -3426,6 +3426,217 @@ export class GithubService
         }
     }
 
+    async addReactionToPR(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id?: string; name?: string };
+        prNumber: number;
+        reaction: GitHubReaction | GitlabReaction;
+    }): Promise<void> {
+        try {
+            if (!params.repository.name) {
+                this.logger.warn({
+                    message: 'Repository name is required for GitHub reactions',
+                    context: GithubService.name,
+                    metadata: params,
+                });
+                return;
+            }
+
+            const githubAuthDetail = await this.getGithubAuthDetails(
+                params.organizationAndTeamData,
+            );
+            const octokit = await this.instanceOctokit(
+                params.organizationAndTeamData,
+            );
+
+            await octokit.rest.reactions.createForIssue({
+                owner: githubAuthDetail.org,
+                repo: params.repository.name,
+                issue_number: params.prNumber,
+                content: params.reaction as GitHubReaction,
+            });
+
+            this.logger.log({
+                message: `Added reaction ${params.reaction} to PR#${params.prNumber}`,
+                context: GithubService.name,
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Error adding reaction to PR#${params.prNumber}`,
+                context: GithubService.name,
+                error: error,
+                metadata: params,
+            });
+        }
+    }
+
+    async addReactionToComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id?: string; name?: string };
+        prNumber: number;
+        commentId: number;
+        reaction: GitHubReaction | GitlabReaction;
+    }): Promise<void> {
+        try {
+            if (!params.repository.name) {
+                this.logger.warn({
+                    message: 'Repository name is required for GitHub reactions',
+                    context: GithubService.name,
+                    metadata: params,
+                });
+                return;
+            }
+
+            const githubAuthDetail = await this.getGithubAuthDetails(
+                params.organizationAndTeamData,
+            );
+            const octokit = await this.instanceOctokit(
+                params.organizationAndTeamData,
+            );
+
+            await octokit.rest.reactions.createForIssueComment({
+                owner: githubAuthDetail.org,
+                repo: params.repository.name,
+                comment_id: params.commentId,
+                content: params.reaction as GitHubReaction,
+            });
+
+            this.logger.log({
+                message: `Added reaction ${params.reaction} to comment ${params.commentId}`,
+                context: GithubService.name,
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Error adding reaction to comment ${params.commentId}`,
+                context: GithubService.name,
+                error: error,
+                metadata: params,
+            });
+        }
+    }
+
+    async removeReactionsFromPR(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id?: string; name?: string };
+        prNumber: number;
+        reactions: (GitHubReaction | GitlabReaction)[];
+    }): Promise<void> {
+        try {
+            if (!params.repository.name) {
+                this.logger.warn({
+                    message: 'Repository name is required for GitHub reactions',
+                    context: GithubService.name,
+                    metadata: params,
+                });
+                return;
+            }
+
+            const githubAuthDetail = await this.getGithubAuthDetails(
+                params.organizationAndTeamData,
+            );
+            const octokit = await this.instanceOctokit(
+                params.organizationAndTeamData,
+            );
+
+            const existingReactions = await octokit.rest.reactions.listForIssue(
+                {
+                    owner: githubAuthDetail.org,
+                    repo: params.repository.name,
+                    issue_number: params.prNumber,
+                },
+            );
+
+            const reactionsToRemove = existingReactions.data.filter((r: any) =>
+                params.reactions.includes(r.content as GitHubReaction),
+            );
+
+            await Promise.all(
+                reactionsToRemove.map((reaction) =>
+                    octokit.rest.reactions.deleteForIssue({
+                        owner: githubAuthDetail.org,
+                        repo: params.repository.name,
+                        issue_number: params.prNumber,
+                        reaction_id: reaction.id,
+                    }),
+                ),
+            );
+
+            this.logger.log({
+                message: `Removed reactions from PR#${params.prNumber}`,
+                context: GithubService.name,
+                metadata: { reactionsRemoved: reactionsToRemove.length },
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Error removing reactions from PR#${params.prNumber}`,
+                context: GithubService.name,
+                error: error,
+                metadata: params,
+            });
+        }
+    }
+
+    async removeReactionsFromComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id?: string; name?: string };
+        prNumber: number;
+        commentId: number;
+        reactions: (GitHubReaction | GitlabReaction)[];
+    }): Promise<void> {
+        try {
+            if (!params.repository.name) {
+                this.logger.warn({
+                    message: 'Repository name is required for GitHub reactions',
+                    context: GithubService.name,
+                    metadata: params,
+                });
+                return;
+            }
+
+            const githubAuthDetail = await this.getGithubAuthDetails(
+                params.organizationAndTeamData,
+            );
+            const octokit = await this.instanceOctokit(
+                params.organizationAndTeamData,
+            );
+
+            const existingReactions =
+                await octokit.rest.reactions.listForIssueComment({
+                    owner: githubAuthDetail.org,
+                    repo: params.repository.name,
+                    comment_id: params.commentId,
+                });
+
+            const reactionsToRemove = existingReactions.data.filter((r: any) =>
+                params.reactions.includes(r.content as GitHubReaction),
+            );
+
+            await Promise.all(
+                reactionsToRemove.map((reaction) =>
+                    octokit.rest.reactions.deleteForIssueComment({
+                        owner: githubAuthDetail.org,
+                        repo: params.repository.name,
+                        comment_id: params.commentId,
+                        reaction_id: reaction.id,
+                    }),
+                ),
+            );
+
+            this.logger.log({
+                message: `Removed reactions from comment ${params.commentId}`,
+                context: GithubService.name,
+                metadata: { reactionsRemoved: reactionsToRemove.length },
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Error removing reactions from comment ${params.commentId}`,
+                context: GithubService.name,
+                error: error,
+                metadata: params,
+            });
+        }
+    }
+
     async updateDescriptionInPullRequest(params: any): Promise<any | null> {
         const { organizationAndTeamData, repository, prNumber, summary } =
             params;
@@ -5031,9 +5242,7 @@ export class GithubService
                 return false;
             }
 
-            const octokit = await this.instanceOctokit(
-                organizationAndTeamData,
-            );
+            const octokit = await this.instanceOctokit(organizationAndTeamData);
 
             const repositories =
                 await this.findOneByOrganizationAndTeamDataAndConfigKey(
