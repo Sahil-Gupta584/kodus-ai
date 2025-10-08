@@ -14,6 +14,12 @@ import { createThreadId } from '@kodus/flow';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseConnection } from '@/config/types';
 import { ObservabilityService } from '../logger/observability.service';
+import { CodeManagementService } from '../platformIntegration/codeManagement.service';
+import {
+    GitHubReaction,
+    GitlabReaction,
+    ReviewStatusReaction,
+} from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
 
 @Injectable()
 export class CodeReviewHandlerService {
@@ -28,6 +34,8 @@ export class CodeReviewHandlerService {
         private readonly configService: ConfigService,
 
         private readonly observabilityService: ObservabilityService,
+
+        private readonly codeManagement: CodeManagementService,
     ) {
         this.config =
             this.configService.get<DatabaseConnection>('mongoDatabase');
@@ -43,7 +51,10 @@ export class CodeReviewHandlerService {
         origin: string,
         action: string,
         executionId: string,
+        triggerCommentId?: number | string,
     ) {
+        let initialContext: CodeReviewPipelineContext;
+
         try {
             await this.observabilityService.initializeObservability(
                 this.config,
@@ -53,7 +64,7 @@ export class CodeReviewHandlerService {
                 },
             );
 
-            const initialContext: CodeReviewPipelineContext = {
+            initialContext = {
                 statusInfo: {
                     status: AutomationStatus.IN_PROGRESS,
                     message: 'Pipeline started',
@@ -68,6 +79,7 @@ export class CodeReviewHandlerService {
                 origin,
                 action,
                 platformType: platformType as PlatformType,
+                triggerCommentId,
                 pipelineMetadata: {
                     lastExecution: null,
                 },
@@ -99,9 +111,20 @@ export class CodeReviewHandlerService {
                 },
             });
 
+            await this.addStatusReaction(
+                initialContext,
+                ReviewStatusReaction.START,
+            );
+
             const pipeline =
                 this.pipelineFactory.getPipeline('CodeReviewPipeline');
             const result = await pipeline.execute(initialContext);
+
+            await this.removeCurrentReaction(initialContext);
+            await this.addStatusReaction(
+                initialContext,
+                ReviewStatusReaction.SUCCESS,
+            );
 
             this.logger.log({
                 message: `Pipeline de code review concluído com sucesso para PR#${pullRequest.number}`,
@@ -132,6 +155,12 @@ export class CodeReviewHandlerService {
                 statusInfo: finalStatus,
             };
         } catch (error) {
+            await this.removeCurrentReaction(initialContext);
+            await this.addStatusReaction(
+                initialContext,
+                ReviewStatusReaction.ERROR,
+            );
+
             this.logger.error({
                 message: `Erro ao executar pipeline de code review para PR#${pullRequest.number}`,
                 context: CodeReviewHandlerService.name,
@@ -145,6 +174,108 @@ export class CodeReviewHandlerService {
             });
 
             return null;
+        }
+    }
+
+    private async addStatusReaction(
+        context: CodeReviewPipelineContext,
+        status: ReviewStatusReaction,
+    ): Promise<void> {
+        try {
+            const { organizationAndTeamData, repository, pullRequest, platformType, triggerCommentId } = context;
+
+            if (platformType === PlatformType.AZURE_REPOS) {
+                return;
+            }
+
+            const reactionMap = {
+                [PlatformType.GITHUB]: {
+                    [ReviewStatusReaction.START]: GitHubReaction.EYES,
+                    [ReviewStatusReaction.SUCCESS]: GitHubReaction.HOORAY,
+                    [ReviewStatusReaction.ERROR]: GitHubReaction.CONFUSED,
+                },
+                [PlatformType.GITLAB]: {
+                    [ReviewStatusReaction.START]: GitlabReaction.EYES,
+                    [ReviewStatusReaction.SUCCESS]: GitlabReaction.TADA,
+                    [ReviewStatusReaction.ERROR]: GitlabReaction.CONFUSED,
+                },
+            };
+
+            const reaction = reactionMap[platformType]?.[status];
+            if (!reaction) {
+                return;
+            }
+
+            if (triggerCommentId) {
+                await this.codeManagement.addReactionToComment({
+                    organizationAndTeamData,
+                    repository: { id: repository.id, name: repository.name },
+                    prNumber: pullRequest.number,
+                    commentId: triggerCommentId as number,
+                    reaction,
+                });
+            } else {
+                await this.codeManagement.addReactionToPR({
+                    organizationAndTeamData,
+                    repository: { id: repository.id, name: repository.name },
+                    prNumber: pullRequest.number,
+                    reaction,
+                });
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error adding status reaction',
+                context: CodeReviewHandlerService.name,
+                error,
+                metadata: {
+                    status,
+                    platformType: context.platformType,
+                    prNumber: context.pullRequest.number,
+                },
+            });
+        }
+    }
+
+    private async removeCurrentReaction(
+        context: CodeReviewPipelineContext,
+    ): Promise<void> {
+        try {
+            const { organizationAndTeamData, repository, pullRequest, platformType, triggerCommentId } = context;
+
+            if (platformType === PlatformType.AZURE_REPOS) {
+                return;
+            }
+
+            const reactionsToRemove = platformType === PlatformType.GITHUB
+                ? [GitHubReaction.EYES, GitHubReaction.HOORAY, GitHubReaction.CONFUSED]
+                : [GitlabReaction.EYES, GitlabReaction.TADA, GitlabReaction.CONFUSED];
+
+            if (triggerCommentId) {
+                await this.codeManagement.removeReactionsFromComment({
+                    organizationAndTeamData,
+                    repository: { id: repository.id, name: repository.name },
+                    prNumber: pullRequest.number,
+                    commentId: triggerCommentId as number,
+                    reactions: reactionsToRemove,
+                });
+            } else {
+                await this.codeManagement.removeReactionsFromPR({
+                    organizationAndTeamData,
+                    repository: { id: repository.id, name: repository.name },
+                    prNumber: pullRequest.number,
+                    reactions: reactionsToRemove,
+                });
+            }
+        } catch (error) {
+            this.logger.error({
+                message: 'Error removing current reaction',
+                context: CodeReviewHandlerService.name,
+                error,
+                metadata: {
+                    platformType: context.platformType,
+                    prNumber: context.pullRequest.number,
+                },
+            });
         }
     }
 }

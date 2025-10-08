@@ -28,6 +28,10 @@ import { GitCloneParams } from '@/core/domain/platformIntegrations/types/codeMan
 import { PullRequestState } from '@/shared/domain/enums/pullRequestState.enum';
 import { RepositoryFile } from '@/core/domain/platformIntegrations/types/codeManagement/repositoryFile.type';
 import { CommitLeadTimeForChange } from '@/core/domain/platformIntegrations/types/codeManagement/commitLeadTimeForChange.type';
+import {
+    GitHubReaction,
+    GitlabReaction,
+} from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
 
 @Injectable()
 export class CodeManagementService implements ICodeManagementService {
@@ -1181,5 +1185,87 @@ export class CodeManagementService implements ICodeManagementService {
             this.platformIntegrationFactory.getCodeManagementService(type);
 
         return codeManagementService.getReviewStatusByPullRequest(params);
+    }
+
+    async addReactionToPR(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id?: string; name?: string };
+        prNumber: number;
+        reaction: GitHubReaction | GitlabReaction;
+    }): Promise<void> {
+        const type = await this.getTypeIntegration(
+            params.organizationAndTeamData,
+        );
+
+        if (!type) {
+            return;
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.addReactionToPR?.(params);
+    }
+
+    async addReactionToComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id?: string; name?: string };
+        prNumber: number;
+        commentId: number;
+        reaction: GitHubReaction | GitlabReaction;
+    }): Promise<void> {
+        const type = await this.getTypeIntegration(
+            params.organizationAndTeamData,
+        );
+
+        if (!type) {
+            return;
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.addReactionToComment?.(params);
+    }
+
+    async removeReactionsFromPR(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id?: string; name?: string };
+        prNumber: number;
+        reactions: (GitHubReaction | GitlabReaction)[];
+    }): Promise<void> {
+        const type = await this.getTypeIntegration(
+            params.organizationAndTeamData,
+        );
+
+        if (!type) {
+            return;
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.removeReactionsFromPR?.(params);
+    }
+
+    async removeReactionsFromComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id?: string; name?: string };
+        prNumber: number;
+        commentId: number;
+        reactions: (GitHubReaction | GitlabReaction)[];
+    }): Promise<void> {
+        const type = await this.getTypeIntegration(
+            params.organizationAndTeamData,
+        );
+
+        if (!type) {
+            return;
+        }
+
+        const codeManagementService =
+            this.platformIntegrationFactory.getCodeManagementService(type);
+
+        return codeManagementService.removeReactionsFromComment?.(params);
     }
 }
