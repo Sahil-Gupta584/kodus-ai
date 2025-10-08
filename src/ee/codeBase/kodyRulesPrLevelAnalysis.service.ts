@@ -35,7 +35,6 @@ import {
     ParserType,
     BYOKConfig,
     TokenUsage,
-    TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
 import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import { ObservabilityService } from '@/core/infrastructure/adapters/services/logger/observability.service';
@@ -94,8 +93,6 @@ export const KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN = Symbol(
 export class KodyRulesPrLevelAnalysisService
     implements IKodyRulesAnalysisService
 {
-    private readonly tokenTracker: TokenTrackingHandler;
-
     private readonly DEFAULT_USAGE_LLM_MODEL_PERCENTAGE = 70;
 
     private readonly DEFAULT_BATCH_CONFIG: BatchProcessingConfig = {
@@ -115,9 +112,7 @@ export class KodyRulesPrLevelAnalysisService
 
         private readonly promptRunnerService: PromptRunnerService,
         private readonly observabilityService: ObservabilityService,
-    ) {
-        this.tokenTracker = new TokenTrackingHandler();
-    }
+    ) {}
 
     async analyzeCodeWithAI(
         organizationAndTeamData: OrganizationAndTeamData,
@@ -220,7 +215,6 @@ export class KodyRulesPrLevelAnalysisService
         }
 
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
-        this.tokenTracker.reset();
 
         try {
             return await this.processWithTokenChunking(
@@ -907,7 +901,7 @@ export class KodyRulesPrLevelAnalysisService
         prNumber: number,
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<ExtendedKodyRule[] | null> {
-        // Preparar payload para este chunk
+        // payload do chunk
         const analyzerPayload: KodyRulesPrLevelPayload = {
             pr_title: context.pullRequest.title,
             pr_description: context.pullRequest.body || '',
@@ -931,56 +925,73 @@ export class KodyRulesPrLevelAnalysisService
             context?.codeReviewConfig?.byokConfig,
         );
 
+        const runName = 'prLevelKodyRulesAnalyzer';
+        const spanName = `${KodyRulesPrLevelAnalysisService.name}::${runName}`;
+        const spanAttrs = {
+            type: 'byok',
+            organizationId: organizationAndTeamData.organizationId,
+            prNumber,
+            chunkIndex,
+            filesCount: filesChunk.length,
+            provider:
+                context?.codeReviewConfig?.byokConfig?.main?.provider ??
+                provider,
+            fallbackProvider:
+                context?.codeReviewConfig?.byokConfig?.fallback?.provider ??
+                fallbackProvider,
+            model: context?.codeReviewConfig?.byokConfig?.main?.model,
+            fallbackModel:
+                context?.codeReviewConfig?.byokConfig?.fallback?.model,
+        };
+
         try {
-            const runName = 'prLevelKodyRulesAnalyzer';
-            this.observabilityService.startSpan(
-                `${KodyRulesPrLevelAnalysisService.name}::${runName}`,
-            );
-
-            const analysis = await promptRunner
-                .builder()
-                .setParser(ParserType.STRING)
-                .setLLMJsonMode(true)
-                .setPayload(analyzerPayload)
-                .addPrompt({
-                    prompt: prompt_kodyrules_prlevel_analyzer,
-                    role: PromptRole.SYSTEM,
-                })
-                .addPrompt({
-                    prompt: `Please analyze the provided information and return the response in the specified format`,
-                    role: PromptRole.USER,
-                })
-                .addMetadata({
-                    organizationAndTeamData,
-                    prNumber,
-                    provider:
-                        context?.codeReviewConfig?.byokConfig?.main?.provider ||
-                        provider,
-                    fallbackProvider:
-                        context?.codeReviewConfig?.byokConfig?.fallback
-                            ?.provider || fallbackProvider,
-                    model: context?.codeReviewConfig?.byokConfig?.main?.model,
-                    fallbackModel:
-                        context?.codeReviewConfig?.byokConfig?.fallback?.model,
-                    chunkIndex,
+            const { result: analysis } =
+                await this.observabilityService.runLLMInSpan({
+                    spanName,
                     runName,
-                })
-                .addTags([
-                    ...this.buildTags(provider, 'primary'),
-                    ...this.buildTags(fallbackProvider, 'fallback'),
-                ])
-                .addCallbacks([this.tokenTracker])
-                .setRunName(runName)
-                .setTemperature(0)
-                .execute();
-
-            this.observabilityService.endSpan(this.tokenTracker, {
-                organizationId: organizationAndTeamData.organizationId,
-                prNumber,
-                chunkIndex,
-                type: 'byok',
-                runName,
-            });
+                    attrs: spanAttrs,
+                    exec: async (callbacks) => {
+                        return await promptRunner
+                            .builder()
+                            .setParser(ParserType.STRING)
+                            .setLLMJsonMode(true)
+                            .setPayload(analyzerPayload)
+                            .addPrompt({
+                                prompt: prompt_kodyrules_prlevel_analyzer,
+                                role: PromptRole.SYSTEM,
+                            })
+                            .addPrompt({
+                                prompt: 'Please analyze the provided information and return the response in the specified format',
+                                role: PromptRole.USER,
+                            })
+                            .addMetadata({
+                                organizationAndTeamData,
+                                prNumber,
+                                provider:
+                                    context?.codeReviewConfig?.byokConfig?.main
+                                        ?.provider ?? provider,
+                                fallbackProvider:
+                                    context?.codeReviewConfig?.byokConfig
+                                        ?.fallback?.provider ??
+                                    fallbackProvider,
+                                model: context?.codeReviewConfig?.byokConfig
+                                    ?.main?.model,
+                                fallbackModel:
+                                    context?.codeReviewConfig?.byokConfig
+                                        ?.fallback?.model,
+                                chunkIndex,
+                                runName,
+                            })
+                            .addTags([
+                                ...this.buildTags(provider, 'primary'),
+                                ...this.buildTags(fallbackProvider, 'fallback'),
+                            ])
+                            .addCallbacks(callbacks)
+                            .setRunName(runName)
+                            .setTemperature(0)
+                            .execute();
+                    },
+                });
 
             if (!analysis) {
                 const message = `No response from LLM for chunk ${chunkIndex + 1} for PR#${prNumber}`;
@@ -997,7 +1008,7 @@ export class KodyRulesPrLevelAnalysisService
                 throw new Error(message);
             }
 
-            // Processar resposta deste chunk
+            // processa resposta do chunk
             return this.processAnalyzerResponse(
                 kodyRulesPrLevel,
                 analysis,
@@ -1006,6 +1017,7 @@ export class KodyRulesPrLevelAnalysisService
                 organizationAndTeamData,
             );
         } catch (error) {
+            // runLLMInSpan já marca status/exception no span; aqui só logamos e propagamos
             this.logger.error({
                 message: `Error processing chunk ${chunkIndex + 1} for PR#${prNumber}`,
                 context: KodyRulesPrLevelAnalysisService.name,
@@ -1239,7 +1251,7 @@ export class KodyRulesPrLevelAnalysisService
         prNumber: number,
         byokConfig: BYOKConfig,
     ): Promise<ISuggestionByPR> {
-        // Validação de segurança
+        // Filtro rápido + fallback seguro
         if (!duplicatedSuggestions || duplicatedSuggestions.length === 0) {
             this.logger.error({
                 message: 'No duplicated suggestions provided for grouping',
@@ -1250,7 +1262,6 @@ export class KodyRulesPrLevelAnalysisService
                     organizationAndTeamData,
                 },
             });
-            // Retornar uma suggestion padrão
             return {
                 id: uuidv4(),
                 suggestionContent: 'Error processing suggestions',
@@ -1263,14 +1274,30 @@ export class KodyRulesPrLevelAnalysisService
         }
 
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
+        const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+        const runName = 'prLevelKodyRulesGrouper';
+        const spanName = `${KodyRulesPrLevelAnalysisService.name}::${runName}`;
+        const spanAttrs = {
+            type: 'byok',
+            organizationId: organizationAndTeamData?.organizationId,
+            prNumber,
+            ruleId: rule?.uuid,
+        };
 
-        // Preparar payload para o prompt de agrupamento
+        const promptRunner = new BYOKPromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            byokConfig,
+        );
+
+        // Payload único para o grouping
         const groupingPayload = {
             rule: {
                 title: rule?.title || '',
                 description: rule?.rule || '',
             },
-            language: language,
+            language,
             violations: duplicatedSuggestions.map((s) => ({
                 violatedFileSha: s.files?.violatedFileSha || [],
                 relatedFileSha: s.files?.relatedFileSha || [],
@@ -1279,78 +1306,50 @@ export class KodyRulesPrLevelAnalysisService
         };
 
         try {
-            const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
-
-            const runName = 'prLevelKodyRulesGrouper';
-            const promptRunner = new BYOKPromptRunnerService(
-                this.promptRunnerService,
-                provider,
-                fallbackProvider,
-                byokConfig,
-            );
-
-            this.observabilityService.startSpan(
-                `${KodyRulesPrLevelAnalysisService.name}::${runName}`,
-            );
-
-            const grouping = await promptRunner
-                .builder()
-                .setParser(ParserType.STRING)
-                .setLLMJsonMode(true)
-                .setPayload(groupingPayload)
-                .addPrompt({
-                    prompt: prompt_kodyrules_prlevel_group_rules,
-                    role: PromptRole.SYSTEM,
-                })
-                .addPrompt({
-                    prompt: 'Please consolidate the provided violations into a single coherent comment following the instructions.',
-                    role: PromptRole.USER,
-                })
-                .addMetadata({
-                    organizationAndTeamData,
-                    prNumber,
-                    ruleId: rule?.uuid,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
-                })
-                .setParser(ParserType.STRING)
-                .setLLMJsonMode(true)
-                .setPayload(groupingPayload)
-                .addPrompt({
-                    prompt: prompt_kodyrules_prlevel_group_rules,
-                    role: PromptRole.SYSTEM,
-                })
-                .addPrompt({
-                    prompt: 'Please consolidate the provided violations into a single coherent comment following the instructions.',
-                    role: PromptRole.USER,
-                })
-                .addMetadata({
-                    organizationAndTeamData,
-                    prNumber,
-                    ruleId: rule?.uuid,
-                    provider: byokConfig?.main?.provider || provider,
-                    fallbackProvider:
-                        byokConfig?.fallback?.provider || fallbackProvider,
-                    model: byokConfig?.main?.model,
-                    fallbackModel: byokConfig?.fallback?.model,
+            const { result: grouping } =
+                await this.observabilityService.runLLMInSpan({
+                    spanName,
                     runName,
-                })
-                .setRunName(runName)
-                .setTemperature(0)
-                .addCallbacks([this.tokenTracker])
-                .addTags([
-                    ...this.buildTags(provider, 'primary'),
-                    ...this.buildTags(fallbackProvider, 'fallback'),
-                ])
-                .execute();
-
-            this.observabilityService.endSpan(this.tokenTracker, {
-                organizationId: organizationAndTeamData.organizationId,
-                prNumber,
-                ruleId: rule?.uuid,
-                type: 'byok',
-                runName,
-            });
+                    attrs: spanAttrs,
+                    exec: async (callbacks) => {
+                        return await promptRunner
+                            .builder()
+                            .setParser(ParserType.STRING)
+                            .setLLMJsonMode(true)
+                            .setPayload(groupingPayload)
+                            .addPrompt({
+                                prompt: prompt_kodyrules_prlevel_group_rules,
+                                role: PromptRole.SYSTEM,
+                            })
+                            .addPrompt({
+                                prompt: 'Please consolidate the provided violations into a single coherent comment following the instructions.',
+                                role: PromptRole.USER,
+                            })
+                            .addMetadata({
+                                organizationId:
+                                    organizationAndTeamData?.organizationId,
+                                teamId: organizationAndTeamData?.teamId,
+                                pullRequestId: prNumber,
+                                ruleId: rule?.uuid,
+                                provider:
+                                    byokConfig?.main?.provider || provider,
+                                model: byokConfig?.main?.model,
+                                fallbackProvider:
+                                    byokConfig?.fallback?.provider ||
+                                    fallbackProvider,
+                                fallbackModel: byokConfig?.fallback?.model,
+                                runName,
+                            })
+                            .addTags([
+                                ...this.buildTags(provider, 'primary'),
+                                ...this.buildTags(fallbackProvider, 'fallback'),
+                            ])
+                            .addCallbacks(callbacks) // captura usage por provedor
+                            .setRunName(runName)
+                            .setTemperature(0)
+                            .execute();
+                    },
+                });
 
             if (!grouping) {
                 const message = 'No response from LLM for grouping suggestions';

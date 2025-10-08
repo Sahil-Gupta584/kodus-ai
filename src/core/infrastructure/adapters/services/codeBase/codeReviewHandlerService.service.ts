@@ -10,7 +10,6 @@ import { CodeReviewPipelineContext } from './codeReviewPipeline/context/code-rev
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { TaskStatus } from '@kodus/kodus-proto/task';
 import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
-import { createThreadId } from '@kodus/flow';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseConnection } from '@/config/types';
 import { ObservabilityService } from '../logger/observability.service';
