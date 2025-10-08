@@ -41,6 +41,18 @@ export class IssuesModel extends CoreDocument {
 
     @Prop({ type: String, required: true })
     public organizationId: string;
+
+    @Prop({ type: Object, required: false })
+    public owner?: {
+        gitId: string;
+        username: string;
+    };
+
+    @Prop({ type: Object, required: false })
+    public reporter?: {
+        gitId: string;
+        username: string;
+    };
 }
 
 export const IssuesSchema = SchemaFactory.createForClass(IssuesModel);

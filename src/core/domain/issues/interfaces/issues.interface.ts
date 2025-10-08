@@ -19,4 +19,12 @@ export interface IIssue {
     createdAt: string;
     updatedAt: string;
     prNumbers?: string[];
+    owner?: {
+        gitId: string;
+        username: string;
+    };
+    reporter?: { 
+        gitId: string;
+        username: string;
+    };
 }

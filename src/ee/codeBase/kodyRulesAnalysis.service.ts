@@ -999,6 +999,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                             Number(suggestion.relevantLinesStart) || undefined,
                         relevantLinesEnd:
                             Number(suggestion.relevantLinesEnd) || undefined,
+                        source:'kody_rules'
                     }));
             }
 

@@ -15,6 +15,11 @@ import {
 } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 
+type User = {
+    uuid: string;
+    organization: { uuid: string };
+};
+
 @Injectable({ scope: Scope.REQUEST })
 export class CreateIssueManuallyUseCase {
     constructor(
@@ -26,28 +31,30 @@ export class CreateIssueManuallyUseCase {
 
         @Inject(REQUEST)
         private readonly request: Request & {
-            user: {
-                organization: { uuid: string };
-                uuid: string;
-                email: string;
-            };
+            user: User;
         },
     ) {}
 
-    async execute(dto: CreateIssueManuallyDto): Promise<IssuesEntity> {
-        const user = this.request?.user;
+    async execute(
+        dto: CreateIssueManuallyDto,
+    ): Promise<IssuesEntity> {
+        const user = this.request.user;
+        const organizationId = dto.organizationId || user?.organization?.uuid;
         const org = await this.organizationService.findOne({
-            uuid: user.organization.uuid,
+            uuid: organizationId,
         });
 
         if (!org) {
             throw new NotFoundException('api.organizations.not_found');
         }
-
-        const isUserBelongsToOrg = org.user?.find((u) => u.uuid === user?.uuid);
-
-        if (!isUserBelongsToOrg)
-            throw new ForbiddenException('Invalid permission');
+        
+        if (user?.uuid) {
+            const isUserBelongsToOrg = org.user?.find(
+                (u) => u.uuid === user.uuid,
+            );
+            if (!isUserBelongsToOrg)
+                throw new ForbiddenException('Invalid permission');
+        }
 
         const issue: IIssue = {
             title: dto.title,
@@ -56,14 +63,11 @@ export class CreateIssueManuallyUseCase {
             language: dto.language,
             label: dto.label,
             severity: dto.severity,
-            organizationId: dto.organizationId,
+            organizationId,
             repository: dto.repository,
             owner: dto.owner,
             status: IssueStatus.OPEN,
-            reporter: {
-                id: user.uuid,
-                email: user.email,
-            },
+            reporter: dto.reporter,
             contributingSuggestions: [],
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),

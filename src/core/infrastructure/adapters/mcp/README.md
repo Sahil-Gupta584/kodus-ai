@@ -6,11 +6,20 @@ Este módulo expõe funcionalidades do `CodeManagementService` através do proto
 
 ### Tools MCP Expostos
 
+#### Code Management Tools
 1. **`list_repositories`** - Lista repositórios da plataforma configurada (GitHub, GitLab, Azure Repos)
 2. **`list_pull_requests`** - Lista pull requests com filtros avançados
 3. **`list_commits`** - Lista commits de repositórios específicos
 4. **`get_pull_request_details`** - Obtém detalhes específicos de um pull request
 5. **`get_repository_files`** - Lista arquivos de um repositório com filtros
+
+#### Kody Issues Management Tools
+6. **`KODUS_CREATE_KODY_ISSUE`** - Cria uma nova issue manualmente
+7. **`KODUS_LIST_KODY_ISSUES`** - Lista issues com filtros opcionais
+8. **`KODUS_GET_KODY_ISSUE_DETAILS`** - Obtém detalhes de uma issue específica
+9. **`KODUS_UPDATE_KODY_ISSUE_STATUS`** - Atualiza o status de uma issue
+10. **`KODUS_UPDATE_KODY_ISSUE_CATEGORY`** - Atualiza a categoria/label de uma issue
+11. **`KODUS_DELETE_KODY_ISSUE`** - Fecha/descarta uma issue
 
 ## Uso
 
@@ -136,6 +145,104 @@ const mcpAdapter = createMCPAdapter({
   }
 }
 ```
+
+#### 6. Criar Kody Issue
+
+```json
+{
+  "name": "KODUS_CREATE_KODY_ISSUE",
+  "arguments": {
+    "organizationId": "uuid-da-organizacao",
+    "title": "Memory leak in user service",
+    "description": "Detailed description of the issue",
+    "filePath": "src/services/user.service.ts",
+    "language": "typescript",
+    "label": "bug",
+    "severity": "high",
+    "repository": {
+      "id": "repo-id",
+      "name": "my-repo"
+    },
+    "owner": {
+      "gitId": "user123",
+      "username": "johndoe"
+    },
+    "reporter": {
+      "gitId": "reporter456",
+      "username": "janedoe"
+    }
+  }
+}
+```
+
+**Note**: `owner` and `reporter` are optional. If `reporter` is not provided, defaults to Kody-MCP.
+
+#### 7. Listar Kody Issues
+
+```json
+{
+  "name": "KODUS_LIST_KODY_ISSUES",
+  "arguments": {
+    "organizationId": "uuid-da-organizacao",
+    "repositoryName": "my-repo",
+    "severity": "high",
+    "label": "bug"
+  }
+}
+```
+
+All filters are optional.
+
+#### 8. Detalhes de Kody Issue
+
+```json
+{
+  "name": "KODUS_GET_KODY_ISSUE_DETAILS",
+  "arguments": {
+    "organizationId": "uuid-da-organizacao",
+    "issueId": "issue-uuid"
+  }
+}
+```
+
+#### 9. Atualizar Status de Issue
+
+```json
+{
+  "name": "KODUS_UPDATE_KODY_ISSUE_STATUS",
+  "arguments": {
+    "issueId": "issue-uuid",
+    "status": "resolved"
+  }
+}
+```
+
+Valid statuses: `open`, `resolved`, `dismissed`
+
+#### 10. Atualizar Categoria de Issue
+
+```json
+{
+  "name": "KODUS_UPDATE_KODY_ISSUE_CATEGORY",
+  "arguments": {
+    "issueId": "issue-uuid",
+    "label": "performance"
+  }
+}
+```
+
+#### 11. Deletar/Fechar Issue
+
+```json
+{
+  "name": "KODUS_DELETE_KODY_ISSUE",
+  "arguments": {
+    "issueId": "issue-uuid"
+  }
+}
+```
+
+This sets the issue status to `dismissed`.
 
 ## Arquitetura
 

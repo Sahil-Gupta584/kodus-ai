@@ -39,6 +39,9 @@ import {
     Action,
     ResourceType,
 } from '@/core/domain/permissions/enums/permissions.enum';
+import { UpdateOrCreateIssuesParameterBodyDto } from '../dtos/create-or-update-issues-parameter.dto';
+import { UpdateOrCreateIssuesParameterUseCase } from '@/core/application/use-cases/parameters/update-or-create-issues-parameter-use-case';
+import { OrganizationAndTeamDataDto } from '../dtos/organizationAndTeamData.dto';
 @Controller('parameters')
 export class ParametersController {
     constructor(
@@ -46,6 +49,7 @@ export class ParametersController {
         private readonly findByKeyParametersUseCase: FindByKeyParametersUseCase,
         private readonly listCodeReviewAutomationLabelsUseCase: ListCodeReviewAutomationLabelsUseCase,
         private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
+        private readonly updateOrCreateIssuesParameterUseCase: UpdateOrCreateIssuesParameterUseCase,
         private readonly updateCodeReviewParameterRepositoriesUseCase: UpdateCodeReviewParameterRepositoriesUseCase,
         private readonly generateKodusConfigFileUseCase: GenerateKodusConfigFileUseCase,
         private readonly copyCodeReviewParameterUseCase: CopyCodeReviewParameterUseCase,
@@ -228,5 +232,15 @@ export class ParametersController {
         body: PreviewPrSummaryDto,
     ) {
         return this.previewPrSummaryUseCase.execute(body);
+    }
+
+    @Post('/create-or-update-issues-config')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.Issues))
+    public async updateOrCreateIssuesParameter(
+        @Body()
+        body: UpdateOrCreateIssuesParameterBodyDto,
+    ) {
+        return await this.updateOrCreateIssuesParameterUseCase.execute(body);
     }
 }

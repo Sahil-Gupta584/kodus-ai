@@ -9,6 +9,7 @@ import { SaveArtifactsStructureUseCase } from './save-artifacts-structure.use-ca
 import { UpdateCodeReviewParameterRepositoriesUseCase } from './update-code-review-parameter-repositories-use-case';
 import { UpdateOrCreateCodeReviewParameterUseCase } from './update-or-create-code-review-parameter-use-case';
 import { PreviewPrSummaryUseCase } from './preview-pr-summary.use-case';
+import { UpdateOrCreateIssuesParameterUseCase } from './update-or-create-issues-parameter-use-case';
 
 export const UseCases = [
     CreateOrUpdateParametersUseCase,
@@ -22,4 +23,5 @@ export const UseCases = [
     GenerateCodeReviewParameterUseCase,
     DeleteRepositoryCodeReviewParameterUseCase,
     PreviewPrSummaryUseCase,
+    UpdateOrCreateIssuesParameterUseCase,
 ];

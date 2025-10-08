@@ -23,6 +23,9 @@ import { GenerateIssuesFromPrClosedUseCase } from "@/core/application/use-cases/
 import { CodebaseModule } from "./codeBase.module";
 import { GlobalCacheModule } from "./cache.module";
 import { GetIssuesUseCase } from "@/core/application/use-cases/issues/get-issues.use-case";
+import { UsersModule } from "./user.module";
+import { OrganizationModule } from "./organization.module";
+import { CreateIssueManuallyUseCase } from "@/core/application/use-cases/issues/create-issue-manually.use-case";
 
 const UseCases = [
     GetIssuesByFiltersUseCase,
@@ -31,6 +34,7 @@ const UseCases = [
     GetTotalIssuesUseCase,
     GetIssuesUseCase,
     GetIssueByIdUseCase,
+    CreateIssueManuallyUseCase
 ] as const;
 
 @Module({
@@ -46,10 +50,13 @@ const UseCases = [
         forwardRef(() => ParametersModule),
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
+        forwardRef(() => UsersModule),
+        forwardRef(() => OrganizationModule),
         GlobalCacheModule,
     ],
     providers: [
         ...UseCases,
+        
         {
             provide: ISSUES_REPOSITORY_TOKEN,
             useClass: IssuesRepository,

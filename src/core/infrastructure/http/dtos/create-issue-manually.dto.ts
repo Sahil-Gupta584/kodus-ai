@@ -37,9 +37,8 @@ export class CreateIssueManuallyDto {
 
     @IsOptional()
     @IsObject()
-    owner: { id: string; name: string; email: string };
+    owner: { gitId: string; username: string; };
 
-    @IsOptional()
     @IsObject()
-    reporter: { id: string; name: string; email: string };
+    reporter: { gitId: string; username: string; };
 }
