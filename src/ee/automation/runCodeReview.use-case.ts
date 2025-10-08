@@ -232,6 +232,7 @@ export class RunCodeReviewAutomationUseCase {
                     origin: sanitizedPayload?.origin,
                     action,
                     byokConfig,
+                    triggerCommentId: sanitizedPayload?.triggerCommentId,
                 },
             );
         } catch (error) {
