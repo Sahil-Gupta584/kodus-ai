@@ -24,6 +24,19 @@ import {
 export class CodeReviewHandlerService {
     private readonly config: DatabaseConnection;
 
+    private readonly reactionMap = {
+        [PlatformType.GITHUB]: {
+            [ReviewStatusReaction.START]: GitHubReaction.EYES,
+            [ReviewStatusReaction.SUCCESS]: GitHubReaction.HOORAY,
+            [ReviewStatusReaction.ERROR]: GitHubReaction.CONFUSED,
+        },
+        [PlatformType.GITLAB]: {
+            [ReviewStatusReaction.START]: GitlabReaction.EYES,
+            [ReviewStatusReaction.SUCCESS]: GitlabReaction.TADA,
+            [ReviewStatusReaction.ERROR]: GitlabReaction.CONFUSED,
+        },
+    };
+
     constructor(
         @Inject('PIPELINE_PROVIDER')
         private readonly pipelineFactory: PipelineFactory<CodeReviewPipelineContext>,
@@ -154,11 +167,13 @@ export class CodeReviewHandlerService {
                 statusInfo: finalStatus,
             };
         } catch (error) {
-            await this.removeCurrentReaction(initialContext);
-            await this.addStatusReaction(
-                initialContext,
-                ReviewStatusReaction.ERROR,
-            );
+            if (initialContext) {
+                await this.removeCurrentReaction(initialContext);
+                await this.addStatusReaction(
+                    initialContext,
+                    ReviewStatusReaction.ERROR,
+                );
+            }
 
             this.logger.error({
                 message: `Erro ao executar pipeline de code review para PR#${pullRequest.number}`,
@@ -187,20 +202,7 @@ export class CodeReviewHandlerService {
                 return;
             }
 
-            const reactionMap = {
-                [PlatformType.GITHUB]: {
-                    [ReviewStatusReaction.START]: GitHubReaction.EYES,
-                    [ReviewStatusReaction.SUCCESS]: GitHubReaction.HOORAY,
-                    [ReviewStatusReaction.ERROR]: GitHubReaction.CONFUSED,
-                },
-                [PlatformType.GITLAB]: {
-                    [ReviewStatusReaction.START]: GitlabReaction.EYES,
-                    [ReviewStatusReaction.SUCCESS]: GitlabReaction.TADA,
-                    [ReviewStatusReaction.ERROR]: GitlabReaction.CONFUSED,
-                },
-            };
-
-            const reaction = reactionMap[platformType]?.[status];
+            const reaction = this.reactionMap[platformType]?.[status];
             if (!reaction) {
                 return;
             }
@@ -227,6 +229,7 @@ export class CodeReviewHandlerService {
                 context: CodeReviewHandlerService.name,
                 error,
                 metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
                     status,
                     platformType: context.platformType,
                     prNumber: context.pullRequest.number,
@@ -245,9 +248,12 @@ export class CodeReviewHandlerService {
                 return;
             }
 
-            const reactionsToRemove = platformType === PlatformType.GITHUB
-                ? [GitHubReaction.EYES, GitHubReaction.HOORAY, GitHubReaction.CONFUSED]
-                : [GitlabReaction.EYES, GitlabReaction.TADA, GitlabReaction.CONFUSED];
+            const platformReactions = this.reactionMap[platformType];
+            if (!platformReactions) {
+                return;
+            }
+
+            const reactionsToRemove = Object.values(platformReactions) as (GitHubReaction | GitlabReaction)[];
 
             if (triggerCommentId) {
                 await this.codeManagement.removeReactionsFromComment({
@@ -271,6 +277,7 @@ export class CodeReviewHandlerService {
                 context: CodeReviewHandlerService.name,
                 error,
                 metadata: {
+                    organizationAndTeamData: context.organizationAndTeamData,
                     platformType: context.platformType,
                     prNumber: context.pullRequest.number,
                 },

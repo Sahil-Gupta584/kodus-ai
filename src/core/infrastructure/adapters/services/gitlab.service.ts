@@ -2377,12 +2377,21 @@ export class GitlabService
     }
 
     async addReactionToPR(params: {
-        organizationAndTeamData: any;
+        organizationAndTeamData: OrganizationAndTeamData;
         repository: { id?: string; name?: string };
         prNumber: number;
         reaction: GitHubReaction | GitlabReaction;
     }): Promise<void> {
         try {
+            if (!params.repository.id) {
+                this.logger.warn({
+                    message: 'Repository ID is required for GitLab reactions',
+                    context: GitlabService.name,
+                    metadata: params,
+                });
+                return;
+            }
+
             const gitlabAuthDetail = await this.getAuthDetails(
                 params.organizationAndTeamData,
             );
@@ -2409,13 +2418,22 @@ export class GitlabService
     }
 
     async addReactionToComment(params: {
-        organizationAndTeamData: any;
+        organizationAndTeamData: OrganizationAndTeamData;
         repository: { id?: string; name?: string };
         prNumber: number;
         commentId: number;
         reaction: GitHubReaction | GitlabReaction;
     }): Promise<void> {
         try {
+            if (!params.repository.id) {
+                this.logger.warn({
+                    message: 'Repository ID is required for GitLab reactions',
+                    context: GitlabService.name,
+                    metadata: params,
+                });
+                return;
+            }
+
             const gitlabAuthDetail = await this.getAuthDetails(
                 params.organizationAndTeamData,
             );
@@ -2443,12 +2461,21 @@ export class GitlabService
     }
 
     async removeReactionsFromPR(params: {
-        organizationAndTeamData: any;
+        organizationAndTeamData: OrganizationAndTeamData;
         repository: { id?: string; name?: string };
         prNumber: number;
         reactions: (GitHubReaction | GitlabReaction)[];
     }): Promise<void> {
         try {
+            if (!params.repository.id) {
+                this.logger.warn({
+                    message: 'Repository ID is required for GitLab reactions',
+                    context: GitlabService.name,
+                    metadata: params,
+                });
+                return;
+            }
+
             const gitlabAuthDetail = await this.getAuthDetails(
                 params.organizationAndTeamData,
             );
@@ -2463,13 +2490,15 @@ export class GitlabService
                 params.reactions.includes(award.name),
             );
 
-            for (const award of awardsToRemove) {
-                await gitlabAPI.MergeRequestAwardEmojis.remove(
-                    params.repository.id,
-                    params.prNumber,
-                    award.id,
-                );
-            }
+            await Promise.all(
+                awardsToRemove.map((award) =>
+                    gitlabAPI.MergeRequestAwardEmojis.remove(
+                        params.repository.id,
+                        params.prNumber,
+                        award.id,
+                    ),
+                ),
+            );
 
             this.logger.log({
                 message: `Removed reactions from MR#${params.prNumber}`,
@@ -2487,13 +2516,22 @@ export class GitlabService
     }
 
     async removeReactionsFromComment(params: {
-        organizationAndTeamData: any;
+        organizationAndTeamData: OrganizationAndTeamData;
         repository: { id?: string; name?: string };
         prNumber: number;
         commentId: number;
         reactions: (GitHubReaction | GitlabReaction)[];
     }): Promise<void> {
         try {
+            if (!params.repository.id) {
+                this.logger.warn({
+                    message: 'Repository ID is required for GitLab reactions',
+                    context: GitlabService.name,
+                    metadata: params,
+                });
+                return;
+            }
+
             const gitlabAuthDetail = await this.getAuthDetails(
                 params.organizationAndTeamData,
             );
@@ -2509,14 +2547,16 @@ export class GitlabService
                 params.reactions.includes(award.name),
             );
 
-            for (const award of awardsToRemove) {
-                await gitlabAPI.MergeRequestNoteAwardEmojis.remove(
-                    params.repository.id,
-                    params.prNumber,
-                    params.commentId,
-                    award.id,
-                );
-            }
+            await Promise.all(
+                awardsToRemove.map((award) =>
+                    gitlabAPI.MergeRequestNoteAwardEmojis.remove(
+                        params.repository.id,
+                        params.prNumber,
+                        params.commentId,
+                        award.id,
+                    ),
+                ),
+            );
 
             this.logger.log({
                 message: `Removed reactions from note ${params.commentId} on MR#${params.prNumber}`,
