@@ -12,7 +12,9 @@ import { AUTOMATION_EXECUTION_REPOSITORY_TOKEN } from '@/core/domain/automation/
 describe('AutomationExecutionService - Data Persistence', () => {
     let service: AutomationExecutionService;
     let repository: AutomationExecutionRepository;
-    let mockTypeOrmRepository: jest.Mocked<Repository<AutomationExecutionModel>>;
+    let mockTypeOrmRepository: jest.Mocked<
+        Repository<AutomationExecutionModel>
+    >;
     let queryBuilder: any;
 
     const mockTeamAutomationId = 'team-persistence-uuid';
@@ -52,8 +54,12 @@ describe('AutomationExecutionService - Data Persistence', () => {
             ],
         }).compile();
 
-        service = module.get<AutomationExecutionService>(AutomationExecutionService);
-        repository = module.get<AutomationExecutionRepository>(AUTOMATION_EXECUTION_REPOSITORY_TOKEN);
+        service = module.get<AutomationExecutionService>(
+            AutomationExecutionService,
+        );
+        repository = module.get<AutomationExecutionRepository>(
+            AUTOMATION_EXECUTION_REPOSITORY_TOKEN,
+        );
     });
 
     afterEach(() => {
@@ -63,34 +69,34 @@ describe('AutomationExecutionService - Data Persistence', () => {
     describe('Cenário 3 - Salvamento correto dos dados novos', () => {
         it('deve salvar execution com dados nas colunas separadas (formato novo)', async () => {
             // Arrange
-            const automationExecutionData: Omit<IAutomationExecution, 'uuid'> = {
-                status: AutomationStatus.SUCCESS,
-                dataExecution: {
-                    codeManagementEvent: 'issue_comment',
-                    platformType: 'GITHUB',
-                    organizationAndTeamData: {
-                        teamId: mockTeamAutomationId,
-                        organizationId: 'org-uuid'
+            const automationExecutionData: Omit<IAutomationExecution, 'uuid'> =
+                {
+                    status: AutomationStatus.SUCCESS,
+                    dataExecution: {
+                        codeManagementEvent: 'issue_comment',
+                        platformType: 'GITHUB',
+                        organizationAndTeamData: {
+                            teamId: mockTeamAutomationId,
+                            organizationId: 'org-uuid',
+                        },
+                        pullRequestNumber: pullRequestNumber,
+                        lastAnalyzedCommit: {
+                            sha: 'f8110470424f7daa2a1e3c3b54528e31bb9704de',
+                            author: {
+                                id: 17408306,
+                                name: 'Junior Sartori',
+                                email: 'sartorijr92@gmail.com',
+                            },
+                        },
+                        commentId: 2960318631,
+                        repositoryId: repositoryId,
                     },
+                    teamAutomation: { uuid: mockTeamAutomationId },
+                    origin: 'automation',
+                    // Novos campos nas colunas separadas
                     pullRequestNumber: pullRequestNumber,
-                    overallComments: [],
-                    lastAnalyzedCommit: {
-                        sha: 'f8110470424f7daa2a1e3c3b54528e31bb9704de',
-                        author: {
-                            id: 17408306,
-                            name: 'Junior Sartori',
-                            email: 'sartorijr92@gmail.com'
-                        }
-                    },
-                    commentId: 2960318631,
-                    repositoryId: repositoryId
-                },
-                teamAutomation: { uuid: mockTeamAutomationId },
-                origin: 'automation',
-                // Novos campos nas colunas separadas
-                pullRequestNumber: pullRequestNumber,
-                repositoryId: repositoryId
-            };
+                    repositoryId: repositoryId,
+                };
 
             const createdModel: AutomationExecutionModel = {
                 uuid: 'new-execution-uuid',
@@ -131,40 +137,40 @@ describe('AutomationExecutionService - Data Persistence', () => {
 
             // Verifica que buscou o registro criado
             expect(mockTypeOrmRepository.findOne).toHaveBeenCalledWith({
-                where: { uuid: 'new-execution-uuid' }
+                where: { uuid: 'new-execution-uuid' },
             });
         });
 
         it('deve manter compatibilidade salvando dados também no jsonB', async () => {
             // Arrange
-            const automationExecutionData: Omit<IAutomationExecution, 'uuid'> = {
-                status: AutomationStatus.SUCCESS,
-                dataExecution: {
-                    codeManagementEvent: 'pullrequest:comment_created',
-                    platformType: 'BITBUCKET',
-                    organizationAndTeamData: {
-                        teamId: mockTeamAutomationId,
-                        organizationId: 'org-bitbucket-uuid'
+            const automationExecutionData: Omit<IAutomationExecution, 'uuid'> =
+                {
+                    status: AutomationStatus.SUCCESS,
+                    dataExecution: {
+                        codeManagementEvent: 'pullrequest:comment_created',
+                        platformType: 'BITBUCKET',
+                        organizationAndTeamData: {
+                            teamId: mockTeamAutomationId,
+                            organizationId: 'org-bitbucket-uuid',
+                        },
+                        pullRequestNumber: 34, // Também no jsonB para compatibilidade
+                        lastAnalyzedCommit: {
+                            sha: 'ac475d506ffb8f25ec0bbee32ccd96bf14c7929f',
+                            author: {
+                                id: '3ea4cafe-5ea0-42ba-ab6c-153f2c1f46ea',
+                                name: 'Junior Sartori',
+                            },
+                        },
+                        noteId: null,
+                        threadId: null,
+                        commentId: 643333331,
+                        repositoryId: 'repo-bitbucket-uuid',
                     },
-                    pullRequestNumber: 34, // Também no jsonB para compatibilidade
-                    overallComments: [],
-                    lastAnalyzedCommit: {
-                        sha: 'ac475d506ffb8f25ec0bbee32ccd96bf14c7929f',
-                        author: {
-                            id: '3ea4cafe-5ea0-42ba-ab6c-153f2c1f46ea',
-                            name: 'Junior Sartori'
-                        }
-                    },
-                    noteId: null,
-                    threadId: null,
-                    commentId: 643333331,
-                    repositoryId: 'repo-bitbucket-uuid'
-                },
-                teamAutomation: { uuid: mockTeamAutomationId },
-                origin: 'automation',
-                pullRequestNumber: 34,
-                repositoryId: 'repo-bitbucket-uuid'
-            };
+                    teamAutomation: { uuid: mockTeamAutomationId },
+                    origin: 'automation',
+                    pullRequestNumber: 34,
+                    repositoryId: 'repo-bitbucket-uuid',
+                };
 
             const createdModel: AutomationExecutionModel = {
                 uuid: 'bitbucket-execution-uuid',
@@ -192,7 +198,9 @@ describe('AutomationExecutionService - Data Persistence', () => {
             expect(result.pullRequestNumber).toBe(34);
             expect(result.repositoryId).toBe('repo-bitbucket-uuid');
             expect(result.dataExecution.pullRequestNumber).toBe(34);
-            expect(result.dataExecution.repositoryId).toBe('repo-bitbucket-uuid');
+            expect(result.dataExecution.repositoryId).toBe(
+                'repo-bitbucket-uuid',
+            );
             expect(result.dataExecution.platformType).toBe('BITBUCKET');
         });
 
@@ -201,28 +209,28 @@ describe('AutomationExecutionService - Data Persistence', () => {
             const azureExecutionData: Omit<IAutomationExecution, 'uuid'> = {
                 status: AutomationStatus.SUCCESS,
                 dataExecution: {
-                    codeManagementEvent: 'ms.vss-code.git-pullrequest-comment-event',
+                    codeManagementEvent:
+                        'ms.vss-code.git-pullrequest-comment-event',
                     platformType: 'AZURE_REPOS',
                     organizationAndTeamData: {
                         teamId: mockTeamAutomationId,
-                        organizationId: 'org-azure-uuid'
+                        organizationId: 'org-azure-uuid',
                     },
                     pullRequestNumber: 45,
-                    overallComments: [],
                     lastAnalyzedCommit: {
                         sha: 'e81cdabc88f3164c46d580af8554926d0625e742',
                         author: {
                             id: '0e41dfd8-ee65-4e5b-9fa4-dd619a662204',
-                            name: 'Junior Sartori'
-                        }
+                            name: 'Junior Sartori',
+                        },
                     },
                     threadId: 355,
-                    repositoryId: 'repo-azure-uuid'
+                    repositoryId: 'repo-azure-uuid',
                 },
                 teamAutomation: { uuid: mockTeamAutomationId },
                 origin: 'automation',
                 pullRequestNumber: 45,
-                repositoryId: 'repo-azure-uuid'
+                repositoryId: 'repo-azure-uuid',
             };
 
             const createdModel: AutomationExecutionModel = {
@@ -247,25 +255,28 @@ describe('AutomationExecutionService - Data Persistence', () => {
             // Assert
             expect(result).toBeInstanceOf(AutomationExecutionEntity);
             expect(result.dataExecution.platformType).toBe('AZURE_REPOS');
-            expect(result.dataExecution.codeManagementEvent).toBe('ms.vss-code.git-pullrequest-comment-event');
+            expect(result.dataExecution.codeManagementEvent).toBe(
+                'ms.vss-code.git-pullrequest-comment-event',
+            );
             expect(result.pullRequestNumber).toBe(45);
             expect(result.repositoryId).toBe('repo-azure-uuid');
         });
 
         it('deve gerar UUID automaticamente no service.register', async () => {
             // Arrange
-            const automationExecutionData: Omit<IAutomationExecution, 'uuid'> = {
-                status: AutomationStatus.SUCCESS,
-                dataExecution: {
+            const automationExecutionData: Omit<IAutomationExecution, 'uuid'> =
+                {
+                    status: AutomationStatus.SUCCESS,
+                    dataExecution: {
+                        pullRequestNumber: pullRequestNumber,
+                        platformType: 'GITLAB',
+                        repositoryId: repositoryId,
+                    },
+                    teamAutomation: { uuid: mockTeamAutomationId },
+                    origin: 'automation',
                     pullRequestNumber: pullRequestNumber,
-                    platformType: 'GITLAB',
-                    repositoryId: repositoryId
-                },
-                teamAutomation: { uuid: mockTeamAutomationId },
-                origin: 'automation',
-                pullRequestNumber: pullRequestNumber,
-                repositoryId: repositoryId
-            };
+                    repositoryId: repositoryId,
+                };
 
             const createdModel: AutomationExecutionModel = {
                 uuid: 'generated-uuid',
@@ -289,30 +300,33 @@ describe('AutomationExecutionService - Data Persistence', () => {
             // Assert
             expect(mockTypeOrmRepository.create).toHaveBeenCalledWith({
                 ...automationExecutionData,
-                uuid: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i),
+                uuid: expect.stringMatching(
+                    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+                ),
             });
             expect(result.uuid).toBe('generated-uuid');
         });
 
         it('deve manter os campos obrigatórios ao salvar no formato novo', async () => {
             // Arrange
-            const automationExecutionData: Omit<IAutomationExecution, 'uuid'> = {
-                status: AutomationStatus.SUCCESS,
-                dataExecution: {
+            const automationExecutionData: Omit<IAutomationExecution, 'uuid'> =
+                {
+                    status: AutomationStatus.SUCCESS,
+                    dataExecution: {
+                        pullRequestNumber: pullRequestNumber,
+                        platformType: 'GITHUB',
+                        repositoryId: repositoryId,
+                        organizationAndTeamData: {
+                            teamId: mockTeamAutomationId,
+                            organizationId: 'org-uuid',
+                        },
+                    },
+                    teamAutomation: { uuid: mockTeamAutomationId },
+                    origin: 'automation',
+                    // Campos obrigatórios do formato novo
                     pullRequestNumber: pullRequestNumber,
-                    platformType: 'GITHUB',
                     repositoryId: repositoryId,
-                    organizationAndTeamData: {
-                        teamId: mockTeamAutomationId,
-                        organizationId: 'org-uuid'
-                    }
-                },
-                teamAutomation: { uuid: mockTeamAutomationId },
-                origin: 'automation',
-                // Campos obrigatórios do formato novo
-                pullRequestNumber: pullRequestNumber,
-                repositoryId: repositoryId
-            };
+                };
 
             const createdModel: AutomationExecutionModel = {
                 uuid: 'mandatory-fields-uuid',

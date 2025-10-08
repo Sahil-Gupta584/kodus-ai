@@ -4036,6 +4036,77 @@ export class BitbucketService
         return diff.split('\n').slice(4).join('\n');
     }
 
+    async isWebhookActive(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repositoryId: string;
+    }): Promise<boolean> {
+        const { organizationAndTeamData, repositoryId } = params;
+
+        try {
+            const authDetails = await this.getAuthDetails(
+                organizationAndTeamData,
+            );
+
+            if (!authDetails) {
+                return false;
+            }
+
+            const bitbucketAPI = this.instanceBitbucketApi(authDetails);
+
+            const repositories = <Repositories[]>(
+                await this.findOneByOrganizationAndTeamDataAndConfigKey(
+                    organizationAndTeamData,
+                    IntegrationConfigKey.REPOSITORIES,
+                )
+            );
+
+            if (!repositories?.length) {
+                return false;
+            }
+
+            const targetRepo = repositories.find((repo) =>
+                this.sanitizeUUID(repo.id) === this.sanitizeUUID(repositoryId),
+            );
+
+            if (!targetRepo?.workspaceId) {
+                return false;
+            }
+
+            const webhookUrl =
+                this.configService.get<string>(
+                    'GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK',
+                ) ?? process.env.GLOBAL_BITBUCKET_CODE_MANAGEMENT_WEBHOOK;
+
+            if (!webhookUrl) {
+                return false;
+            }
+
+            const existingHooks = await bitbucketAPI.webhooks
+                .listForRepo({
+                    repo_slug: `{${this.sanitizeUUID(targetRepo.id)}}`,
+                    workspace: `{${this.sanitizeUUID(targetRepo.workspaceId)}}`,
+                })
+                .then((res) => this.getPaginatedResults(bitbucketAPI, res));
+
+            return existingHooks.some(
+                (hook: any) => hook?.url === webhookUrl && hook?.active !== false,
+            );
+        } catch (error) {
+            this.logger.error({
+                message: 'Error verifying Bitbucket webhook status',
+                context: BitbucketService.name,
+                serviceName: 'BitbucketService isWebhookActive',
+                error: error,
+                metadata: {
+                    organizationAndTeamData,
+                    repositoryId,
+                },
+            });
+
+            return false;
+        }
+    }
+
     async deleteWebhook(params: {
         organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<void> {

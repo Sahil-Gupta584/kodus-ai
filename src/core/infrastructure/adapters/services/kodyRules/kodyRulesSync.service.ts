@@ -7,7 +7,6 @@ import { CreateOrUpdateKodyRulesUseCase } from '@/core/application/use-cases/kod
 import {
     KodyRulesOrigin,
     KodyRulesScope,
-    IKodyRule,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import {
     CreateKodyRuleDto,
@@ -24,7 +23,6 @@ import {
     PromptRole,
     LLMModelProvider,
 } from '@kodus/kodus-common/llm';
-import { createHash } from 'crypto';
 import { UpdateOrCreateCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/update-or-create-code-review-parameter-use-case';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import {
@@ -32,6 +30,9 @@ import {
     PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import * as path from 'path';
+import { ObservabilityService } from '../logger/observability.service';
+import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
+import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
 
 type SyncTarget = {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -46,16 +47,18 @@ type SyncTarget = {
 @Injectable()
 export class KodyRulesSyncService {
     constructor(
-        private readonly codeManagementService: CodeManagementService,
-        private readonly promptRunner: PromptRunnerService,
-        private readonly logger: PinoLoggerService,
         @Inject(CreateOrUpdateKodyRulesUseCase)
         private readonly upsertRule: CreateOrUpdateKodyRulesUseCase,
         @Inject(KODY_RULES_SERVICE_TOKEN)
         private readonly kodyRulesService: IKodyRulesService,
-        private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
+        private readonly codeManagementService: CodeManagementService,
+        private readonly logger: PinoLoggerService,
+        private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
+        private readonly promptRunnerService: PromptRunnerService,
+        private readonly permissionValidationService: PermissionValidationService,
+        private readonly observabilityService: ObservabilityService,
     ) {}
 
     /**
@@ -469,6 +472,7 @@ export class KodyRulesSyncService {
                     filePath: f.filename,
                     repositoryId: repository.id,
                     content: decoded,
+                    organizationAndTeamData,
                 });
 
                 if (!Array.isArray(rules) || rules.length === 0) {
@@ -702,6 +706,7 @@ export class KodyRulesSyncService {
                     filePath: file.path,
                     repositoryId: repository.id,
                     content: decoded,
+                    organizationAndTeamData,
                 });
 
                 const oneRule = rules.find(
@@ -843,52 +848,100 @@ export class KodyRulesSyncService {
         filePath: string;
         repositoryId: string;
         content: string;
+        organizationAndTeamData: OrganizationAndTeamData;
     }): Promise<Array<Partial<CreateKodyRuleDto>>> {
+        const validationResult =
+            await this.permissionValidationService.validateBasicLicense(
+                params.organizationAndTeamData,
+                KodyRulesSyncService.name,
+            );
+
+        if (!validationResult.allowed) {
+            return null;
+        }
+
+        const byokConfigValue =
+            await this.permissionValidationService.getBYOKConfig(
+                params.organizationAndTeamData,
+            );
+
+        const mainProvider =
+            LLMModelProvider.NOVITA_MOONSHOTAI_KIMI_K2_INSTRUCT;
+        const mainFallback =
+            LLMModelProvider.NOVITA_QWEN3_235B_A22B_THINKING_2507;
+        const mainRun = 'kodyRulesFileToRules';
+
         try {
-            const result = await this.promptRunner
-                .builder()
-                .setProviders({
-                    main: LLMModelProvider.NOVITA_MOONSHOTAI_KIMI_K2_INSTRUCT,
-                    fallback:
-                        LLMModelProvider.NOVITA_QWEN3_235B_A22B_THINKING_2507,
-                })
-                .setParser<Array<Partial<CreateKodyRuleDto>>>(ParserType.JSON)
-                .setLLMJsonMode(true)
-                .setPayload({
-                    filePath: params.filePath,
+            const { result } = await this.observabilityService.runLLMInSpan({
+                spanName: `${KodyRulesSyncService.name}::${mainRun}`,
+                runName: mainRun,
+                attrs: {
                     repositoryId: params.repositoryId,
-                    content: params.content,
-                })
-                .addPrompt({
-                    role: PromptRole.SYSTEM,
-                    prompt: [
-                        'Convert repository rule files (Cursor, Claude, GitHub rules, coding standards, etc.) into a JSON array of Kody Rules. IMPORTANT: Enforce exactly one rule per file. If multiple candidate rules exist, merge them concisely into one or pick the most representative. Return an array with a single item or [].',
-                        'Output ONLY a valid JSON array. If none, output []. No comments or explanations.',
-                        'Each item MUST match exactly:',
-                        '{"title": string, "rule": string, "path": string, "sourcePath": string, "severity": "low"|"medium"|"high"|"critical", "scope"?: "file"|"pull-request", "status"?: "active"|"pending"|"rejected"|"deleted", "examples": [{ "snippet": string, "isCorrect": boolean }], "sourceSnippet"?: string}',
-                        'Detection: extract a rule only if the text imposes a requirement/restriction/convention/standard.',
-                        'Severity map: must/required/security/blocker → "high" or "critical"; should/warn → "medium"; tip/info/optional → "low".',
-                        'Scope: "file" for code/content; "pull-request" for PR titles/descriptions/commits/reviewers/labels.',
-                        'Status: "active" if mandatory; "pending" if suggestive; "deleted" if deprecated.',
-                        'path (target GLOB): use declared globs/paths when present (frontmatter like "globs:" or explicit sections). If none, set "**/*". If multiple, join with commas (e.g., "services/**,api/**").',
-                        'sourcePath: ALWAYS set to the exact file path provided in input.',
-                        'sourceSnippet: when possible, include an EXACT copy (verbatim) of the bullet/line/paragraph from the file that led to this rule. Do NOT paraphrase. If none is suitable, omit this key.',
-                        'Examples: prefer 1 incorrect and 1 correct (minimal snippets).',
-                        'Language: keep the rule language consistent with the source (EN or PT-BR).',
-                        'Do NOT include keys like repositoryId, origin, createdAt, updatedAt, uuid, or any extra keys.',
-                        'Keep strings concise and strictly typed.',
-                    ].join(' '),
-                })
-                .addPrompt({
-                    role: PromptRole.USER,
-                    prompt: `File: ${params.filePath}\n\nContent:\n${params.content}`,
-                })
-                .setRunName('kodyRulesFileToRules')
-                .execute();
+                    filePath: params.filePath,
+                    type: 'byok',
+                    fallback: false,
+                },
+                exec: async (callbacks) => {
+                    const promptRunner = new BYOKPromptRunnerService(
+                        this.promptRunnerService,
+                        mainProvider,
+                        mainFallback,
+                        byokConfigValue,
+                    );
 
-            if (!Array.isArray(result)) return [];
+                    return await promptRunner
+                        .builder()
+                        .setParser(ParserType.JSON)
+                        .setLLMJsonMode(true)
+                        .setPayload({
+                            filePath: params.filePath,
+                            repositoryId: params.repositoryId,
+                            content: params.content,
+                        })
+                        .addPrompt({
+                            role: PromptRole.SYSTEM,
+                            prompt: [
+                                'Convert repository rule files (Cursor, Claude, GitHub rules, coding standards, etc.) into a JSON array of Kody Rules. IMPORTANT: Enforce exactly one rule per file. If multiple candidate rules exist, merge them concisely into one or pick the most representative. Return an array with a single item or [].',
+                                'Output ONLY a valid JSON array. If none, output []. No comments or explanations.',
+                                'Each item MUST match exactly:',
+                                '{"title": string, "rule": string, "path": string, "sourcePath": string, "severity": "low"|"medium"|"high"|"critical", "scope"?: "file"|"pull-request", "status"?: "active"|"pending"|"rejected"|"deleted", "examples": [{ "snippet": string, "isCorrect": boolean }], "sourceSnippet"?: string}',
+                                'Detection: extract a rule only if the text imposes a requirement/restriction/convention/standard.',
+                                'Severity map: must/required/security/blocker → "high" or "critical"; should/warn → "medium"; tip/info/optional → "low".',
+                                'Scope: "file" for code/content; "pull-request" for PR titles/descriptions/commits/reviewers/labels.',
+                                'Status: "active" if mandatory; "pending" if suggestive; "deleted" if deprecated.',
+                                'path (target GLOB): use declared globs/paths when present (frontmatter like "globs:" or explicit sections). If none, set "**/*". If multiple, join with commas (e.g., "services/**,api/**").',
+                                'sourcePath: ALWAYS set to the exact file path provided in input.',
+                                'sourceSnippet: when possible, include an EXACT copy (verbatim) of the bullet/line/paragraph from the file that led to this rule. Do NOT paraphrase. If none is suitable, omit this key.',
+                                'Examples: prefer 1 incorrect and 1 correct (minimal snippets).',
+                                'Language: keep the rule language consistent with the source (EN or PT-BR).',
+                                'Do NOT include keys like repositoryId, origin, createdAt, updatedAt, uuid, or any extra keys.',
+                                'Keep strings concise and strictly typed.',
+                            ].join(' '),
+                        })
+                        .addPrompt({
+                            role: PromptRole.USER,
+                            prompt: `File: ${params.filePath}\n\nContent:\n${params.content}`,
+                        })
+                        .addCallbacks(callbacks) // <- injeta tracker
+                        .addMetadata({ runName: mainRun })
+                        .setRunName(mainRun)
+                        .execute();
+                },
+            });
 
-            return result.map((r) => ({
+            let normalizedResult: any[] = [];
+
+            if (result) {
+                if (Array.isArray(result)) {
+                    normalizedResult = result;
+                } else if (typeof result === 'object') {
+                    normalizedResult = [result]; // Objeto único → array
+                }
+            }
+
+            if (normalizedResult.length === 0) return [];
+
+            return normalizedResult.map((r) => ({
                 ...r,
                 severity:
                     (r?.severity?.toString?.().toLowerCase?.() as any) ||
@@ -898,29 +951,52 @@ export class KodyRulesSyncService {
                 origin: KodyRulesOrigin.USER,
             }));
         } catch (error) {
+            const fbRun = 'kodyRulesFileToRulesRaw';
             try {
-                const raw = await this.promptRunner
-                    .builder()
-                    .setProviders({
-                        main: LLMModelProvider.GEMINI_2_5_FLASH,
-                        fallback: LLMModelProvider.GEMINI_2_5_PRO,
-                    })
-                    .setParser(ParserType.STRING)
-                    .setPayload({
-                        filePath: params.filePath,
-                        repositoryId: params.repositoryId,
-                        content: params.content,
-                    })
-                    .addPrompt({
-                        role: PromptRole.SYSTEM,
-                        prompt: 'Return ONLY the JSON array for the rules, without code fences. Include a "sourceSnippet" field when you can copy an exact excerpt from the file for each rule. No explanations.',
-                    })
-                    .addPrompt({
-                        role: PromptRole.USER,
-                        prompt: `File: ${params.filePath}\n\nContent:\n${params.content}`,
-                    })
-                    .setRunName('kodyRulesFileToRulesRaw')
-                    .execute();
+                const { result: raw } =
+                    await this.observabilityService.runLLMInSpan({
+                        spanName: `${KodyRulesSyncService.name}::${fbRun}`,
+                        runName: fbRun,
+                        attrs: {
+                            repositoryId: params.repositoryId,
+                            filePath: params.filePath,
+                            type: 'byok',
+                            fallback: true,
+                        },
+                        exec: async (callbacks) => {
+                            const fbProvider =
+                                LLMModelProvider.GEMINI_2_5_FLASH;
+                            const fbFallback = LLMModelProvider.GEMINI_2_5_PRO;
+
+                            const promptRunner = new BYOKPromptRunnerService(
+                                this.promptRunnerService,
+                                fbProvider,
+                                fbFallback,
+                                byokConfigValue,
+                            );
+
+                            return await promptRunner
+                                .builder()
+                                .setParser(ParserType.STRING)
+                                .setPayload({
+                                    filePath: params.filePath,
+                                    repositoryId: params.repositoryId,
+                                    content: params.content,
+                                })
+                                .addPrompt({
+                                    role: PromptRole.SYSTEM,
+                                    prompt: 'Return ONLY the JSON array for the rules, without code fences. Include a "sourceSnippet" field when you can copy an exact excerpt from the file for each rule. No explanations.',
+                                })
+                                .addPrompt({
+                                    role: PromptRole.USER,
+                                    prompt: `File: ${params.filePath}\n\nContent:\n${params.content}`,
+                                })
+                                .addCallbacks(callbacks)
+                                .addMetadata({ runName: fbRun })
+                                .setRunName(fbRun)
+                                .execute();
+                        },
+                    });
 
                 const parsed = this.extractJsonArray(raw);
                 if (!Array.isArray(parsed)) return [];

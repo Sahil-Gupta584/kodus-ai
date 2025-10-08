@@ -51,6 +51,7 @@ import {
 import { v4 } from 'uuid';
 import { SUPPORTED_LANGUAGES } from '@/core/domain/codeBase/contracts/SupportedLanguages';
 import { LibraryKodyRule } from '@/config/types/kodyRules.type';
+import { ObservabilityService } from '../logger/observability.service';
 
 @Injectable()
 export class CommentAnalysisService {
@@ -60,16 +61,16 @@ export class CommentAnalysisService {
 
         private readonly logger: PinoLoggerService,
         private readonly promptRunnerService: PromptRunnerService,
+        private readonly observabilityService: ObservabilityService,
     ) {}
 
     async categorizeComments(params: {
         comments: UncategorizedComment[];
     }): Promise<CategorizedComment[]> {
+        const { comments } = params;
+
         try {
-            const { comments } = params;
-
             const filteredComments = await this.filterComments({ comments });
-
             if (!filteredComments || filteredComments.length === 0) {
                 this.logger.log({
                     message: 'No comments after filtering',
@@ -79,34 +80,49 @@ export class CommentAnalysisService {
                 return [];
             }
 
-            const categorizedCommentsRes = await this.promptRunnerService
-                .builder()
-                .setProviders({
-                    main: LLMModelProvider.GEMINI_2_5_PRO,
-                    fallback: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
-                })
-                .setParser(ParserType.ZOD, commentCategorizerSchema)
-                .setLLMJsonMode(true)
-                .setPayload({
-                    comments: filteredComments,
-                })
-                .addPrompt({
-                    role: PromptRole.SYSTEM,
-                    prompt: prompt_CommentCategorizerSystem,
-                })
-                .addPrompt({
-                    role: PromptRole.USER,
-                    prompt: prompt_CommentCategorizerUser,
-                })
-                .addMetadata({
-                    context: CommentAnalysisService.name,
-                    metadata: params,
-                })
-                .setRunName('commentCategorizer')
-                .execute();
+            const runName = 'commentCategorizer';
+            const spanName = `${CommentAnalysisService.name}::${runName}`;
+            const spanAttrs = {
+                type: 'system',
+                commentsCount: filteredComments.length,
+            };
+
+            const { result: categorizedCommentsRes } =
+                await this.observabilityService.runLLMInSpan({
+                    spanName,
+                    runName,
+                    attrs: spanAttrs,
+                    exec: async (callbacks) => {
+                        return this.promptRunnerService
+                            .builder()
+                            .setProviders({
+                                main: LLMModelProvider.GEMINI_2_5_PRO,
+                                fallback:
+                                    LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
+                            })
+                            .setParser(ParserType.ZOD, commentCategorizerSchema)
+                            .setLLMJsonMode(true)
+                            .setPayload({ comments: filteredComments })
+                            .addPrompt({
+                                role: PromptRole.SYSTEM,
+                                prompt: prompt_CommentCategorizerSystem,
+                            })
+                            .addPrompt({
+                                role: PromptRole.USER,
+                                prompt: prompt_CommentCategorizerUser,
+                            })
+                            .addMetadata({
+                                context: CommentAnalysisService.name,
+                                metadata: params,
+                                runName,
+                            })
+                            .addCallbacks(callbacks)
+                            .setRunName(runName)
+                            .execute();
+                    },
+                });
 
             const categorizedComments = categorizedCommentsRes?.suggestions;
-
             if (!categorizedComments || categorizedComments.length === 0) {
                 this.logger.log({
                     message: 'No comments after categorization',
@@ -165,11 +181,10 @@ export class CommentAnalysisService {
         comments: UncategorizedComment[];
         existingRules: IKodyRule[];
     }): Promise<IKodyRule[]> {
+        const { comments, existingRules } = params;
+
         try {
-            const { comments, existingRules } = params;
-
             const filteredComments = await this.filterComments({ comments });
-
             if (!filteredComments || filteredComments.length === 0) {
                 this.logger.log({
                     message:
@@ -180,32 +195,47 @@ export class CommentAnalysisService {
                 return [];
             }
 
-            const generatedRes = await this.promptRunnerService
-                .builder()
-                .setProviders({
-                    main: LLMModelProvider.GEMINI_2_5_PRO,
-                    fallback: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
-                })
-                .setParser(ParserType.ZOD, kodyRulesGeneratorSchema)
-                .setLLMJsonMode(true)
-                .setPayload({
-                    comments: filteredComments,
-                    rules: filteredLibraryKodyRules,
-                })
-                .addPrompt({
-                    role: PromptRole.SYSTEM,
-                    prompt: prompt_KodyRulesGeneratorSystem,
-                })
-                .addPrompt({
-                    role: PromptRole.USER,
-                    prompt: prompt_KodyRulesGeneratorUser,
-                })
-                .addMetadata({
-                    context: CommentAnalysisService.name,
-                    metadata: params,
-                })
-                .setRunName('kodyRulesGenerator')
-                .execute();
+            const genRun = 'generateKodyRules.generate';
+            const { result: generatedRes } =
+                await this.observabilityService.runLLMInSpan({
+                    spanName: `${CommentAnalysisService.name}::${genRun}`,
+                    runName: genRun,
+                    attrs: {
+                        type: 'system',
+                        commentsCount: filteredComments.length,
+                    },
+                    exec: async (callbacks) => {
+                        return this.promptRunnerService
+                            .builder()
+                            .setProviders({
+                                main: LLMModelProvider.GEMINI_2_5_PRO,
+                                fallback:
+                                    LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
+                            })
+                            .setParser(ParserType.ZOD, kodyRulesGeneratorSchema)
+                            .setLLMJsonMode(true)
+                            .setPayload({
+                                comments: filteredComments,
+                                rules: filteredLibraryKodyRules,
+                            })
+                            .addPrompt({
+                                role: PromptRole.SYSTEM,
+                                prompt: prompt_KodyRulesGeneratorSystem,
+                            })
+                            .addPrompt({
+                                role: PromptRole.USER,
+                                prompt: prompt_KodyRulesGeneratorUser,
+                            })
+                            .addMetadata({
+                                context: CommentAnalysisService.name,
+                                metadata: params,
+                                runName: genRun,
+                            })
+                            .setRunName(genRun)
+                            .addCallbacks(callbacks)
+                            .execute();
+                    },
+                });
 
             const generated = generatedRes?.rules as Partial<IKodyRule>[];
 
@@ -229,38 +259,53 @@ export class CommentAnalysisService {
                     (rule as Partial<LibraryKodyRule>)?.why_is_this_important ||
                     '',
             })) as LibraryKodyRule[];
-
             let deduplicatedRules = generatedWithUuids;
             if (existingRules && existingRules.length > 0) {
-                const deduplicatedRulesUuidsRes = await this.promptRunnerService
-                    .builder()
-                    .setProviders({
-                        main: LLMModelProvider.GEMINI_2_5_PRO,
-                        fallback: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
-                    })
-                    .setParser(
-                        ParserType.ZOD,
-                        kodyRulesGeneratorDuplicateFilterSchema,
-                    )
-                    .setLLMJsonMode(true)
-                    .setPayload({
-                        existingRules: existingRulesAsLibrary,
-                        newRules: generatedWithUuids,
-                    })
-                    .addPrompt({
-                        role: PromptRole.SYSTEM,
-                        prompt: prompt_KodyRulesGeneratorDuplicateFilterSystem,
-                    })
-                    .addPrompt({
-                        role: PromptRole.USER,
-                        prompt: prompt_KodyRulesGeneratorDuplicateFilterUser,
-                    })
-                    .addMetadata({
-                        context: CommentAnalysisService.name,
-                        metadata: params,
-                    })
-                    .setRunName('kodyRulesGeneratorDuplicateFilter')
-                    .execute();
+                const dedupeRun = 'generateKodyRules.dedupe';
+                const { result: deduplicatedRulesUuidsRes } =
+                    await this.observabilityService.runLLMInSpan({
+                        spanName: `${CommentAnalysisService.name}::${dedupeRun}`,
+                        runName: dedupeRun,
+                        attrs: {
+                            type: 'system',
+                            newRulesCount: generatedWithUuids.length,
+                            existingRulesCount: existingRulesAsLibrary.length,
+                        },
+                        exec: async (callbacks) => {
+                            return this.promptRunnerService
+                                .builder()
+                                .setProviders({
+                                    main: LLMModelProvider.GEMINI_2_5_PRO,
+                                    fallback:
+                                        LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
+                                })
+                                .setParser(
+                                    ParserType.ZOD,
+                                    kodyRulesGeneratorDuplicateFilterSchema,
+                                )
+                                .setLLMJsonMode(true)
+                                .setPayload({
+                                    existingRules: existingRulesAsLibrary,
+                                    newRules: generatedWithUuids,
+                                })
+                                .addPrompt({
+                                    role: PromptRole.SYSTEM,
+                                    prompt: prompt_KodyRulesGeneratorDuplicateFilterSystem,
+                                })
+                                .addPrompt({
+                                    role: PromptRole.USER,
+                                    prompt: prompt_KodyRulesGeneratorDuplicateFilterUser,
+                                })
+                                .addMetadata({
+                                    context: CommentAnalysisService.name,
+                                    metadata: params,
+                                    runName: dedupeRun,
+                                })
+                                .addCallbacks(callbacks)
+                                .setRunName(dedupeRun)
+                                .execute();
+                        },
+                    });
 
                 const deduplicatedRulesUuids = deduplicatedRulesUuidsRes?.uuids;
 
@@ -282,34 +327,47 @@ export class CommentAnalysisService {
                 });
             }
 
-            const filteredRulesUuidsRes = await this.promptRunnerService
-                .builder()
-                .setProviders({
-                    main: LLMModelProvider.GEMINI_2_5_PRO,
-                    fallback: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
-                })
-                .setParser(
-                    ParserType.ZOD,
-                    kodyRulesGeneratorQualityFilterSchema,
-                )
-                .setLLMJsonMode(true)
-                .setPayload({
-                    rules: deduplicatedRules,
-                })
-                .addPrompt({
-                    role: PromptRole.SYSTEM,
-                    prompt: prompt_KodyRulesGeneratorQualityFilterSystem,
-                })
-                .addPrompt({
-                    role: PromptRole.USER,
-                    prompt: prompt_KodyRulesGeneratorQualityFilterUser,
-                })
-                .addMetadata({
-                    context: CommentAnalysisService.name,
-                    metadata: params,
-                })
-                .setRunName('kodyRulesGeneratorQualityFilter')
-                .execute();
+            const qualityRun = 'generateKodyRules.quality';
+            const { result: filteredRulesUuidsRes } =
+                await this.observabilityService.runLLMInSpan({
+                    spanName: `${CommentAnalysisService.name}::${qualityRun}`,
+                    runName: qualityRun,
+                    attrs: {
+                        type: 'system',
+                        candidateRulesCount: deduplicatedRules.length,
+                    },
+                    exec: async (callbacks) => {
+                        return this.promptRunnerService
+                            .builder()
+                            .setProviders({
+                                main: LLMModelProvider.GEMINI_2_5_PRO,
+                                fallback:
+                                    LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
+                            })
+                            .setParser(
+                                ParserType.ZOD,
+                                kodyRulesGeneratorQualityFilterSchema,
+                            )
+                            .setLLMJsonMode(true)
+                            .setPayload({ rules: deduplicatedRules })
+                            .addPrompt({
+                                role: PromptRole.SYSTEM,
+                                prompt: prompt_KodyRulesGeneratorQualityFilterSystem,
+                            })
+                            .addPrompt({
+                                role: PromptRole.USER,
+                                prompt: prompt_KodyRulesGeneratorQualityFilterUser,
+                            })
+                            .addMetadata({
+                                context: CommentAnalysisService.name,
+                                metadata: params,
+                                runName: qualityRun,
+                            })
+                            .addCallbacks(callbacks)
+                            .setRunName(qualityRun)
+                            .execute();
+                    },
+                });
 
             const filteredRulesUuids = filteredRulesUuidsRes?.uuids;
 
@@ -390,34 +448,53 @@ export class CommentAnalysisService {
     private async filterComments(params: {
         comments: UncategorizedComment[];
     }): Promise<UncategorizedComment[]> {
-        try {
-            const { comments } = params;
+        const { comments } = params;
 
-            const filteredCommentsIdsRes = await this.promptRunnerService
-                .builder()
-                .setProviders({
-                    main: LLMModelProvider.GEMINI_2_5_PRO,
-                    fallback: LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
-                })
-                .setParser(ParserType.ZOD, commentIrrelevanceFilterSchema)
-                .setLLMJsonMode(true)
-                .setPayload({
-                    comments,
-                })
-                .addPrompt({
-                    role: PromptRole.SYSTEM,
-                    prompt: prompt_CommentIrrelevanceFilterSystem,
-                })
-                .addPrompt({
-                    role: PromptRole.USER,
-                    prompt: prompt_CommentIrrelevanceFilterUser,
-                })
-                .addMetadata({
-                    context: CommentAnalysisService.name,
-                    metadata: params,
-                })
-                .setRunName('commentIrrelevanceFilter')
-                .execute();
+        try {
+            const runName = 'commentIrrelevanceFilter';
+            const spanName = `${CommentAnalysisService.name}::${runName}`;
+            const spanAttrs = {
+                type: 'system',
+                commentsCount: comments.length,
+            };
+
+            const { result: filteredCommentsIdsRes } =
+                await this.observabilityService.runLLMInSpan({
+                    spanName,
+                    runName,
+                    attrs: spanAttrs,
+                    exec: async (callbacks) => {
+                        return this.promptRunnerService
+                            .builder()
+                            .setProviders({
+                                main: LLMModelProvider.GEMINI_2_5_PRO,
+                                fallback:
+                                    LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
+                            })
+                            .setParser(
+                                ParserType.ZOD,
+                                commentIrrelevanceFilterSchema,
+                            )
+                            .setLLMJsonMode(true)
+                            .setPayload({ comments })
+                            .addPrompt({
+                                role: PromptRole.SYSTEM,
+                                prompt: prompt_CommentIrrelevanceFilterSystem,
+                            })
+                            .addPrompt({
+                                role: PromptRole.USER,
+                                prompt: prompt_CommentIrrelevanceFilterUser,
+                            })
+                            .addMetadata({
+                                context: CommentAnalysisService.name,
+                                metadata: params,
+                                runName,
+                            })
+                            .addCallbacks(callbacks)
+                            .setRunName(runName)
+                            .execute();
+                    },
+                });
 
             const filteredCommentsIds = filteredCommentsIdsRes?.ids;
 

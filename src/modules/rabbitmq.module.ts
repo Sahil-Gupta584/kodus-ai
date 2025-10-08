@@ -3,23 +3,12 @@ import { Module, DynamicModule, Provider, Global } from '@nestjs/common';
 import { RabbitMQModule } from '@golevelup/nestjs-rabbitmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { RabbitMQLoader } from '@/config/loaders/rabbitmq.loader';
-import { MetricsModule } from './metrics.module';
 import { RabbitmqConsumeErrorFilter } from '@/shared/infrastructure/filters/rabbitmq-consume-error.exception';
 import { MESSAGE_BROKER_SERVICE_TOKEN } from '@/shared/domain/contracts/message-broker.service.contracts';
 import { MessageBrokerService } from '@/core/infrastructure/adapters/services/messageBroker/messageBroker.service';
-import { OrganizationMetricsConsumer } from '@/core/infrastructure/adapters/services/messageBroker/consumers/organizationMetrics.consumer';
-import { OrganizationMetricsModule } from './organizationMetrics.module';
-import { OrganizationArtifactsModule } from './organizationArtifacts.module';
-import { OrganizationArtifactWeeklyConsumer } from '@/core/infrastructure/adapters/services/messageBroker/consumers/organizationArtifactsWeekly.consumer';
-import { TeamArtifactDailyConsumer } from '@/core/infrastructure/adapters/services/messageBroker/consumers/teamArtifactsDaily.consumer';
-import { TeamArtifactWeeklyConsumer } from '@/core/infrastructure/adapters/services/messageBroker/consumers/teamArtifactsWeekly.consumer';
-import { WeeklyExecutiveCheckinConsumer } from '@/core/infrastructure/adapters/services/messageBroker/consumers/weeklyExecutiveCheckin.consumer';
 import { AutomationStrategyModule } from './automationStrategy.module';
-import { MetricsFlowDailyConsumer } from '@/core/infrastructure/adapters/services/messageBroker/consumers/flowMetricsDaily.consumer';
-import { MetricsDoraDailyConsumer } from '@/core/infrastructure/adapters/services/messageBroker/consumers/doraMetricsDaily.consumer';
 import { CodeReviewFeedbackConsumer } from '@/core/infrastructure/adapters/services/messageBroker/consumers/codeReviewFeedback.consumer';
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
-import { TeamArtifactsModule } from './teamArtifacts.module';
 
 @Global()
 @Module({})
@@ -28,12 +17,8 @@ export class RabbitMQWrapperModule {
         const imports = [
             ConfigModule.forRoot(),
             ConfigModule.forFeature(RabbitMQLoader),
-            MetricsModule,
-            OrganizationMetricsModule,
-            OrganizationArtifactsModule,
             CodeReviewFeedbackModule,
             AutomationStrategyModule,
-            TeamArtifactsModule,
         ];
 
         const providers: Provider[] = [
@@ -107,13 +92,6 @@ export class RabbitMQWrapperModule {
             imports.push(rabbitMQModule);
 
             providers.push(
-                MetricsFlowDailyConsumer,
-                MetricsDoraDailyConsumer,
-                OrganizationMetricsConsumer,
-                OrganizationArtifactWeeklyConsumer,
-                TeamArtifactDailyConsumer,
-                TeamArtifactWeeklyConsumer,
-                WeeklyExecutiveCheckinConsumer,
                 CodeReviewFeedbackConsumer,
                 RabbitmqConsumeErrorFilter,
             );

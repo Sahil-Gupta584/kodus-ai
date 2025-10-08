@@ -8,8 +8,8 @@ import { PullRequestMessagesController } from '@/core/infrastructure/http/contro
 import { forwardRef, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
-import { CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
-import { CodeReviewSettingsLogService } from '@/core/infrastructure/adapters/services/codeReviewSettingsLog/codeReviewSettingsLog.service';
+import { CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN } from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import { CodeReviewSettingsLogService } from '@/ee/codeReviewSettingsLog/services/codeReviewSettingsLog.service';
 import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
 import { IntegrationModule } from './integration.module';
 import { IntegrationConfigModule } from './integrationConfig.module';
@@ -33,17 +33,17 @@ import { DeleteByRepositoryOrDirectoryPullRequestMessagesUseCase } from '@/core/
             provide: PULL_REQUEST_MESSAGES_SERVICE_TOKEN,
             useClass: PullRequestMessagesService,
         },
-        {
-            provide: CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
-            useClass: CodeReviewSettingsLogService,
-        },
+        // {
+        //     provide: CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
+        //     useClass: CodeReviewSettingsLogService,
+        // },
         GetAdditionalInfoHelper,
         ...PullRequestMessagesUseCases,
     ],
     exports: [
         PULL_REQUEST_MESSAGES_REPOSITORY_TOKEN,
         PULL_REQUEST_MESSAGES_SERVICE_TOKEN,
-        CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
+        // CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
         DeleteByRepositoryOrDirectoryPullRequestMessagesUseCase,
     ],
     controllers: [PullRequestMessagesController],

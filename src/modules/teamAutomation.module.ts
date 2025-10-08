@@ -23,10 +23,8 @@ import { ProfileConfigModule } from './profileConfig.module';
 import { ActiveCodeManagementTeamAutomationsUseCase } from '@/core/application/use-cases/teamAutomation/active-code-manegement-automations.use-case';
 import { ActiveCommunicationManagementTeamAutomationsUseCase } from '@/core/application/use-cases/teamAutomation/active-communication-management-automations.use-case';
 import { ActiveProjectManagementTeamAutomationsUseCase } from '@/core/application/use-cases/teamAutomation/active-project-management-automations.use-case';
-import { OrganizationArtifactsModule } from './organizationArtifacts.module';
 import { ActiveCodeReviewAutomationUseCase } from '@/core/application/use-cases/teamAutomation/active-code-review-automation.use-case';
 import { INTEGRATION_SERVICE_TOKEN } from '@/core/domain/integrations/contracts/integration.service.contracts';
-import { TeamArtifactsModule } from './teamArtifacts.module';
 
 @Module({
     imports: [
@@ -41,9 +39,7 @@ import { TeamArtifactsModule } from './teamArtifacts.module';
         forwardRef(() => TeamMembersModule),
         forwardRef(() => OrganizationModule),
         forwardRef(() => TeamAutomationModule),
-        forwardRef(() => OrganizationArtifactsModule),
         ProfileConfigModule,
-        TeamArtifactsModule,
     ],
     providers: [
         ...UseCases,
@@ -55,21 +51,21 @@ import { TeamArtifactsModule } from './teamArtifacts.module';
             provide: TEAM_AUTOMATION_SERVICE_TOKEN,
             useClass: TeamAutomationService,
         },
-        {
-            provide: INTEGRATION_SERVICE_TOKEN,
-            useClass: IntegrationService,
-        },
-        {
-            provide: INTEGRATION_CONFIG_SERVICE_TOKEN,
-            useClass: IntegrationConfigService,
-        },
+        // {
+        //     provide: INTEGRATION_SERVICE_TOKEN,
+        //     useClass: IntegrationService,
+        // },
+        // {
+        //     provide: INTEGRATION_CONFIG_SERVICE_TOKEN,
+        //     useClass: IntegrationConfigService,
+        // },
     ],
     controllers: [TeamAutomationController],
     exports: [
         TEAM_AUTOMATION_REPOSITORY_TOKEN,
         TEAM_AUTOMATION_SERVICE_TOKEN,
-        INTEGRATION_SERVICE_TOKEN,
-        INTEGRATION_CONFIG_SERVICE_TOKEN,
+        // INTEGRATION_SERVICE_TOKEN,
+        // INTEGRATION_CONFIG_SERVICE_TOKEN,
         ActiveCodeManagementTeamAutomationsUseCase,
         ActiveProjectManagementTeamAutomationsUseCase,
         ActiveCommunicationManagementTeamAutomationsUseCase,

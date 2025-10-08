@@ -20,7 +20,10 @@ export class CustomStringOutputParser extends StringOutputParser {
     protected override _messageContentComplexToString(
         content: MessageContentComplex,
     ): string {
-        if (content?.type === 'reasoning') {
+        if (
+            content &&
+            (content.type === 'reasoning' || content.type === 'thinking')
+        ) {
             return '';
         }
         return super._messageContentComplexToString(content);
@@ -37,7 +40,7 @@ export class CustomJsonOutputParser extends JsonOutputParser {
         content: MessageContentComplex[],
     ): string {
         const noReasoningContent = content.filter(
-            (c) => c.type !== 'reasoning',
+            (c) => c.type !== 'reasoning' && c.type !== 'thinking',
         );
         const text = noReasoningContent.map((c) =>
             c.type === 'text' && c.text && typeof c.text === 'string'
@@ -74,7 +77,7 @@ export class ZodOutputParser<T extends z.ZodObject> extends BaseOutputParser {
         content: MessageContentComplex[],
     ): string {
         const noReasoningContent = content.filter(
-            (c) => c.type !== 'reasoning',
+            (c) => c.type !== 'reasoning' && c.type !== 'thinking',
         );
         const text = noReasoningContent.map((c) =>
             c.type === 'text' && c.text && typeof c.text === 'string'

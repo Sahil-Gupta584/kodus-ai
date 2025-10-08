@@ -2,8 +2,6 @@ import {
     categorizedCommentSchema,
     UncategorizedComment,
 } from '@/core/infrastructure/adapters/services/codeBase/types/commentAnalysis.type';
-import { ReviewOptions } from '@/config/types/general/codeReview.type';
-import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { z } from 'zod';
 
 export const commentCategorizerSchema = z.object({

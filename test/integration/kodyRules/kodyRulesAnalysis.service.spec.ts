@@ -179,7 +179,6 @@ describe('KodyRulesAnalysisService - replaceKodyRuleIdsWithLinks', () => {
                         relevantLinesEnd: 15,
                     } as CodeSuggestion,
                 ],
-                overallSummary: 'Test summary',
             };
 
             const result = await service['replaceKodyRuleIdsWithLinks'](
@@ -232,7 +231,6 @@ describe('KodyRulesAnalysisService - replaceKodyRuleIdsWithLinks', () => {
                         relevantLinesEnd: 38,
                     } as CodeSuggestion,
                 ],
-                overallSummary: 'Test summary',
             };
 
             const result = await service['replaceKodyRuleIdsWithLinks'](
@@ -285,7 +283,6 @@ describe('KodyRulesAnalysisService - replaceKodyRuleIdsWithLinks', () => {
                         relevantLinesEnd: 54,
                     } as CodeSuggestion,
                 ],
-                overallSummary: 'Test summary',
             };
 
             const result = await service['replaceKodyRuleIdsWithLinks'](
@@ -358,7 +355,6 @@ describe('KodyRulesAnalysisService - replaceKodyRuleIdsWithLinks', () => {
                         label: LabelType.PERFORMANCE_AND_OPTIMIZATION,
                     } as CodeSuggestion,
                 ],
-                overallSummary: 'Mixed test summary',
             };
 
             const result = await service['replaceKodyRuleIdsWithLinks'](
@@ -393,7 +389,6 @@ describe('KodyRulesAnalysisService - replaceKodyRuleIdsWithLinks', () => {
         it('deve retornar suggestions inalteradas quando não há codeSuggestions', async () => {
             const suggestions: AIAnalysisResult = {
                 codeSuggestions: [],
-                overallSummary: 'Empty test',
             };
 
             const result = await service['replaceKodyRuleIdsWithLinks'](
@@ -417,7 +412,6 @@ describe('KodyRulesAnalysisService - replaceKodyRuleIdsWithLinks', () => {
                         label: LabelType.KODY_RULES,
                     } as CodeSuggestion,
                 ],
-                overallSummary: 'Error test',
             };
 
             const result = await service['replaceKodyRuleIdsWithLinks'](

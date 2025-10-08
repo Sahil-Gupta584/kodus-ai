@@ -54,7 +54,7 @@ export class CodeAnalysisOrchestrator {
                         fileContext,
                         reviewModeResponse,
                         context,
-
+                        context.codeReviewConfig?.byokConfig,
                     );
             } else {
                 result =

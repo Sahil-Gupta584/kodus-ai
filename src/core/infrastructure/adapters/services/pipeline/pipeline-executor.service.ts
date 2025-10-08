@@ -30,6 +30,7 @@ export class PipelineExecutor<TContext extends PipelineContext> {
             serviceName: PipelineExecutor.name,
             metadata: {
                 ...context?.pipelineMetadata,
+                correlationId: (context as any)?.correlationId ?? null,
                 organizationAndTeamData:
                     (context as any)?.organizationAndTeamData ?? null,
                 status: context.statusInfo,
@@ -45,6 +46,7 @@ export class PipelineExecutor<TContext extends PipelineContext> {
                     metadata: {
                         ...context?.pipelineMetadata,
                         stage: stage.stageName,
+                        correlationId: (context as any)?.correlationId ?? null,
                         organizationAndTeamData:
                             (context as any)?.organizationAndTeamData ?? null,
                         status: context.statusInfo,
@@ -65,6 +67,7 @@ export class PipelineExecutor<TContext extends PipelineContext> {
                     metadata: {
                         ...context?.pipelineMetadata,
                         stage: stage.stageName,
+                        correlationId: (context as any)?.correlationId ?? null,
                         organizationAndTeamData:
                             (context as any)?.organizationAndTeamData ?? null,
                         status: context.statusInfo,
@@ -77,6 +80,7 @@ export class PipelineExecutor<TContext extends PipelineContext> {
                     serviceName: PipelineExecutor.name,
                     error: error,
                     metadata: {
+                        correlationId: (context as any)?.correlationId ?? null,
                         ...context?.pipelineMetadata,
                         stage: stage.stageName,
                         organizationAndTeamData:
@@ -92,6 +96,7 @@ export class PipelineExecutor<TContext extends PipelineContext> {
                     metadata: {
                         ...context?.pipelineMetadata,
                         stage: stage.stageName,
+                        correlationId: (context as any)?.correlationId ?? null,
                         organizationAndTeamData:
                             (context as any)?.organizationAndTeamData ?? null,
                         status: context.statusInfo,
@@ -106,6 +111,7 @@ export class PipelineExecutor<TContext extends PipelineContext> {
             serviceName: PipelineExecutor.name,
             metadata: {
                 ...context?.pipelineMetadata,
+                correlationId: (context as any)?.correlationId ?? null,
                 organizationAndTeamData:
                     (context as any)?.organizationAndTeamData ?? null,
             },

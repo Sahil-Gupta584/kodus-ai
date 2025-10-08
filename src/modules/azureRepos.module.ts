@@ -8,9 +8,6 @@ import { IntegrationConfigModule } from './integrationConfig.module';
 import { PlatformIntegrationModule } from './platformIntegration.module';
 import { PromptService } from '@/core/infrastructure/adapters/services/prompt.service';
 import { ParametersModule } from './parameters.module';
-import { MetricsModule } from './metrics.module';
-import { OrganizationMetricsModule } from './organizationMetrics.module';
-import { UseCases as SaveOrganizationMetricsToDbUseCase } from '@/core/application/use-cases/organizationMetrics/';
 import { GlobalCacheModule } from './cache.module';
 import { AutomationModule } from './automation.module';
 import { TeamAutomationModule } from './teamAutomation.module';
@@ -24,7 +21,9 @@ import { AZURE_REPOS_SERVICE_TOKEN } from '@/core/domain/azureRepos/contracts/az
 import { AzureReposRequestHelper } from '@/core/infrastructure/adapters/services/azureRepos/azure-repos-request-helper';
 import { AzureReposController } from '@/core/infrastructure/http/controllers/azureRepos.controller';
 import { LicenseModule } from '@/ee/license/license.module';
+import { OrganizationParametersModule } from './organizationParameters.module';
 import { WebhookLogModule } from './webhookLog.module';
+import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
 
 @Module({
     imports: [
@@ -35,8 +34,6 @@ import { WebhookLogModule } from './webhookLog.module';
         forwardRef(() => PlatformIntegrationModule),
         forwardRef(() => OrganizationModule),
         forwardRef(() => UsersModule),
-        forwardRef(() => MetricsModule),
-        forwardRef(() => OrganizationMetricsModule),
         forwardRef(() => ParametersModule),
         forwardRef(() => GlobalCacheModule),
         forwardRef(() => AutomationModule),
@@ -45,11 +42,12 @@ import { WebhookLogModule } from './webhookLog.module';
         forwardRef(() => AgentModule),
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
+        forwardRef(() => OrganizationParametersModule),
         forwardRef(() => LicenseModule),
         forwardRef(() => WebhookLogModule),
+        PermissionValidationModule,
     ],
     providers: [
-        ...SaveOrganizationMetricsToDbUseCase,
         RunCodeReviewAutomationUseCase,
         PromptService,
         AzureReposRequestHelper,

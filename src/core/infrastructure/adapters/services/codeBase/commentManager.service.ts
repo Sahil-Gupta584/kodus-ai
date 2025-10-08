@@ -30,11 +30,12 @@ import {
 import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullRequests.interface';
 import {
     LLMModelProvider,
-    LLMProviderService,
     ParserType,
     PromptRole,
     PromptRunnerService,
+    BYOKConfig,
 } from '@kodus/kodus-common/llm';
+import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
 
 interface ClusteredSuggestion {
     id: string;
@@ -50,20 +51,22 @@ import {
     MessageTemplateProcessor,
     PlaceholderContext,
 } from './utils/services/messageTemplateProcessor.service';
+import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
+import { ObservabilityService } from '../logger/observability.service';
 
 @Injectable()
 export class CommentManagerService implements ICommentManagerService {
     private readonly llmResponseProcessor: LLMResponseProcessor;
 
     constructor(
-        private readonly codeManagementService: CodeManagementService,
-        private readonly logger: PinoLoggerService,
-        private readonly llmProviderService: LLMProviderService,
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
         private readonly messageProcessor: MessageTemplateProcessor,
-
         private readonly promptRunnerService: PromptRunnerService,
+        private readonly observabilityService: ObservabilityService,
+        private readonly permissionValidationService: PermissionValidationService,
+        private readonly codeManagementService: CodeManagementService,
+        private readonly logger: PinoLoggerService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
     }
@@ -75,10 +78,30 @@ export class CommentManagerService implements ICommentManagerService {
         organizationAndTeamData: OrganizationAndTeamData,
         languageResultPrompt: string,
         summaryConfig: SummaryConfig,
-        isCommitRun: boolean,
+        byokConfig?: BYOKConfig,
+        isCommitRun?: boolean,
+        prPreview?: boolean,
     ): Promise<string> {
+        let byokConfigValue: BYOKConfig | null = byokConfig ?? null;
+
         if (!summaryConfig?.generatePRSummary) {
             return null;
+        }
+
+        if (prPreview) {
+            const validationResult =
+                await this.permissionValidationService.validateBasicLicense(
+                    organizationAndTeamData,
+                    CommentManagerService.name,
+                );
+            if (!validationResult.allowed) {
+                return null;
+            }
+
+            byokConfigValue =
+                await this.permissionValidationService.getBYOKConfig(
+                    organizationAndTeamData,
+                );
         }
 
         const maxRetries = 2;
@@ -86,7 +109,6 @@ export class CommentManagerService implements ICommentManagerService {
 
         while (retryCount < maxRetries) {
             try {
-                // Fetch the updated PR to get the latest description
                 const updatedPR =
                     await this.codeManagementService.getPullRequestByNumber({
                         organizationAndTeamData,
@@ -94,7 +116,6 @@ export class CommentManagerService implements ICommentManagerService {
                         prNumber: pullRequest?.number,
                     });
 
-                // Log for debugging
                 this.logger.log({
                     message: `GenerateSummaryPR: Start PR#${pullRequest?.number}. After get PR data`,
                     context: CommentManagerService.name,
@@ -106,14 +127,11 @@ export class CommentManagerService implements ICommentManagerService {
                         prDescription: updatedPR?.body,
                     },
                 });
-
-                // Building the base prompt - Updated for code analysis
                 let promptBase = `Based on the code changes (patches) provided below, generate a precise description for this pull request.
     Analyze the actual code modifications to understand what was implemented, fixed, or changed.
     Focus on the functional impact and purpose of the changes rather than technical implementation details.
     Avoid making assumptions beyond what can be inferred from the code changes.`;
 
-                // Adds the existing description only for COMPLEMENT mode
                 if (
                     !isCommitRun &&
                     updatedPR?.body &&
@@ -157,43 +175,73 @@ export class CommentManagerService implements ICommentManagerService {
                 };
 
                 const fallbackProvider = LLMModelProvider.OPENAI_GPT_4O;
-
                 const userPrompt = `<changedFilesContext>${JSON.stringify(baseContext?.changedFiles, null, 2) || 'No files changed'}</changedFilesContext>`;
 
-                const result = await this.promptRunnerService
-                    .builder()
-                    .setProviders({
-                        main: LLMModelProvider.GEMINI_2_5_FLASH,
-                        fallback: fallbackProvider,
-                    })
-                    .setParser(ParserType.STRING)
-                    .setLLMJsonMode(false)
-                    .setPayload(baseContext)
-                    .addPrompt({
-                        prompt: promptBase,
-                        role: PromptRole.SYSTEM,
-                    })
-                    .addPrompt({
-                        prompt: userPrompt,
-                        role: PromptRole.USER,
-                    })
-                    .addMetadata({
-                        organizationId: organizationAndTeamData?.organizationId,
-                        teamId: organizationAndTeamData?.teamId,
-                        pullRequestId: pullRequest?.number,
-                        repositoryId: repository?.id,
-                        provider: LLMModelProvider.GEMINI_2_5_FLASH,
-                        fallbackProvider,
-                    })
-                    .setRunName('generateSummaryPR')
-                    .setTemperature(0)
-                    .execute();
+                const runName = 'generateSummaryPR';
+                const spanName = `${CommentManagerService.name}::${runName}`;
+                const spanAttrs = {
+                    type: byokConfigValue ? 'byok' : 'system',
+                    organizationId: organizationAndTeamData?.organizationId,
+                    prNumber: pullRequest?.number,
+                    repositoryId: repository?.id,
+                };
+
+                const { result } =
+                    await this.observabilityService.runLLMInSpan<string>({
+                        spanName,
+                        runName,
+                        attrs: spanAttrs,
+                        exec: async (callbacks) => {
+                            const promptRunner = new BYOKPromptRunnerService(
+                                this.promptRunnerService,
+                                LLMModelProvider.GEMINI_2_5_FLASH,
+                                fallbackProvider,
+                                byokConfigValue,
+                            );
+
+                            return await promptRunner
+                                .builder()
+                                .setParser(ParserType.STRING)
+                                .setLLMJsonMode(false)
+                                .setPayload(baseContext)
+                                .addPrompt({
+                                    prompt: promptBase,
+                                    role: PromptRole.SYSTEM,
+                                })
+                                .addPrompt({
+                                    prompt: userPrompt,
+                                    role: PromptRole.USER,
+                                })
+                                .addMetadata({
+                                    organizationId:
+                                        organizationAndTeamData?.organizationId,
+                                    teamId: organizationAndTeamData?.teamId,
+                                    pullRequestId: pullRequest?.number,
+                                    repositoryId: repository?.id,
+                                    provider:
+                                        byokConfigValue?.main?.provider ||
+                                        LLMModelProvider.GEMINI_2_5_FLASH,
+                                    fallbackProvider:
+                                        byokConfigValue?.fallback?.provider ||
+                                        fallbackProvider,
+                                    model: byokConfigValue?.main?.model,
+                                    fallbackModel:
+                                        byokConfigValue?.fallback?.model,
+                                    runName,
+                                })
+                                .addCallbacks(callbacks)
+                                .setRunName(runName)
+                                .setTemperature(0)
+                                .execute();
+                        },
+                    });
 
                 if (!result) {
                     throw new Error(
                         'No result returned from generateSummaryPR',
                     );
                 }
+
                 const newSummary = result || 'No summary generated';
                 const startMarker = '<!-- kody-pr-summary:start -->';
                 const endMarker = '<!-- kody-pr-summary:end -->';
@@ -281,7 +329,6 @@ export class CommentManagerService implements ICommentManagerService {
                     }
                 }
 
-                // Log for debugging
                 this.logger.log({
                     message: `GenerateSummaryPR: End PR#${pullRequest?.number}. After concatenate`,
                     context: CommentManagerService.name,
@@ -300,14 +347,10 @@ export class CommentManagerService implements ICommentManagerService {
                 this.logger.error({
                     message: `Error generateOverallComment pull request: PR#${pullRequest?.number}`,
                     context: CommentManagerService.name,
-                    error: error,
-                    metadata: {
-                        organizationAndTeamData,
-                        pullRequest,
-                    },
+                    error,
+                    metadata: { organizationAndTeamData, pullRequest },
                 });
                 retryCount++;
-
                 if (retryCount === maxRetries) {
                     throw new Error(
                         'Error generateOverallComment pull request. Max retries exceeded',
@@ -868,6 +911,7 @@ ${reviewOptions}
         prNumber: number,
         provider: LLMModelProvider,
         codeSuggestions: any[],
+        byokConfig?: BYOKConfig,
     ) {
         const language = (
             await this.parametersService.findByKey(
@@ -876,11 +920,7 @@ ${reviewOptions}
             )
         )?.configValue;
 
-        const baseContext = {
-            codeSuggestions,
-            language,
-        };
-
+        const baseContext = { codeSuggestions, language };
         let repeteadSuggetionsClustered;
 
         try {
@@ -891,33 +931,60 @@ ${reviewOptions}
 
             const userPrompt = `<codeSuggestionsContext>${JSON.stringify(baseContext?.codeSuggestions, null, 2) || 'No code suggestions provided'}</codeSuggestionsContext>`;
 
-            const result = await this.promptRunnerService
-                .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
-                .setParser(ParserType.STRING)
-                .setLLMJsonMode(true)
-                .setPayload(baseContext)
-                .addPrompt({
-                    prompt: prompt_repeated_suggestion_clustering_system,
-                    role: PromptRole.SYSTEM,
-                })
-                .addPrompt({
-                    prompt: userPrompt,
-                    role: PromptRole.USER,
-                })
-                .addMetadata({
-                    organizationId: organizationAndTeamData?.organizationId,
-                    teamId: organizationAndTeamData?.teamId,
-                    pullRequestId: prNumber,
-                    provider,
-                    fallbackProvider,
-                })
-                .setRunName('repeatedCodeReviewSuggestionClustering')
-                .setTemperature(0)
-                .execute();
+            const runName = 'repeatedCodeReviewSuggestionClustering';
+            const spanName = `${CommentManagerService.name}::${runName}`;
+            const spanAttrs = {
+                type: byokConfig ? 'byok' : 'system',
+                organizationId: organizationAndTeamData?.organizationId,
+                prNumber,
+            };
+
+            const { result } =
+                await this.observabilityService.runLLMInSpan<string>({
+                    spanName,
+                    runName,
+                    attrs: spanAttrs,
+                    exec: async (callbacks) => {
+                        const promptRunner = new BYOKPromptRunnerService(
+                            this.promptRunnerService,
+                            provider,
+                            fallbackProvider,
+                            byokConfig,
+                        );
+
+                        return await promptRunner
+                            .builder()
+                            .setParser(ParserType.STRING)
+                            .setLLMJsonMode(true)
+                            .setPayload(baseContext)
+                            .addPrompt({
+                                prompt: prompt_repeated_suggestion_clustering_system,
+                                role: PromptRole.SYSTEM,
+                            })
+                            .addPrompt({
+                                prompt: userPrompt,
+                                role: PromptRole.USER,
+                            })
+                            .addMetadata({
+                                organizationId:
+                                    organizationAndTeamData?.organizationId,
+                                teamId: organizationAndTeamData?.teamId,
+                                pullRequestId: prNumber,
+                                provider:
+                                    byokConfig?.main?.provider || provider,
+                                model: byokConfig?.main?.model,
+                                fallbackProvider:
+                                    byokConfig?.fallback?.provider ||
+                                    fallbackProvider,
+                                fallbackModel: byokConfig?.fallback?.model,
+                                runName,
+                            })
+                            .addCallbacks(callbacks)
+                            .setRunName(runName)
+                            .setTemperature(0)
+                            .execute();
+                    },
+                });
 
             if (!result) {
                 const message =
@@ -928,8 +995,9 @@ ${reviewOptions}
                     metadata: {
                         organizationAndTeamData,
                         prNumber,
-                        provider,
-                        fallbackProvider,
+                        provider: byokConfig?.main?.provider || provider,
+                        fallbackProvider:
+                            byokConfig?.fallback?.provider || fallbackProvider,
                     },
                 });
                 throw new Error(message);

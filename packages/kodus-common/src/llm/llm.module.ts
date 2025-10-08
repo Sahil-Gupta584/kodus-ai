@@ -1,6 +1,7 @@
 import { DynamicModule, LoggerService, Module, Provider } from '@nestjs/common';
 import { LLMProviderService } from './llmModelProvider.service';
 import { PromptRunnerService } from './promptRunner.service';
+import { BYOKProviderService } from './byokProvider.service';
 
 export type LLMModuleOptions = {
     logger: Provider<LoggerService>;
@@ -15,12 +16,17 @@ export class LLMModule {
             providers: [
                 LLMProviderService,
                 PromptRunnerService,
+                BYOKProviderService,
                 {
                     provide: 'LLM_LOGGER',
                     useExisting: options.logger,
                 },
             ],
-            exports: [LLMProviderService, PromptRunnerService],
+            exports: [
+                LLMProviderService,
+                PromptRunnerService,
+                BYOKProviderService,
+            ],
             global: options.global ?? true,
         };
     }

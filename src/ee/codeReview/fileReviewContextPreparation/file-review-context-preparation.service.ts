@@ -20,7 +20,7 @@ import { ReviewModeOptions } from '@/shared/interfaces/file-review-context-prepa
 import { IAIAnalysisService } from '@/core/domain/codeBase/contracts/AIAnalysisService.contract';
 import { LLM_ANALYSIS_SERVICE_TOKEN } from '@/core/infrastructure/adapters/services/codeBase/llmAnalysis.service';
 import { TaskStatus } from '@kodus/kodus-proto/task';
-import { LLMModelProvider } from '@kodus/kodus-common/llm';
+import { BYOKConfig, LLMModelProvider } from '@kodus/kodus-common/llm';
 
 /**
  * Enterprise (cloud) implementation of the file review context preparation service
@@ -51,6 +51,7 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
      */
     protected async determineReviewMode(
         options?: ReviewModeOptions,
+        byokConfig?: BYOKConfig,
     ): Promise<ReviewModeResponse> {
         try {
             const { context } = options;
@@ -64,7 +65,7 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
                     ReviewModeConfig.LIGHT_MODE_PARTIAL;
 
             if (shouldCheckMode) {
-                reviewMode = await this.getReviewMode(options);
+                reviewMode = await this.getReviewMode(options, byokConfig);
             }
 
             return reviewMode;
@@ -231,6 +232,7 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
 
     private async getReviewMode(
         options: ReviewModeOptions,
+        byokConfig: BYOKConfig,
     ): Promise<ReviewModeResponse> {
         const response = await this.aiAnalysisService.selectReviewMode(
             options.context.organizationAndTeamData,
@@ -238,6 +240,7 @@ export class FileReviewContextPreparation extends BaseFileReviewContextPreparati
             LLMModelProvider.NOVITA_DEEPSEEK_V3_0324,
             options.fileChangeContext.file,
             options.patch,
+            byokConfig,
         );
 
         return response;

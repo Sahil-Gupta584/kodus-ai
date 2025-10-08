@@ -10,15 +10,27 @@ import { CodeReviewPipelineContext } from './codeReviewPipeline/context/code-rev
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { TaskStatus } from '@kodus/kodus-proto/task';
 import { AutomationStatus } from '@/core/domain/automation/enums/automation-status';
+import { ConfigService } from '@nestjs/config';
+import { DatabaseConnection } from '@/config/types';
+import { ObservabilityService } from '../logger/observability.service';
 
 @Injectable()
 export class CodeReviewHandlerService {
+    private readonly config: DatabaseConnection;
+
     constructor(
         @Inject('PIPELINE_PROVIDER')
         private readonly pipelineFactory: PipelineFactory<CodeReviewPipelineContext>,
 
         private readonly logger: PinoLoggerService,
-    ) {}
+
+        private readonly configService: ConfigService,
+
+        private readonly observabilityService: ObservabilityService,
+    ) {
+        this.config =
+            this.configService.get<DatabaseConnection>('mongoDatabase');
+    }
 
     async handlePullRequest(
         organizationAndTeamData: OrganizationAndTeamData,
@@ -29,8 +41,17 @@ export class CodeReviewHandlerService {
         teamAutomationId: string,
         origin: string,
         action: string,
+        executionId: string,
     ) {
         try {
+            await this.observabilityService.initializeObservability(
+                this.config,
+                {
+                    serviceName: 'codeReviewPipeline',
+                    correlationId: executionId,
+                },
+            );
+
             const initialContext: CodeReviewPipelineContext = {
                 statusInfo: {
                     status: AutomationStatus.IN_PROGRESS,
@@ -53,7 +74,6 @@ export class CodeReviewHandlerService {
                 preparedFileContexts: [],
                 validSuggestions: [],
                 discardedSuggestions: [],
-                overallComments: [],
                 lastAnalyzedCommit: null,
                 validSuggestionsByPR: [],
                 validCrossFileSuggestions: [],
@@ -63,6 +83,7 @@ export class CodeReviewHandlerService {
                         status: TaskStatus.TASK_STATUS_UNSPECIFIED,
                     },
                 },
+                correlationId: executionId,
             };
 
             this.logger.log({
@@ -73,6 +94,7 @@ export class CodeReviewHandlerService {
                     organizationId: organizationAndTeamData.organizationId,
                     teamId: organizationAndTeamData.teamId,
                     pullRequestNumber: pullRequest.number,
+                    executionId,
                 },
             });
 
@@ -85,10 +107,10 @@ export class CodeReviewHandlerService {
                 context: CodeReviewHandlerService.name,
                 serviceName: CodeReviewHandlerService.name,
                 metadata: {
-                    overallCommentsCount: result?.overallComments?.length,
                     suggestionsCount: result?.lineComments?.length || 0,
                     organizationAndTeamData,
                     pullRequestNumber: pullRequest.number,
+                    executionId,
                 },
             });
 
@@ -101,7 +123,6 @@ export class CodeReviewHandlerService {
                     : result.statusInfo;
 
             return {
-                overallComments: result?.overallComments,
                 lastAnalyzedCommit: result?.lastAnalyzedCommit,
                 commentId: result?.initialCommentData?.commentId,
                 noteId: result?.initialCommentData?.noteId,
@@ -118,6 +139,7 @@ export class CodeReviewHandlerService {
                     organizationId: organizationAndTeamData.organizationId,
                     teamId: organizationAndTeamData.teamId,
                     pullRequestNumber: pullRequest.number,
+                    executionId,
                 },
             });
 

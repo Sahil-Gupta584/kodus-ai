@@ -286,6 +286,12 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                     globalConfig.runOnDraft ??
                     this.DEFAULT_CONFIG.runOnDraft,
                 codeReviewVersion: codeReviewVersion,
+                // v2-only prompt overrides (categories and severity guidance). Read from repo/global parameters.
+                v2PromptOverrides: this.sanitizeV2PromptOverrides(
+                    repoConfig?.v2PromptOverrides ??
+                        globalConfig?.v2PromptOverrides ??
+                        this.DEFAULT_CONFIG?.v2PromptOverrides,
+                ),
             };
 
             return config;
@@ -298,6 +304,53 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             });
             throw new Error('Error getting code review config parameters');
         }
+    }
+
+    private sanitizeV2PromptOverrides(
+        overrides: CodeReviewConfig['v2PromptOverrides'],
+    ): CodeReviewConfig['v2PromptOverrides'] {
+        if (!overrides) return undefined;
+
+        const sanitizeString = (value: any): string | undefined => {
+            if (typeof value === 'string' && value.trim().length > 0) {
+                return value.trim();
+            }
+            return undefined;
+        };
+
+        const categories = overrides.categories?.descriptions
+            ? {
+                  descriptions: {
+                      bug: sanitizeString(
+                          overrides.categories.descriptions.bug,
+                      ),
+                      performance: sanitizeString(
+                          overrides.categories.descriptions.performance,
+                      ),
+                      security: sanitizeString(
+                          overrides.categories.descriptions.security,
+                      ),
+                  },
+              }
+            : undefined;
+
+        const severity = overrides.severity?.flags
+            ? {
+                  flags: {
+                      critical: sanitizeString(
+                          overrides.severity.flags.critical,
+                      ),
+                      high: sanitizeString(overrides.severity.flags.high),
+                      medium: sanitizeString(overrides.severity.flags.medium),
+                      low: sanitizeString(overrides.severity.flags.low),
+                  },
+              }
+            : undefined;
+
+        return {
+            categories,
+            severity,
+        };
     }
 
     getDefaultConfigs(): CodeReviewConfig {
@@ -1211,6 +1264,92 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
     }
 
     /**
+     * Resolves the most specific configuration for a single file path based on directory hierarchy.
+     * It finds all matching parent directories for the given path and selects the one with the longest,
+     * most specific path. Falls back to the repository-level config if no directory config matches.
+     *
+     * @param organizationAndTeamData - Data for the organization and team.
+     * @param repository - The repository details.
+     * @param affectedPath - The single file path to resolve the config for.
+     * @param repoConfig - The repository's configuration object, including directory configs.
+     * @returns A promise that resolves to the most specific CodeReviewConfig.
+     */
+    async resolveMostSpecificConfigForPath(
+        organizationAndTeamData: OrganizationAndTeamData,
+        repository: { name: string; id: string },
+        affectedPath: string,
+        repoConfig: any,
+    ): Promise<CodeReviewConfig> {
+        try {
+            // If no directories are configured, use the default repository config immediately.
+            if (
+                !repoConfig?.directories ||
+                repoConfig.directories.length === 0
+            ) {
+                return this.getConfig(organizationAndTeamData, repository);
+            }
+
+            const normalizePath = (path: string): string => {
+                return path.startsWith('/') ? path.substring(1) : path;
+            };
+
+            const normalizedAffectedPath = normalizePath(affectedPath);
+
+            // 1. Find all configured directories that are a parent of (or match) the affected path.
+            const matchingDirectories = repoConfig.directories.filter(
+                (dir: any) => {
+                    const normalizedDirPath = normalizePath(dir.path);
+
+                    // The root directory ('/' or '') is always a potential match.
+                    if (normalizedDirPath === '') {
+                        return true;
+                    }
+
+                    // A directory matches if it's identical to the path or is a prefix.
+                    // e.g., 'foo/bar' matches 'foo/bar' and 'foo/bar/baz.ts'.
+                    return (
+                        normalizedAffectedPath === normalizedDirPath ||
+                        normalizedAffectedPath.startsWith(
+                            normalizedDirPath + '/',
+                        )
+                    );
+                },
+            );
+
+            // 2. If no directories match, fall back to the repository-level config.
+            if (matchingDirectories.length === 0) {
+                return this.getConfig(organizationAndTeamData, repository);
+            }
+
+            // 3. From the matches, find the most specific one (i.e., the one with the longest path).
+            const mostSpecificDirectory = matchingDirectories.reduce(
+                (bestMatch, currentDir) => {
+                    return currentDir.path.length > bestMatch.path.length
+                        ? currentDir
+                        : bestMatch;
+                },
+            );
+
+            // 4. Build and return the configuration from the most specific directory found.
+            return this.buildConfigFromDirectory(
+                mostSpecificDirectory,
+                organizationAndTeamData,
+                repository,
+            );
+        } catch (error) {
+            this.logger.error({
+                message: 'Error resolving the most specific config for a path',
+                context: CodeBaseConfigService.name,
+                error,
+                metadata: { organizationAndTeamData, affectedPath, repository },
+            });
+
+            // Fallback to the default repository config in case of any error.
+            return this.getConfig(organizationAndTeamData, repository);
+        }
+    }
+
+    /**
      * Constrói a configuração baseada na config de um diretório específico
      * Hierarquia: 1º arquivo yml no diretório → 2º config do banco → 3º default
      */
@@ -1368,6 +1507,11 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 directoryId: directoryConfig.id,
                 directoryPath: directoryConfig.path,
                 codeReviewVersion: codeReviewVersion,
+                v2PromptOverrides: this.sanitizeV2PromptOverrides(
+                    (kodusConfigFile as any)?.v2PromptOverrides ??
+                        (directoryConfig as any)?.v2PromptOverrides ??
+                        this.DEFAULT_CONFIG?.v2PromptOverrides,
+                ),
             };
 
             return config;

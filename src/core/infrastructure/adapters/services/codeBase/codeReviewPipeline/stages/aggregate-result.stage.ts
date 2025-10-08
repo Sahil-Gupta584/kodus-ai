@@ -27,7 +27,6 @@ export class AggregateResultsStage extends BasePipelineStage<CodeReviewPipelineC
                 },
             });
         } else {
-            const overallComments = [];
             const validSuggestions = [];
             const discardedSuggestions = [];
 
@@ -40,13 +39,10 @@ export class AggregateResultsStage extends BasePipelineStage<CodeReviewPipelineC
                         ...result.discardedSuggestionsBySafeGuard,
                     );
                 }
-                if (result.overallComment.summary) {
-                    overallComments.push(result.overallComment);
-                }
             });
 
             this.logger.log({
-                message: `Aggregated ${validSuggestions.length} valid suggestions, ${discardedSuggestions.length} discarded suggestions, and ${overallComments.length} overall comments`,
+                message: `Aggregated ${validSuggestions.length} valid suggestions, ${discardedSuggestions.length} discarded suggestions`,
                 context: this.stageName,
                 metadata: {
                     organizationAndTeamData: context.organizationAndTeamData,
@@ -55,7 +51,6 @@ export class AggregateResultsStage extends BasePipelineStage<CodeReviewPipelineC
             });
 
             context = this.updateContext(context, (draft) => {
-                draft.overallComments = overallComments;
                 draft.validSuggestions = validSuggestions;
                 draft.discardedSuggestions = discardedSuggestions;
             });

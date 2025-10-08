@@ -17,6 +17,7 @@ import { FinishOnboardingUseCase } from './finish-onboarding.use-case';
 import { DeleteIntegrationUseCase } from './delete-integration.use-case';
 import { DeleteIntegrationAndRepositoriesUseCase } from './delete-integration-and-repositories.use-case';
 import { GetRepositoryTreeUseCase } from './get-repository-tree.use-case';
+import { GetWebhookStatusUseCase } from './get-webhook-status.use-case';
 
 export default [
     GetCodeManagementMemberListUseCase,
@@ -38,4 +39,5 @@ export default [
     DeleteIntegrationUseCase,
     DeleteIntegrationAndRepositoriesUseCase,
     GetRepositoryTreeUseCase,
+    GetWebhookStatusUseCase,
 ];

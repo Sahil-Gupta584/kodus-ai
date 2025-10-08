@@ -37,7 +37,13 @@ import {
     PolicyGuard,
     CheckPolicies,
 } from '../../adapters/services/permissions/policy.guard';
-import { checkPermissions } from '../../adapters/services/permissions/policy.handlers';
+import {
+    checkPermissions,
+    checkRepoPermissions,
+} from '../../adapters/services/permissions/policy.handlers';
+import { GetInheritedRulesKodyRulesUseCase } from '@/core/application/use-cases/kodyRules/get-inherited-kody-rules.use-case';
+import { GetRulesLimitStatusUseCase } from '@/core/application/use-cases/kodyRules/get-rules-limit-status.use-case';
+import { UserRequest } from '@/config/types/http/user-request.type';
 
 @Controller('kody-rules')
 export class KodyRulesController {
@@ -57,11 +63,11 @@ export class KodyRulesController {
         private readonly checkSyncStatusUseCase: CheckSyncStatusUseCase,
         private readonly cacheService: CacheService,
         private readonly syncSelectedReposKodyRulesUseCase: SyncSelectedRepositoriesKodyRulesUseCase,
+        private readonly getInheritedRulesKodyRulesUseCase: GetInheritedRulesKodyRulesUseCase,
+        private readonly getRulesLimitStatusUseCase: GetRulesLimitStatusUseCase,
 
         @Inject(REQUEST)
-        private readonly request: Request & {
-            user: { organization: { uuid: string } };
-        },
+        private readonly request: UserRequest,
     ) {}
 
     @Post('/create-or-update')
@@ -85,6 +91,13 @@ export class KodyRulesController {
     @CheckPolicies(checkPermissions(Action.Read, ResourceType.KodyRules))
     public async findByOrganizationId() {
         return this.findByOrganizationIdKodyRulesUseCase.execute();
+    }
+
+    @Get('/limits')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.KodyRules))
+    public async getRulesLimitStatus() {
+        return this.getRulesLimitStatusUseCase.execute();
     }
 
     @Get('/find-rule-in-organization-by-id')
@@ -278,5 +291,41 @@ export class KodyRulesController {
             teamId: body.teamId,
             repositoriesIds: respositories,
         });
+    }
+
+    @Get('/inherited-rules')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkRepoPermissions(Action.Read, ResourceType.KodyRules, {
+            key: {
+                query: 'repositoryId',
+            },
+        }),
+    )
+    public async getInheritedRules(
+        @Query('teamId') teamId: string,
+        @Query('repositoryId') repositoryId: string,
+        @Query('directoryId') directoryId?: string,
+    ) {
+        if (!this.request.user.organization.uuid) {
+            throw new Error('Organization ID not found');
+        }
+
+        if (!teamId) {
+            throw new Error('Team ID is required');
+        }
+
+        if (!repositoryId) {
+            throw new Error('Repository ID is required');
+        }
+
+        return this.getInheritedRulesKodyRulesUseCase.execute(
+            {
+                organizationId: this.request.user.organization.uuid,
+                teamId,
+            },
+            repositoryId,
+            directoryId,
+        );
     }
 }

@@ -4,4 +4,5 @@ export enum STATUS {
     PENDING = 'pending',
     AWAITING_APPROVAL = 'awaiting_approval',
     REMOVED = 'removed',
+    PENDING_EMAIL = 'pending_email',
 }

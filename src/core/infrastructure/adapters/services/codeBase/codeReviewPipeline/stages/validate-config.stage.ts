@@ -21,6 +21,11 @@ import {
     AutomationStatus,
 } from '@/core/domain/automation/enums/automation-status';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
+import { OrganizationParametersKey } from '@/shared/domain/enums/organization-parameters-key.enum';
+import {
+    IOrganizationParametersService,
+    ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
+} from '@/core/domain/organizationParameters/contracts/organizationParameters.service.contract';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 
 @Injectable()
@@ -30,6 +35,8 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
     constructor(
         @Inject(AUTOMATION_EXECUTION_SERVICE_TOKEN)
         private automationExecutionService: IAutomationExecutionService,
+        @Inject(ORGANIZATION_PARAMETERS_SERVICE_TOKEN)
+        private organizationParametersService: IOrganizationParametersService,
         private codeManagementService: CodeManagementService,
         private logger: PinoLoggerService,
     ) {
@@ -57,6 +64,17 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                     };
                 });
             }
+
+            //TODO: revisar logica
+            const byokConfig =
+                await this.organizationParametersService.findByKey(
+                    OrganizationParametersKey.BYOK_CONFIG,
+                    context.organizationAndTeamData,
+                );
+
+            context = this.updateContext(context, (draft) => {
+                draft.codeReviewConfig.byokConfig = byokConfig?.configValue;
+            });
 
             const cadenceResult = await this.evaluateReviewCadence(context);
 

@@ -2,10 +2,8 @@ import { CoreModel } from '@/shared/infrastructure/repositories/model/typeOrm';
 import { Column, Entity, JoinColumn, ManyToOne, OneToMany } from 'typeorm';
 import { OrganizationModel } from './organization.model';
 import { TeamAutomationModel } from './teamAutomation.model';
-import { MetricsModel } from './metrics.model';
 import { IntegrationConfigModel } from './integrationConfig.model';
 import { ParametersModel } from './parameters.model';
-import { SprintModel } from './sprint.model';
 import { STATUS } from '@/config/types/database/status.type';
 import { TeamMemberModel } from './teamMember.model';
 import { IntegrationModel } from './integration.model';
@@ -30,9 +28,6 @@ export class TeamModel extends CoreModel {
     @JoinColumn({ name: 'team_id', referencedColumnName: 'uuid' })
     teamAutomations: TeamAutomationModel[];
 
-    @OneToMany(() => MetricsModel, (metric) => metric.team)
-    metrics: MetricsModel[];
-
     @OneToMany(() => AuthIntegrationModel, (config) => config.team)
     authIntegration: AuthIntegrationModel[];
 
@@ -44,9 +39,6 @@ export class TeamModel extends CoreModel {
 
     @OneToMany(() => ParametersModel, (config) => config.team)
     parameters: ParametersModel[];
-
-    @OneToMany(() => SprintModel, (config) => config.team)
-    sprints: SprintModel[];
 
     @OneToMany(() => TeamMemberModel, (teamMember) => teamMember.team)
     teamMember: TeamMemberModel[];

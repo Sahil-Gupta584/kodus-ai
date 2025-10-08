@@ -7,14 +7,7 @@ import {
 } from '@/core/domain/authIntegrations/contracts/auth-integration.service.contracts';
 import { AuthIntegrationEntity } from '@/core/domain/authIntegrations/entities/auth-integration.entity';
 import { BotInfo } from '@/core/domain/authIntegrations/types/slack-auth-detail.type';
-import {
-    CHECKIN_HISTORY_SERVICE_TOKEN,
-    ICheckinHistoryService,
-} from '@/core/domain/checkinHistory/contracts/checkinHistory.service.contracts';
-import {
-    CHECKIN_HISTORY_ORGANIZATION_SERVICE_TOKEN,
-    ICheckinHistoryOrganizationService,
-} from '@/core/domain/checkinHistoryOrganization/contracts/checkinHistory.service.contracts';
+
 import {
     IIntegrationConfigService,
     INTEGRATION_CONFIG_SERVICE_TOKEN,
@@ -51,8 +44,7 @@ import {
     forwardRef,
 } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
-import { MetricsFormatterCommunicationPlatform } from '../metrics/formatCommunicationPlatform/metrics.formatter';
-import { SlackFormatter } from '../metrics/formatCommunicationPlatform/slack.formatter';
+
 import { CommunicationManagementConnectionStatus } from '@/shared/utils/decorators/validate-communication-management-integration.decorator';
 
 @Injectable()
@@ -76,60 +68,19 @@ export class SlackService implements ICommunicationService {
         @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
         private readonly integrationConfigService: IIntegrationConfigService,
 
-        @Inject(CHECKIN_HISTORY_SERVICE_TOKEN)
-        private readonly checkinHistoryService: ICheckinHistoryService,
-
-        @Inject(CHECKIN_HISTORY_ORGANIZATION_SERVICE_TOKEN)
-        private readonly checkinHistoryOrganizationService: ICheckinHistoryOrganizationService,
-
         @Inject(PROFILE_CONFIG_SERVICE_TOKEN)
         private readonly profileConfigService: IProfileConfigService,
     ) {
         this.axiosService = new AxiosSlackService();
     }
-
-    async saveCheckinHistoryOrganization(params: any): Promise<any> {
-        try {
-            const content = params.message?.embeds
-                ? params.message?.embeds[0]?.description
-                : params.message;
-
-            return await this.checkinHistoryOrganizationService.create({
-                teamsIds: params.teamsIds,
-                organizationId: params.organizationId,
-                date: params.date,
-                content,
-                type: params.type,
-            });
-        } catch (error) {
-            console.error('Error when saving checkin execution:', error);
-            throw new Error(
-                `Error when saving checkin execution: ${error.message}`,
-            );
-        }
+    saveCheckinHistory(params: any): Promise<any> {
+        throw new Error('Method not implemented.');
     }
-
-    async saveCheckinHistory(params: any): Promise<any> {
-        try {
-            const content = params.message?.embeds
-                ? params.message?.embeds[0]?.description
-                : params.message;
-
-            return await this.checkinHistoryService.create({
-                organizationId: params.organizationAndTeamData.organizationId,
-                teamId: params.organizationAndTeamData.teamId,
-                date: params.date,
-                content:
-                    content && content.length > 0
-                        ? JSON.stringify(content)
-                        : '',
-                sectionDataItems: params?.sectionDataItems,
-                type: params.type,
-                overdueWorkItemsList: params?.overdueWorkItemsList,
-            });
-        } catch (error) {
-            throw new Error('Error in Checkin History Save Execution', error);
-        }
+    saveCheckinHistoryOrganization(params: any): Promise<any> {
+        throw new Error('Method not implemented.');
+    }
+    formatMetricsMessage(params: any): Promise<any> {
+        throw new Error('Method not implemented.');
     }
 
     async saveChannelSelected(params: any): Promise<any> {
@@ -721,14 +672,5 @@ export class SlackService implements ICommunicationService {
 
     async formatKodyNotification(params: any): Promise<any> {
         return NotificationFormatter.formatForSlack(params.notification);
-    }
-
-    async formatMetricsMessage(params: any): Promise<any> {
-        const comparedMetrics =
-            await MetricsFormatterCommunicationPlatform.compareMetrics(
-                params.metrics,
-            );
-
-        return SlackFormatter.format(comparedMetrics, params.columns);
     }
 }

@@ -86,7 +86,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             const {
                 validSuggestions,
                 discardedSuggestions,
-                overallComments,
                 fileMetadata,
                 tasks,
             } = await this.analyzeChangedFilesInBatches(context);
@@ -94,7 +93,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             return this.updateContext(context, (draft) => {
                 draft.validSuggestions = validSuggestions;
                 draft.discardedSuggestions = discardedSuggestions;
-                draft.overallComments = overallComments;
                 draft.fileMetadata = fileMetadata;
                 draft.tasks = tasks;
             });
@@ -114,7 +112,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             return this.updateContext(context, (draft) => {
                 draft.validSuggestions = [];
                 draft.discardedSuggestions = [];
-                draft.overallComments = [];
                 draft.fileMetadata = new Map();
             });
         }
@@ -125,7 +122,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
     ): Promise<{
         validSuggestions: Partial<CodeSuggestion>[];
         discardedSuggestions: Partial<CodeSuggestion>[];
-        overallComments: { filepath: string; summary: string }[];
         fileMetadata: Map<string, any>;
         validCrossFileSuggestions: CodeSuggestion[];
         tasks: AnalysisContext['tasks'];
@@ -172,8 +168,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                                 execution.validSuggestions.length,
                             discardedCount:
                                 execution.discardedSuggestions.length,
-                            overallCommentsCount:
-                                execution.overallComments.length,
                             tasks: execution.tasks,
                             organizationAndTeamData: organizationAndTeamData,
                         },
@@ -183,7 +177,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     return {
                         validSuggestions: execution.validSuggestions,
                         discardedSuggestions: execution.discardedSuggestions,
-                        overallComments: execution.overallComments,
                         fileMetadata: fileMetadata,
                         validCrossFileSuggestions:
                             execution.validCrossFileSuggestions,
@@ -198,7 +191,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     return {
                         validSuggestions: [],
                         discardedSuggestions: [],
-                        overallComments: [],
                         fileMetadata: new Map(),
                         validCrossFileSuggestions: [],
                         tasks: { ...context.tasks },
@@ -239,13 +231,11 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
     ): Promise<{
         validSuggestions: Partial<CodeSuggestion>[];
         discardedSuggestions: Partial<CodeSuggestion>[];
-        overallComments: { filepath: string; summary: string }[];
         validCrossFileSuggestions: CodeSuggestion[];
         tasks: AnalysisContext['tasks'];
     }> {
         const validSuggestions: Partial<CodeSuggestion>[] = [];
         const discardedSuggestions: Partial<CodeSuggestion>[] = [];
-        const overallComments: { filepath: string; summary: string }[] = [];
         const tasks: AnalysisContext['tasks'] = {
             astAnalysis: {
                 ...context.tasks.astAnalysis,
@@ -257,7 +247,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             context,
             validSuggestions,
             discardedSuggestions,
-            overallComments,
             fileMetadata,
             validCrossFileSuggestions,
             tasks,
@@ -266,7 +255,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         return {
             validSuggestions,
             discardedSuggestions,
-            overallComments,
             validCrossFileSuggestions,
             tasks,
         };
@@ -325,7 +313,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         context: AnalysisContext,
         validSuggestionsToAnalyze: Partial<CodeSuggestion>[],
         discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[],
-        overallComments: { filepath: string; summary: string }[],
         fileMetadata: Map<string, any>,
         validCrossFileSuggestions: CodeSuggestion[],
         tasks: AnalysisContext['tasks'],
@@ -342,7 +329,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     context,
                     validSuggestionsToAnalyze,
                     discardedSuggestionsBySafeGuard,
-                    overallComments,
                     index,
                     fileMetadata,
                     tasks,
@@ -368,7 +354,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         context: AnalysisContext,
         validSuggestions: Partial<CodeSuggestion>[],
         discardedSuggestions: Partial<CodeSuggestion>[],
-        overallComments: { filepath: string; summary: string }[],
         batchIndex: number,
         fileMetadata: Map<string, any>,
         tasks: AnalysisContext['tasks'],
@@ -411,7 +396,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                             result.value,
                             validSuggestions,
                             discardedSuggestions,
-                            overallComments,
                             fileMetadata,
                         );
                     } else {
@@ -438,14 +422,12 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
      * @param fileProcessingResult Result of the file processing
      * @param validSuggestionsToAnalyze Array to store the valid suggestions found
      * @param discardedSuggestionsBySafeGuard Array to store the discarded suggestions
-     * @param overallComments Array to store the general comments
      * @param fileMetadata Map to store file metadata
      */
     private collectFileProcessingResult(
         fileProcessingResult: IFinalAnalysisResult & { file: FileChange },
         validSuggestionsToAnalyze: Partial<CodeSuggestion>[],
         discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[],
-        overallComments: { filepath: string; summary: string }[],
         fileMetadata: Map<string, any>,
     ): void {
         const file = fileProcessingResult.file;
@@ -460,10 +442,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             discardedSuggestionsBySafeGuard.push(
                 ...fileProcessingResult.discardedSuggestionsBySafeGuard,
             );
-        }
-
-        if (fileProcessingResult?.overallComment?.summary) {
-            overallComments.push(fileProcessingResult.overallComment);
         }
 
         if (fileProcessingResult?.file?.filename) {
@@ -562,7 +540,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             return {
                 validSuggestionsToAnalyze: [],
                 discardedSuggestionsBySafeGuard: [],
-                overallComment: { filepath: file.filename, summary: '' },
                 file,
             };
         }
@@ -575,11 +552,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         const { reviewModeResponse } = context;
         const { file, relevantContent, patchWithLinesStr } =
             context.fileChangeContext;
-
-        const overallComment = {
-            filepath: file.filename,
-            summary: result?.overallSummary || '',
-        };
 
         const validSuggestionsToAnalyze: Partial<CodeSuggestion>[] = [];
         const discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[] = [];
@@ -655,6 +627,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     safeGuardResult.safeguardSuggestions,
                     context?.codeReviewConfig?.reviewOptions,
                     context?.codeReviewConfig?.codeReviewVersion,
+                    context?.codeReviewConfig?.byokConfig,
                 );
 
             const crossFileSuggestionsWithSeverity =
@@ -663,6 +636,8 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     context?.pullRequest?.number,
                     filteredCrossFileSuggestions,
                     context?.codeReviewConfig?.reviewOptions,
+                    context?.codeReviewConfig?.codeReviewVersion,
+                    context?.codeReviewConfig?.byokConfig,
                 );
 
             let mergedSuggestions = [];
@@ -674,7 +649,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                     { file, patchWithLinesStr },
                     context,
                     {
-                        overallSummary: result?.overallSummary,
                         codeSuggestions: suggestionsWithSeverity,
                     },
                 );
@@ -772,7 +746,6 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             validSuggestionsToAnalyze,
             discardedSuggestionsBySafeGuard:
                 discardedSuggestionsBySafeGuard || [],
-            overallComment,
             reviewMode: reviewModeResponse,
             codeReviewModelUsed: {
                 generateSuggestions:
@@ -924,6 +897,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
                 filteredSuggestions,
                 context?.codeReviewConfig?.languageResultPrompt,
                 reviewModeResponse,
+                context?.codeReviewConfig?.byokConfig,
             );
 
         const safeguardLLMProvider =
@@ -978,6 +952,7 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
             validCrossFileSuggestions:
                 context.prAnalysisResults?.validCrossFileSuggestions || [],
             tasks: context.tasks,
+            correlationId: context.correlationId,
         };
     }
 }

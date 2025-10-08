@@ -1,6 +1,7 @@
 import { CreateOrUpdateParametersUseCase } from '@/core/application/use-cases/parameters/create-or-update-use-case';
 import { FindByKeyParametersUseCase } from '@/core/application/use-cases/parameters/find-by-key-use-case';
 import { ListCodeReviewAutomationLabelsUseCase } from '@/core/application/use-cases/parameters/list-code-review-automation-labels-use-case';
+import { ListCodeReviewV2DefaultsUseCase } from '@/core/application/use-cases/parameters/list-code-review-v2-defaults.use-case';
 import { UpdateCodeReviewParameterRepositoriesUseCase } from '@/core/application/use-cases/parameters/update-code-review-parameter-repositories-use-case';
 import { UpdateOrCreateCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/update-or-create-code-review-parameter-use-case';
 
@@ -15,6 +16,7 @@ import {
     UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { ListCodeReviewAutomationLabelsWithStatusUseCase } from '@/core/application/use-cases/parameters/list-code-review-automation-labels-with-status.use-case';
 
 import { CreateOrUpdateCodeReviewParameterDto } from '../dtos/create-or-update-code-review-parameter.dto';
 import { GenerateKodusConfigFileUseCase } from '@/core/application/use-cases/parameters/generate-kodus-config-file.use-case';
@@ -56,6 +58,8 @@ export class ParametersController {
         private readonly generateCodeReviewParameterUseCase: GenerateCodeReviewParameterUseCase,
         private readonly deleteRepositoryCodeReviewParameterUseCase: DeleteRepositoryCodeReviewParameterUseCase,
         private readonly previewPrSummaryUseCase: PreviewPrSummaryUseCase,
+        private readonly listCodeReviewV2DefaultsUseCase: ListCodeReviewV2DefaultsUseCase,
+        private readonly listCodeReviewAutomationLabelsWithStatusUseCase: ListCodeReviewAutomationLabelsWithStatusUseCase,
     ) {}
 
     //#region Parameters
@@ -108,10 +112,23 @@ export class ParametersController {
     )
     public async listCodeReviewAutomationLabels(
         @Query('codeReviewVersion') codeReviewVersion?: CodeReviewVersion,
+        @Query('teamId') teamId?: string,
+        @Query('repositoryId') repositoryId?: string,
     ) {
-        return this.listCodeReviewAutomationLabelsUseCase.execute(
+        return this.listCodeReviewAutomationLabelsWithStatusUseCase.execute({
             codeReviewVersion,
-        );
+            teamId,
+            repositoryId,
+        });
+    }
+
+    @Get('/list-code-review-v2-defaults')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Read, ResourceType.CodeReviewSettings),
+    )
+    public async listCodeReviewV2Defaults() {
+        return this.listCodeReviewV2DefaultsUseCase.execute();
     }
 
     @Post('/create-or-update-code-review')
@@ -221,11 +238,7 @@ export class ParametersController {
     @Post('/preview-pr-summary')
     @UseGuards(PolicyGuard)
     @CheckPolicies(
-        checkRepoPermissions(Action.Read, ResourceType.CodeReviewSettings, {
-            key: {
-                body: 'repository.id',
-            },
-        }),
+        checkPermissions(Action.Read, ResourceType.CodeReviewSettings),
     )
     public async previewPrSummary(
         @Body()

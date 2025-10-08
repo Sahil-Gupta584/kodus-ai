@@ -4,7 +4,6 @@ import { DeliveryStatus } from '@/core/domain/pullRequests/enums/deliveryStatus.
 import { IKodyRule } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { ImplementationStatus } from '@/core/domain/pullRequests/enums/implementationStatus.enum';
-import { IClusterizedSuggestion } from '@/ee/kodyFineTuning/domain/interfaces/kodyFineTuning.interface';
 import { LLMModelProvider } from '@kodus/kodus-common/llm';
 import { GetImpactAnalysisResponse } from '@kodus/kodus-proto/ast';
 import { TaskStatus } from '@kodus/kodus-proto/task';
@@ -12,11 +11,11 @@ import { ISuggestionByPR } from '@/core/domain/pullRequests/interfaces/pullReque
 import { ConfigLevel } from './pullRequestMessages.type';
 import z from 'zod';
 import { CodeReviewPipelineContext } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/context/code-review-pipeline.context';
-
+import { BYOKConfig } from '@kodus/kodus-common/llm';
+import { IClusterizedSuggestion } from '@/core/domain/kodyFineTuning/interfaces/kodyFineTuning.interface';
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
     discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[];
-    overallComment?: { filepath: string; summary: string };
     reviewMode?: ReviewModeResponse;
     codeReviewModelUsed?: {
         generateSuggestions?: string;
@@ -78,6 +77,7 @@ export type AnalysisContext = {
             status?: TaskStatus;
         };
     };
+    correlationId: string;
 };
 
 export type ASTAnalysisResult = {
@@ -92,12 +92,10 @@ export type CombinedAnalysisResult = {
     lintingAnalysis?: any;
     securityAnalysis?: any;
     codeSuggestions: CodeSuggestion[]; // Aggregation of all suggestions
-    overallSummary: string; // Combined summary of the analyses
 };
 
 export type AIAnalysisResult = {
     codeSuggestions: Partial<CodeSuggestion>[];
-    overallSummary: string;
     codeReviewModelUsed?: {
         generateSuggestions?: string;
         safeguard?: string;
@@ -316,6 +314,36 @@ export type CodeReviewConfig = {
     directoryPath?: string;
     runOnDraft?: boolean;
     codeReviewVersion?: CodeReviewVersion;
+    byokConfig?: BYOKConfig;
+    /**
+     * Optional overrides for v2 prompts (categories and severity guidance only).
+     * These influence only the v2 system prompt used during suggestion generation.
+     */
+    v2PromptOverrides?: {
+        categories?: {
+            /**
+             * Additional or replacement description bullets for each label.
+             * Labels are fixed to: bug, performance, security.
+             */
+            descriptions?: {
+                bug?: string;
+                performance?: string;
+                security?: string;
+            };
+        };
+        severity?: {
+            /**
+             * Optional flag bullet points per level to guide classification.
+             * Levels are fixed to: critical, high, medium, low.
+             */
+            flags?: {
+                critical?: string;
+                high?: string;
+                medium?: string;
+                low?: string;
+            };
+        };
+    };
     // This is the default branch of the repository, used only during the review process
     // This field is populated dynamically from the API (GitHub/GitLab) and should NOT be saved to the database
     // It represents the repository's default branch (e.g., 'main', 'develop') that comes from the code management platform

@@ -26,7 +26,7 @@ import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import {
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
     ICodeReviewSettingsLogService,
-} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+} from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import { REQUEST } from '@nestjs/core';
 import {
     ActionType,

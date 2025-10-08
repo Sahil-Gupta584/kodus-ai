@@ -9,12 +9,22 @@ import {
     PromptRunnerService,
 } from './promptRunner.service';
 import z from 'zod';
+import { BYOKProvider } from './byokProvider.service';
 
 export enum ParserType {
     STRING = 'string',
     JSON = 'json',
     ZOD = 'zod',
     CUSTOM = 'custom',
+}
+
+export interface BYOKProviderConfig {
+    provider: BYOKProvider;
+    apiKey: string;
+    model: string;
+    baseURL?: string;
+    projectId?: string;
+    region?: string;
 }
 
 //#region Types
@@ -46,7 +56,30 @@ type SafeJsonOutput<T> =
  * and execute them using the `PromptRunnerService`.
  */
 export class PromptBuilder {
+    private byokConfig?: BYOKProviderConfig;
+    private byokFallbackConfig?: BYOKProviderConfig | null;
+
     constructor(private readonly runner: PromptRunnerService) {}
+
+    /**
+     * Sets BYOK configuration for the main provider
+     * @param config Individual provider configuration (main.* properties)
+     * @returns The PromptBuilder instance for chaining.
+     */
+    setBYOKConfig(config: BYOKProviderConfig): this {
+        this.byokConfig = config;
+        return this;
+    }
+
+    /**
+     * Sets BYOK configuration for the fallback provider
+     * @param config Individual provider configuration or null to disable fallback
+     * @returns The PromptBuilder instance for chaining.
+     */
+    setBYOKFallbackConfig(config: BYOKProviderConfig | null): this {
+        this.byokFallbackConfig = config;
+        return this;
+    }
 
     /**
      * Sets the main and optional fallback LLM providers.
@@ -73,7 +106,12 @@ export class PromptBuilder {
             tags: [],
         };
 
-        return new PromptBuilderWithProviders(this.runner, params);
+        return new PromptBuilderWithProviders(
+            this.runner,
+            params,
+            this.byokConfig,
+            this.byokFallbackConfig,
+        );
     }
 }
 
@@ -86,10 +124,36 @@ export class PromptBuilder {
  * and execute them using the `PromptRunnerService`.
  */
 class PromptBuilderWithProviders {
+    private byokConfig?: BYOKProviderConfig;
+    private byokFallbackConfig?: BYOKProviderConfig | null;
+
     constructor(
         private readonly runner: PromptRunnerService,
         private readonly params: Partial<PromptRunnerParams<void>> = {},
-    ) {}
+        byokConfig?: BYOKProviderConfig,
+        byokFallbackConfig?: BYOKProviderConfig | null,
+    ) {
+        this.byokConfig = byokConfig;
+        this.byokFallbackConfig = byokFallbackConfig;
+    }
+
+    /**
+     * Sets BYOK configuration for the main provider
+     * @param config Individual provider configuration (main.* properties)
+     */
+    setBYOKConfig(config: BYOKProviderConfig): this {
+        this.byokConfig = config;
+        return this;
+    }
+
+    /**
+     * Sets BYOK configuration for the fallback provider
+     * @param config Individual provider configuration or null to disable fallback
+     */
+    setBYOKFallbackConfig(config: BYOKProviderConfig | null): this {
+        this.byokFallbackConfig = config;
+        return this;
+    }
 
     /**
      * Sets a custom parser for the prompt execution.
@@ -144,6 +208,14 @@ class PromptBuilderWithProviders {
         NewOutputType | string | z.infer<z.ZodObject>,
         ParserType
     > {
+        const newParams = {
+            ...this.params,
+            byokConfig: this.byokConfig ? { main: this.byokConfig } : undefined,
+            byokFallbackConfig: this.byokFallbackConfig
+                ? { main: this.byokFallbackConfig }
+                : undefined,
+        };
+
         switch (type) {
             case ParserType.STRING: {
                 return new ConfigurablePromptBuilderWithoutPayload<
@@ -152,7 +224,7 @@ class PromptBuilderWithProviders {
                 >(
                     this.runner,
                     {
-                        ...this.params,
+                        ...newParams,
                         parser: new CustomStringOutputParser(),
                     },
                     ParserType.STRING,
@@ -165,7 +237,7 @@ class PromptBuilderWithProviders {
                 >(
                     this.runner,
                     {
-                        ...this.params,
+                        ...newParams,
                         parser: new JsonOutputParser<
                             SafeJsonOutput<NewOutputType>
                         >(),
@@ -189,7 +261,7 @@ class PromptBuilderWithProviders {
                 >(
                     this.runner,
                     {
-                        ...this.params,
+                        ...newParams,
                         parser: parserOrSchema,
                     },
                     ParserType.CUSTOM,
@@ -208,7 +280,7 @@ class PromptBuilderWithProviders {
                 >(
                     this.runner,
                     {
-                        ...this.params,
+                        ...newParams,
                         parser: new ZodOutputParser({
                             schema: parserOrSchema,
                             promptRunnerService: this.runner,
@@ -266,6 +338,26 @@ class ConfigurablePromptBuilder<
             tags: [],
             ...initialParams,
         };
+    }
+
+    /**
+     * Sets BYOK configuration for the main provider
+     * @param config Individual provider configuration
+     * @returns The ConfigurablePromptBuilder instance for chaining
+     */
+    setBYOKConfig(config: BYOKProviderConfig): this {
+        this.params.byokConfig = { main: config };
+        return this;
+    }
+
+    /**
+     * Sets BYOK configuration for the fallback provider
+     * @param config Individual provider configuration or null to disable fallback
+     * @returns The ConfigurablePromptBuilder instance for chaining
+     */
+    setBYOKFallbackConfig(config: BYOKProviderConfig | null): this {
+        this.params.byokFallbackConfig = config ? { main: config } : undefined;
+        return this;
     }
 
     /**
