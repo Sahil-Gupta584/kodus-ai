@@ -9,7 +9,10 @@ import {
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
-import { GitlabReaction, GitHubReaction } from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
+import {
+    GitlabReaction,
+    GitHubReaction,
+} from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
 
 import { IntegrationServiceDecorator } from '@/shared/utils/decorators/integration-service.decorator';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';

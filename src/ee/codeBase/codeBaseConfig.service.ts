@@ -1213,36 +1213,76 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 return this.getConfig(organizationAndTeamData, repository);
             }
 
-            // Função para normalizar paths (remover barra inicial para comparação consistente)
             const normalizePath = (path: string): string => {
                 return path.startsWith('/') ? path.substring(1) : path;
             };
 
-            // Encontrar diretórios configurados que são afetados pelos arquivos alterados
-            const matchingDirectories = repoConfig.directories.filter(
-                (dir: any) => {
-                    const normalizedDirPath = normalizePath(dir.path);
-                    return affectedPaths.some((filePath: string) => {
-                        const normalizedFilePath = normalizePath(filePath);
-                        return (
-                            normalizedFilePath === normalizedDirPath ||
-                            normalizedFilePath.startsWith(
-                                normalizedDirPath + '/',
-                            )
+            const isPathCoveredByDirectory = (
+                normalizedDir: string,
+                normalizedFile: string,
+            ): boolean => {
+                if (normalizedDir === '') {
+                    return true;
+                }
+
+                return (
+                    normalizedFile === normalizedDir ||
+                    normalizedFile.startsWith(normalizedDir + '/')
+                );
+            };
+
+            const directoryMatchers = repoConfig.directories.map(
+                (dir: any) => ({
+                    dir,
+                    normalizedPath: normalizePath(dir.path),
+                }),
+            );
+
+            const matchingDirectories = directoryMatchers.filter(
+                ({ normalizedPath }) =>
+                    affectedPaths.some((filePath: string) => {
+                        const normalizedFile = normalizePath(filePath);
+                        return isPathCoveredByDirectory(
+                            normalizedPath,
+                            normalizedFile,
                         );
-                    });
+                    }),
+            );
+
+            const hasNotClassifiedPaths = affectedPaths.some(
+                (filePath: string) => {
+                    const normalizedFile = normalizePath(filePath);
+
+                    return !matchingDirectories.some(({ normalizedPath }) =>
+                        isPathCoveredByDirectory(
+                            normalizedPath,
+                            normalizedFile,
+                        ),
+                    );
                 },
             );
 
-            if (matchingDirectories.length === 0) {
+            // Agrupar diretórios configurados atingidos e sinalizar paths fora de qualquer config
+            const groupedDirectories = matchingDirectories.map(
+                ({ dir }) => dir,
+            );
+
+            if (groupedDirectories.length > 0 && hasNotClassifiedPaths) {
+                groupedDirectories.push({ name: 'not classified', path: null });
+            }
+
+            if (groupedDirectories.length === 0) {
                 // Nenhum diretório configurado afetado, usar config normal (repo ou global)
                 return this.getConfig(organizationAndTeamData, repository);
             }
 
-            if (matchingDirectories.length === 1) {
+            if (
+                groupedDirectories.length === 1 &&
+                groupedDirectories[0]?.path !== null
+            ) {
                 // Apenas um diretório configurado afetado, usar sua config
                 return this.buildConfigFromDirectory(
-                    matchingDirectories[0],
+                    groupedDirectories[0],
                     organizationAndTeamData,
                     repository,
                 );
@@ -1535,12 +1575,14 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         const paths = new Set<string>();
 
         files.forEach((file) => {
-            const parts = file.filename.split('/');
+            const lastSlashIndex = file.filename.lastIndexOf('/');
 
-            // Gerar todos os caminhos possíveis (do mais específico ao mais geral)
-            for (let i = parts.length - 1; i > 0; i--) {
-                const path = parts.slice(0, i).join('/');
-                paths.add(path);
+            if (lastSlashIndex > 0) {
+                const directoryPath = file.filename.substring(
+                    0,
+                    lastSlashIndex,
+                );
+                paths.add(directoryPath);
             }
         });
 
