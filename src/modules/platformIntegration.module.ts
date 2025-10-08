@@ -77,8 +77,6 @@ import { PullRequestMessagesModule } from './pullRequestMessages.module';
         //Integrations tools
         MSTeamsService,
         GitlabService,
-        // DiscordService,
-        // AzureBoardsService,
 
         // Webhook handlers
         GitHubPullRequestHandler,

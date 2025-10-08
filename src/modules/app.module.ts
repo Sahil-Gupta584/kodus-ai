@@ -23,7 +23,6 @@ import { IntegrationModule } from './integration.module';
 import { IntegrationConfigModule } from './integrationConfig.module';
 import { PlatformIntegrationModule } from './platformIntegration.module';
 import { MSTeamsModule } from './msTeams.module';
-import { AzureBoardsModule } from './azureBoards.module';
 import { InteractionModule } from '@/modules/interaction.module';
 import { ParametersModule } from './parameters.module';
 import { ProfileConfigModule } from './profileConfig.module';
@@ -84,7 +83,6 @@ import { UsageModule } from './usage.module';
         IntegrationModule,
         IntegrationConfigModule,
         MSTeamsModule,
-        AzureBoardsModule,
         InteractionModule,
         ProfileConfigModule,
         ParametersModule,
