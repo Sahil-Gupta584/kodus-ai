@@ -1,6 +1,3 @@
-import {
-    IRepositoryToIssues,
-} from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 import { LabelType } from '@/shared/utils/codeManagement/labels';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import {
@@ -9,6 +6,7 @@ import {
     IsObject,
     IsOptional,
 } from 'class-validator';
+import { IRepositoryToIssues } from '../../adapters/services/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 
 export class CreateIssueManuallyDto {
     @IsString()
