@@ -197,11 +197,10 @@ export class CodeReviewHandlerService {
     ): Promise<void> {
         const status = result.statusInfo?.status;
 
-        // For SKIPPED: replace START with SKIP (👀 eyes)
         if (status === AutomationStatus.SKIPPED) {
             await this.removeCurrentReaction(context);
             await this.addStatusReaction(context, ReviewStatusReaction.SKIP);
-            
+
             this.logger.log({
                 message: `Review skipped for PR#${context.pullRequest.number} - adding skip reaction`,
                 context: CodeReviewHandlerService.name,
@@ -213,12 +212,11 @@ export class CodeReviewHandlerService {
             return;
         }
 
-        // For ERROR: replace START with ERROR (😕 confused)
         if (status === AutomationStatus.ERROR) {
             await this.removeCurrentReaction(context);
             await this.addStatusReaction(context, ReviewStatusReaction.ERROR);
-            
-            this.logger.log({
+
+            this.logger.error({
                 message: `Review failed for PR#${context.pullRequest.number} - adding error reaction`,
                 context: CodeReviewHandlerService.name,
                 metadata: {
@@ -229,8 +227,10 @@ export class CodeReviewHandlerService {
             return;
         }
 
-        // For successful reviews, remove START and add SUCCESS
-        if (status === AutomationStatus.SUCCESS || status === AutomationStatus.IN_PROGRESS) {
+        if (
+            status === AutomationStatus.SUCCESS ||
+            status === AutomationStatus.IN_PROGRESS
+        ) {
             await this.removeCurrentReaction(context);
             await this.addStatusReaction(context, ReviewStatusReaction.SUCCESS);
             return;
@@ -242,7 +242,13 @@ export class CodeReviewHandlerService {
         status: ReviewStatusReaction,
     ): Promise<void> {
         try {
-            const { organizationAndTeamData, repository, pullRequest, platformType, triggerCommentId } = context;
+            const {
+                organizationAndTeamData,
+                repository,
+                pullRequest,
+                platformType,
+                triggerCommentId,
+            } = context;
 
             if (platformType === PlatformType.AZURE_REPOS) {
                 return;
@@ -258,7 +264,10 @@ export class CodeReviewHandlerService {
                     organizationAndTeamData,
                     repository: { id: repository.id, name: repository.name },
                     prNumber: pullRequest.number,
-                    commentId: typeof triggerCommentId === 'string' ? parseInt(triggerCommentId, 10) : triggerCommentId,
+                    commentId:
+                        typeof triggerCommentId === 'string'
+                            ? parseInt(triggerCommentId, 10)
+                            : triggerCommentId,
                     reaction,
                 });
             } else {
@@ -288,7 +297,13 @@ export class CodeReviewHandlerService {
         context: CodeReviewPipelineContext,
     ): Promise<void> {
         try {
-            const { organizationAndTeamData, repository, pullRequest, platformType, triggerCommentId } = context;
+            const {
+                organizationAndTeamData,
+                repository,
+                pullRequest,
+                platformType,
+                triggerCommentId,
+            } = context;
 
             if (platformType === PlatformType.AZURE_REPOS) {
                 return;
@@ -299,14 +314,20 @@ export class CodeReviewHandlerService {
                 return;
             }
 
-            const reactionsToRemove = Object.values(platformReactions) as (GitHubReaction | GitlabReaction)[];
+            const reactionsToRemove = Object.values(platformReactions) as (
+                | GitHubReaction
+                | GitlabReaction
+            )[];
 
             if (triggerCommentId) {
                 await this.codeManagement.removeReactionsFromComment({
                     organizationAndTeamData,
                     repository: { id: repository.id, name: repository.name },
                     prNumber: pullRequest.number,
-                    commentId: typeof triggerCommentId === 'string' ? parseInt(triggerCommentId, 10) : triggerCommentId,
+                    commentId:
+                        typeof triggerCommentId === 'string'
+                            ? parseInt(triggerCommentId, 10)
+                            : triggerCommentId,
                     reactions: reactionsToRemove,
                 });
             } else {
