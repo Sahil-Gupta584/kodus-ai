@@ -12,18 +12,9 @@ import {
 } from '@/shared/domain/contracts/execute.automation.service.contracts';
 import { AutomationType } from '@/core/domain/automation/enums/automation-type';
 import {
-    IOrganizationService,
-    ORGANIZATION_SERVICE_TOKEN,
-} from '@/core/domain/organization/contracts/organization.service.contract';
-import {
-    AUTOMATION_SERVICE_TOKEN,
-    IAutomationService,
-} from '@/core/domain/automation/contracts/automation.service';
-import {
     IProfileConfigService,
     PROFILE_CONFIG_SERVICE_TOKEN,
 } from '@/core/domain/profileConfigs/contracts/profileConfig.service.contract';
-import { CommunicationService } from '@/core/infrastructure/adapters/services/platformIntegration/communication.service';
 import { ProfileConfigKey } from '@/core/domain/profileConfigs/enum/profileConfigKey.enum';
 
 @Injectable()
@@ -35,16 +26,8 @@ export class UpdateOrCreateTeamAutomationUseCase {
         @Inject(EXECUTE_AUTOMATION_SERVICE_TOKEN)
         private readonly executeAutomation: IExecuteAutomationService,
 
-        @Inject(ORGANIZATION_SERVICE_TOKEN)
-        private readonly organizationService: IOrganizationService,
-
-        @Inject(AUTOMATION_SERVICE_TOKEN)
-        private readonly automationService: IAutomationService,
-
         @Inject(PROFILE_CONFIG_SERVICE_TOKEN)
         private readonly profileConfigService: IProfileConfigService,
-
-        private readonly communication: CommunicationService,
 
         @Inject(REQUEST)
         private readonly request: Request & {
@@ -71,13 +54,6 @@ export class UpdateOrCreateTeamAutomationUseCase {
                 teamAutomations,
                 oldTeamAutomation,
                 organizationAndTeamData,
-            );
-        }
-
-        if (notify) {
-            await this.notifyTeamIfNeeded(
-                organizationAndTeamData,
-                teamAutomations,
             );
         }
 
@@ -129,43 +105,6 @@ export class UpdateOrCreateTeamAutomationUseCase {
                     organizationAndTeamData,
                 );
             }
-        }
-    }
-
-    private async notifyTeamIfNeeded(
-        organizationAndTeamData: any,
-        teamAutomations: TeamAutomationsDto,
-    ) {
-        const [organization, automations, teamMembers, teamChannelId] =
-            await Promise.all([
-                this.organizationService.findOne({
-                    uuid: organizationAndTeamData.organizationId,
-                }),
-                this.automationService.find(),
-                this.communication.getChannelIdLeaderTeam({
-                    organizationAndTeamData,
-                }),
-                this.communication.getTeamChannelId(organizationAndTeamData),
-            ]);
-
-        const activeAutomations = this.getActiveAutomations(
-            automations,
-            teamAutomations,
-        );
-
-        if (teamChannelId) {
-            const template = await this.communication.handlerTemplateMessage({
-                methodName: 'getWelcomeMessage',
-                activeAutomations,
-                organizationName: organization.name,
-                organizationAndTeamData,
-            });
-
-            await this.communication.newBlockMessage({
-                organizationAndTeamData,
-                blocks: template,
-                channelId: teamChannelId,
-            });
         }
     }
 

@@ -15,7 +15,6 @@ import {
 } from '@/core/domain/integrations/contracts/integration.service.contracts';
 import { IntegrationEntity } from '@/core/domain/integrations/entities/integration.entity';
 import { IMSTeamsService } from '@/core/domain/msTeams/msTeams.service.contract';
-import { ICommunicationService } from '@/core/domain/platformIntegrations/interfaces/communication.interface';
 import { Channel } from '@/core/domain/platformIntegrations/types/communication/channel.type';
 import {
     ITeamMemberService,
@@ -27,13 +26,12 @@ import { IntegrationCategory } from '@/shared/domain/enums/integration-category.
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 
 import { IntegrationServiceDecorator } from '@/shared/utils/decorators/integration-service.decorator';
-import { CommunicationManagementConnectionStatus } from '@/shared/utils/decorators/validate-communication-management-integration.decorator';
 import { Inject, Injectable, forwardRef } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 @IntegrationServiceDecorator(PlatformType.MSTEAMS, 'communication')
-export class MSTeamsService implements IMSTeamsService, ICommunicationService {
+export class MSTeamsService implements IMSTeamsService {
     private axiosService: AxiosMSTeamsService;
 
     constructor(
@@ -507,38 +505,6 @@ export class MSTeamsService implements IMSTeamsService, ICommunicationService {
         } catch (error) {
             console.log(error);
         }
-    }
-
-    async verifyConnection(
-        params: any,
-    ): Promise<CommunicationManagementConnectionStatus> {
-        const integration =
-            await this.integrationService.getFullIntegrationDetails(
-                params.organizationAndTeamData,
-                PlatformType.MSTEAMS,
-            );
-
-        if (!integration)
-            return {
-                isSetupComplete: false,
-                hasConnection: false,
-                platformName: PlatformType.MSTEAMS,
-            };
-
-        const integrationConfig = await this.integrationConfigService.findOne({
-            integration: { uuid: integration.uuid },
-        });
-
-        const isSetupComplete =
-            integration?.authIntegration?.authDetails?.tenantId &&
-            integrationConfig?.configValue?.length > 0;
-
-        return {
-            isSetupComplete,
-            hasConnection: !!integration,
-            platformName: PlatformType.MSTEAMS,
-            category: IntegrationCategory.COMMUNICATION,
-        };
     }
 
     async addIntegration(

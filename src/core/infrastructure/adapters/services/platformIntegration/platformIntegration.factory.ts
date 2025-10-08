@@ -1,5 +1,4 @@
 import { ICodeManagementService } from '@/core/domain/platformIntegrations/interfaces/code-management.interface';
-import { ICommunicationService } from '@/core/domain/platformIntegrations/interfaces/communication.interface';
 import { IProjectManagementService } from '@/core/domain/platformIntegrations/interfaces/project-management.interface';
 import { Injectable } from '@nestjs/common';
 
@@ -10,7 +9,6 @@ export class PlatformIntegrationFactory {
         IProjectManagementService
     >();
     private codeManagementServices = new Map<string, ICodeManagementService>();
-    private communicationServices = new Map<string, ICommunicationService>();
 
     registerProjectManagementService(
         type: string,
@@ -24,10 +22,6 @@ export class PlatformIntegrationFactory {
         service: ICodeManagementService,
     ) {
         this.codeManagementServices.set(type, service);
-    }
-
-    registerCommunicationService(type: string, service: ICommunicationService) {
-        this.communicationServices.set(type, service);
     }
 
     getProjectManagementService(type: string): IProjectManagementService {
@@ -45,16 +39,6 @@ export class PlatformIntegrationFactory {
         if (!service) {
             throw new Error(`Repository service for type '${type}' not found.`);
         }
-        return service;
-    }
-
-    getCommunicationService(type: string): ICommunicationService {
-        const service = this.communicationServices.get(type);
-
-        if (!service) {
-            throw new Error(`Repository service for type '${type}' not found.`);
-        }
-
         return service;
     }
 }
