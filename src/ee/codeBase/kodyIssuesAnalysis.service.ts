@@ -6,20 +6,14 @@ import {
     prompt_kodyissues_merge_suggestions_into_issues_system,
     prompt_kodyissues_resolve_issues_system,
 } from '@/shared/utils/langchainCommon/prompts/kodyIssuesManagement';
-import {
-    IParametersService,
-    PARAMETERS_SERVICE_TOKEN,
-} from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { contextToGenerateIssues } from '../../core/infrastructure/adapters/services/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 import {
-    LLMProviderService,
     LLMModelProvider,
     PromptRunnerService,
     ParserType,
     PromptRole,
     BYOKConfig,
-    TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
 import { environment } from '@/ee/configs/environment';
 import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
@@ -31,23 +25,14 @@ export const KODY_ISSUES_ANALYSIS_SERVICE_TOKEN = Symbol(
 
 @Injectable()
 export class KodyIssuesAnalysisService {
-    private readonly tokenTracker: TokenTrackingHandler;
-
     public readonly isCloud: boolean;
     public readonly isDevelopment: boolean;
 
     constructor(
         private readonly logger: PinoLoggerService,
-
-        private readonly llmProviderService: LLMProviderService,
-
-        @Inject(PARAMETERS_SERVICE_TOKEN)
-        private readonly parametersService: IParametersService,
-
         private readonly promptRunnerService: PromptRunnerService,
         private readonly observabilityService: ObservabilityService,
     ) {
-        this.tokenTracker = new TokenTrackingHandler();
         this.isCloud = environment.API_CLOUD_MODE;
         this.isDevelopment = environment.API_DEVELOPMENT_MODE;
     }
@@ -58,70 +43,63 @@ export class KodyIssuesAnalysisService {
         promptData: any,
         byokConfig: BYOKConfig | null,
     ): Promise<any> {
+        const provider = LLMModelProvider.GEMINI_2_5_PRO;
+        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+        const runName = 'mergeSuggestionsIntoIssues';
+
+        const spanName = `${KodyIssuesAnalysisService.name}::${runName}`;
+        const spanAttrs = {
+            type: 'byok',
+            organizationId: organizationAndTeamData?.organizationId,
+            prNumber: pullRequest?.number,
+        };
+
         try {
-            const provider = LLMModelProvider.GEMINI_2_5_PRO;
-            const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
-
-            const runName = 'mergeSuggestionsIntoIssues';
-            this.observabilityService.startSpan(
-                `${KodyIssuesAnalysisService.name}::${runName}`,
-            );
-
-            const promptRunner = new BYOKPromptRunnerService(
-                this.promptRunnerService,
-                provider,
-                fallbackProvider,
-                byokConfig,
-            );
-
-            const result = await promptRunner
-                .builder()
-                .setParser(ParserType.STRING)
-                .setLLMJsonMode(true)
-                .setPayload(promptData)
-                .addPrompt({
-                    prompt: prompt_kodyissues_merge_suggestions_into_issues_system,
-                    role: PromptRole.SYSTEM,
-                })
-                .addPrompt({
-                    prompt: (input) => JSON.stringify(input, null, 2),
-                    role: PromptRole.USER,
-                })
-                .setParser(ParserType.STRING)
-                .setLLMJsonMode(true)
-                .setPayload(promptData)
-                .addPrompt({
-                    prompt: prompt_kodyissues_merge_suggestions_into_issues_system,
-                    role: PromptRole.SYSTEM,
-                })
-                .addPrompt({
-                    prompt: (input) => JSON.stringify(input, null, 2),
-                    role: PromptRole.USER,
-                })
-                .addMetadata({
-                    organizationAndTeamData: organizationAndTeamData,
-                    prNumber: pullRequest.number,
-                    provider: byokConfig?.main?.provider || provider,
-                    fallbackProvider:
-                        byokConfig?.fallback?.provider || fallbackProvider,
-                    model: byokConfig?.main?.model,
-                    fallbackModel: byokConfig?.fallback?.model,
-                    runName,
-                })
-                .setRunName('mergeSuggestionsIntoIssues')
-                .addTags([
-                    ...this.buildTags(provider, 'primary'),
-                    ...this.buildTags(fallbackProvider, 'fallback'),
-                ])
-                .addCallbacks([this.tokenTracker])
-                .setTemperature(0)
-                .execute();
-
-            this.observabilityService.endSpan(this.tokenTracker, {
-                organizationId: organizationAndTeamData.organizationId,
-                prNumber: pullRequest.number,
-                type: 'byok',
+            const { result } = await this.observabilityService.runLLMInSpan({
+                spanName,
                 runName,
+                attrs: spanAttrs,
+                exec: async (callbacks) => {
+                    const promptRunner = new BYOKPromptRunnerService(
+                        this.promptRunnerService,
+                        provider,
+                        fallbackProvider,
+                        byokConfig,
+                    );
+
+                    return await promptRunner
+                        .builder()
+                        .setParser(ParserType.STRING)
+                        .setLLMJsonMode(true)
+                        .setPayload(promptData)
+                        .addPrompt({
+                            prompt: prompt_kodyissues_merge_suggestions_into_issues_system,
+                            role: PromptRole.SYSTEM,
+                        })
+                        .addPrompt({
+                            prompt: (input) => JSON.stringify(input, null, 2),
+                            role: PromptRole.USER,
+                        })
+                        .addMetadata({
+                            organizationAndTeamData,
+                            prNumber: pullRequest?.number,
+                            provider: byokConfig?.main?.provider || provider,
+                            fallbackProvider:
+                                byokConfig?.fallback?.provider ||
+                                fallbackProvider,
+                            model: byokConfig?.main?.model,
+                            fallbackModel: byokConfig?.fallback?.model,
+                            runName,
+                        })
+                        .addTags([
+                            ...this.buildTags(provider, 'primary'),
+                            ...this.buildTags(fallbackProvider, 'fallback'),
+                        ])
+                        .addCallbacks(callbacks)
+                        .setRunName(runName)
+                        .setTemperature(0)
+                        .execute();
+                },
             });
 
             if (!result) {
@@ -163,10 +141,18 @@ export class KodyIssuesAnalysisService {
         promptData: any,
         byokConfig: BYOKConfig | null,
     ): Promise<any> {
-        try {
-            const provider = LLMModelProvider.GEMINI_2_5_PRO;
-            const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+        const provider = LLMModelProvider.GEMINI_2_5_PRO;
+        const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+        const runName = 'resolveExistingIssues';
 
+        const spanName = `${KodyIssuesAnalysisService.name}::${runName}`;
+        const spanAttrs = {
+            type: 'byok',
+            organizationId: context.organizationAndTeamData?.organizationId,
+            prNumber: context.pullRequest?.number,
+        };
+
+        try {
             const promptRunner = new BYOKPromptRunnerService(
                 this.promptRunnerService,
                 provider,
@@ -174,69 +160,41 @@ export class KodyIssuesAnalysisService {
                 byokConfig,
             );
 
-            const runName = 'resolveExistingIssues';
-            this.observabilityService.startSpan(
-                `${KodyIssuesAnalysisService.name}::${runName}`,
-            );
-
-            const result = await promptRunner
-                .builder()
-                .setParser(ParserType.STRING)
-                .setLLMJsonMode(true)
-                .setPayload(promptData)
-                .addPrompt({
-                    prompt: prompt_kodyissues_resolve_issues_system,
-                    role: PromptRole.SYSTEM,
-                })
-                .addPrompt({
-                    prompt: (input) => JSON.stringify(input, null, 2),
-                    role: PromptRole.USER,
-                })
-                .addMetadata({
-                    organizationAndTeamData: context.organizationAndTeamData,
-                    prNumber: context.pullRequest.number,
-                    provider: byokConfig?.main?.provider || provider,
-                    fallbackProvider:
-                        byokConfig?.fallback?.provider || fallbackProvider,
-                    model: byokConfig?.main?.model,
-                    fallbackModel: byokConfig?.fallback?.model,
-                    runName,
-                })
-                .setParser(ParserType.STRING)
-                .setLLMJsonMode(true)
-                .setPayload(promptData)
-                .addPrompt({
-                    prompt: prompt_kodyissues_resolve_issues_system,
-                    role: PromptRole.SYSTEM,
-                })
-                .addPrompt({
-                    prompt: (input) => JSON.stringify(input, null, 2),
-                    role: PromptRole.USER,
-                })
-                .addMetadata({
-                    organizationAndTeamData: context.organizationAndTeamData,
-                    prNumber: context.pullRequest.number,
-                    provider: byokConfig?.main?.provider || provider,
-                    fallbackProvider:
-                        byokConfig?.fallback?.provider || fallbackProvider,
-                    model: byokConfig?.main?.model,
-                    fallbackModel: byokConfig?.fallback?.model,
-                    runName,
-                })
-                .setRunName(runName)
-                .addTags([
-                    ...this.buildTags(provider, 'primary'),
-                    ...this.buildTags(fallbackProvider, 'fallback'),
-                ])
-                .addCallbacks([this.tokenTracker])
-                .setTemperature(0)
-                .execute();
-
-            this.observabilityService.endSpan(this.tokenTracker, {
-                organizationId: context.organizationAndTeamData.organizationId,
-                prNumber: context.pullRequest.number,
-                type: 'byok',
+            const { result } = await this.observabilityService.runLLMInSpan({
+                spanName,
                 runName,
+                attrs: spanAttrs,
+                exec: async (callbacks) => {
+                    return await promptRunner
+                        .builder()
+                        .setParser(ParserType.STRING)
+                        .setLLMJsonMode(true)
+                        .setPayload(promptData)
+                        .addPrompt({
+                            prompt: prompt_kodyissues_resolve_issues_system,
+                            role: PromptRole.SYSTEM,
+                        })
+                        .addPrompt({
+                            prompt: (input) => JSON.stringify(input, null, 2),
+                            role: PromptRole.USER,
+                        })
+                        .addMetadata({
+                            organizationAndTeamData:
+                                context.organizationAndTeamData,
+                            prNumber: context.pullRequest.number,
+                            provider: byokConfig?.main?.provider || provider,
+                            fallbackProvider:
+                                byokConfig?.fallback?.provider ||
+                                fallbackProvider,
+                            model: byokConfig?.main?.model,
+                            fallbackModel: byokConfig?.fallback?.model,
+                            runName,
+                        })
+                        .addCallbacks(callbacks) // captura usage/token por provedor
+                        .setRunName(runName)
+                        .setTemperature(0)
+                        .execute();
+                },
             });
 
             if (!result) {

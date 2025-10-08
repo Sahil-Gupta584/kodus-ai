@@ -47,7 +47,6 @@ import {
     PromptRunnerService,
     PromptRole,
     ParserType,
-    TokenTrackingHandler,
 } from '@kodus/kodus-common/llm';
 import { status as Status } from '@grpc/grpc-js';
 import { ObservabilityService } from '@/core/infrastructure/adapters/services/logger/observability.service';
@@ -56,26 +55,24 @@ import { ObservabilityService } from '@/core/infrastructure/adapters/services/lo
 export class CodeAstAnalysisService
     implements IASTAnalysisService, OnModuleInit
 {
-    private readonly tokenTracker: TokenTrackingHandler;
     private readonly llmResponseProcessor: LLMResponseProcessor;
     private astMicroservice: ASTAnalyzerServiceClient;
     private taskMicroservice: TaskManagerServiceClient;
 
     constructor(
-        private readonly codeManagementService: CodeManagementService,
-        private readonly logger: PinoLoggerService,
-
         @Inject('AST_MICROSERVICE')
         private readonly astMicroserviceClient: ClientGrpc,
 
         @Inject('TASK_MICROSERVICE')
         private readonly taskMicroserviceClient: ClientGrpc,
 
+        private readonly codeManagementService: CodeManagementService,
+        private readonly logger: PinoLoggerService,
+
         private readonly promptRunnerService: PromptRunnerService,
         private readonly observabilityService: ObservabilityService,
     ) {
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
-        this.tokenTracker = new TokenTrackingHandler();
     }
 
     onModuleInit() {
@@ -94,48 +91,58 @@ export class CodeAstAnalysisService
         context: AnalysisContext,
         reviewModeResponse: ReviewModeResponse,
     ): Promise<AIAnalysisResult> {
+        const provider = LLMModelProvider.NOVITA_DEEPSEEK_V3_0324;
+        const fallbackProvider = LLMModelProvider.OPENAI_GPT_4O;
+        const runName = 'CodeASTAnalysisAI';
+
+        const payload = await this.prepareAnalysisContext(context);
+
+        // atributos de negócio do span
+        const spanName = `${CodeAstAnalysisService.name}::${runName}`;
+        const spanAttrs = {
+            type: 'system',
+            organizationId: context?.organizationAndTeamData?.organizationId,
+            prNumber: context?.pullRequest?.number,
+        };
+
         try {
-            const provider = LLMModelProvider.NOVITA_DEEPSEEK_V3_0324;
-            const fallbackProvider = LLMModelProvider.OPENAI_GPT_4O;
-            const runName = 'CodeASTAnalysisAI';
-
-            const payload = await this.prepareAnalysisContext(context);
-
-            this.observabilityService.startSpan(
-                `${CodeAstAnalysisService.name}::${runName}`,
-            );
-
-            const analysis = await this.promptRunnerService
-                .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
-                .setParser(ParserType.STRING)
-                .setLLMJsonMode(true)
-                .setPayload(payload)
-                .addPrompt({
-                    role: PromptRole.USER,
-                    prompt: prompt_detectBreakingChanges,
-                })
-                .addMetadata({
-                    organizationId:
-                        context?.organizationAndTeamData?.organizationId,
-                    teamId: context?.organizationAndTeamData?.teamId,
-                    pullRequestId: context?.pullRequest?.number,
+            // roda toda a chamada de LLM dentro de um span, com captura de tokens
+            const { result: analysis } =
+                await this.observabilityService.runLLMInSpan<string>({
+                    spanName,
                     runName,
-                })
-                .setTemperature(0)
-                .addCallbacks([this.tokenTracker])
-                .setRunName(runName)
-                .execute();
-
-            this.observabilityService.endSpan(this.tokenTracker, {
-                organizationId: context.organizationAndTeamData.organizationId,
-                prNumber: context.pullRequest.number,
-                type: 'system',
-                runName,
-            });
+                    attrs: spanAttrs,
+                    exec: async (callbacks) => {
+                        return await this.promptRunnerService
+                            .builder()
+                            .setProviders({
+                                main: provider,
+                                fallback: fallbackProvider,
+                            })
+                            .setParser(ParserType.STRING)
+                            .setLLMJsonMode(true)
+                            .setPayload(payload)
+                            .addPrompt({
+                                role: PromptRole.USER,
+                                prompt: prompt_detectBreakingChanges,
+                            })
+                            .addMetadata({
+                                organizationId:
+                                    context?.organizationAndTeamData
+                                        ?.organizationId,
+                                teamId: context?.organizationAndTeamData
+                                    ?.teamId,
+                                pullRequestId: context?.pullRequest?.number,
+                                provider,
+                                fallbackProvider,
+                                runName,
+                            })
+                            .setTemperature(0)
+                            .addCallbacks(callbacks) // LangChain callbacks para contar tokens
+                            .setRunName(runName)
+                            .execute();
+                    },
+                });
 
             if (!analysis) {
                 const message = `No response from LLM for PR#${context.pullRequest.number}`;
@@ -151,7 +158,7 @@ export class CodeAstAnalysisService
                 throw new Error(message);
             }
 
-            // Process result and tokens
+            // pós-processamento igual ao original
             const analysisResult = this.llmResponseProcessor.processResponse(
                 context.organizationAndTeamData,
                 context.pullRequest.number,

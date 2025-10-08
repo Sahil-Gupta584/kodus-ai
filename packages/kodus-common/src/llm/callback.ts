@@ -2,36 +2,105 @@
 
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { Serialized } from '@langchain/core/load/serializable';
-import { LLMResult } from '@langchain/core/outputs';
+import { BaseMessage, AIMessage } from '@langchain/core/messages';
+import { LLMResult, ChatGeneration, Generation } from '@langchain/core/outputs';
 import { ChainValues } from '@langchain/core/utils/types';
-import { BaseMessage } from '@langchain/core/messages';
 
 export type TokenUsage = {
     input_tokens?: number;
     output_tokens?: number;
     total_tokens?: number;
+    /** quando disponível (ex.: modelos de reasoning) */
+    output_reasoning_tokens?: number;
+
+    /** metadados úteis p/ observabilidade */
     model?: string;
     runId?: string;
     parentRunId?: string;
-    output_reasoning_tokens?: number;
     runName?: string;
+};
+
+type OutputTokenDetails = {
+    reasoning_tokens?: number;
+    reasoning?: number;
+};
+
+type OpenAIStyleTokenUsage = {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+    output_token_details?: { reasoning_tokens?: number; reasoning?: number };
+};
+
+type AnthropicStyleUsage = {
+    input_tokens?: number;
+    output_tokens?: number;
+    total_tokens?: number;
+    output_token_details?: { reasoning_tokens?: number; reasoning?: number };
+};
+
+function isOpenAIUsage(u: unknown): u is OpenAIStyleTokenUsage {
+    return (
+        !!u &&
+        ('promptTokens' in (u as any) ||
+            'completionTokens' in (u as any) ||
+            'totalTokens' in (u as any))
+    );
+}
+
+type GeminiStyleUsage = {
+    /** entrada */
+    promptTokenCount?: number;
+    /** saída (às vezes) */
+    candidatesTokenCount?: number;
+    /** saída (variante) */
+    completionTokenCount?: number;
+    /** total */
+    totalTokenCount?: number;
+};
+
+type LLMOutputLike = {
+    /** OpenAI / compat */
+    tokenUsage?: OpenAIStyleTokenUsage;
+    /** Anthropic / compat */
+    usage?: AnthropicStyleUsage;
+    usage_metadata?: AnthropicStyleUsage;
+    /** Gemini / Vertex */
+    usageMetadata?: GeminiStyleUsage;
+};
+
+type MaybeAIMessage = AIMessage & {
+    usage_metadata?: {
+        input_tokens?: number;
+        output_tokens?: number;
+        total_tokens?: number;
+        output_token_details?: OutputTokenDetails;
+        output_tokens_details?: OutputTokenDetails;
+    };
+    response_metadata?: {
+        tokenUsage?: OpenAIStyleTokenUsage;
+        usage?: AnthropicStyleUsage;
+    };
 };
 
 export class TokenTrackingHandler extends BaseCallbackHandler {
     name = 'TokenTrackingHandler';
 
-    private readonly finalTokenUsages: Map<string, TokenUsage[]> = new Map();
+    private readonly finalTokenUsages = new Map<string, TokenUsage[]>();
     private readonly completedRuns: string[] = [];
-    private readonly inProgressTokenUsages: Map<string, Partial<TokenUsage>> =
-        new Map();
-    private readonly activeChains: Map<string, string> = new Map();
-    private readonly parentRunMap: Map<string, string> = new Map();
+    private readonly inProgressTokenUsages = new Map<
+        string,
+        Partial<TokenUsage>
+    >();
+    private readonly activeChains = new Map<string, string>(); // runId -> runName
+    private readonly parentRunMap = new Map<string, string>(); // childRunId -> parentRunId
 
-    // ---------- utils ----------
+    // ===================== utils =====================
 
     private getRootRunId(runId: string): string {
         const visited = new Set<string>();
         let current: string | undefined = runId;
+
         while (
             current &&
             this.parentRunMap.has(current) &&
@@ -45,7 +114,7 @@ export class TokenTrackingHandler extends BaseCallbackHandler {
         return current ?? runId;
     }
 
-    private findAncestorChainName(startRunId: string): string | undefined {
+    private findAncestorChainName(startRunId?: string): string | undefined {
         let currentRunId: string | undefined = startRunId;
         for (let i = 0; i < 5 && currentRunId; i++) {
             const runName = this.activeChains.get(currentRunId);
@@ -55,129 +124,140 @@ export class TokenTrackingHandler extends BaseCallbackHandler {
         return undefined;
     }
 
-    // ---------- token usage normalization ----------
+    private firstChatGeneration(result: LLMResult): ChatGeneration | undefined {
+        const g0: Generation[] | undefined = result.generations?.[0];
+        if (!Array.isArray(g0) || g0.length === 0) return undefined;
+        const first = g0[0];
+        // Só ChatGeneration tem .message
+        return (first as ChatGeneration)?.message
+            ? (first as ChatGeneration)
+            : undefined;
+    }
 
-    /** tenta extrair usage também do AIMessage da geração, como fallback */
+    // ===================== token usage normalization =====================
+
+    /** Fallback: tenta extrair usage de AIMessage retornado pelo modelo */
     private mergeUsageFromMessage(
         usage: Omit<TokenUsage, 'model' | 'runId' | 'parentRunId'>,
         output: LLMResult,
     ) {
-        const gens = (output as any)?.generations;
-        const firstGen: any = Array.isArray(gens)
-            ? Array.isArray(gens[0])
-                ? gens[0][0]
-                : gens[0]
-            : undefined;
-        const msg = firstGen?.message;
+        const first = this.firstChatGeneration(output);
+        const msg = first?.message as MaybeAIMessage | undefined;
+        if (!msg) return;
 
-        // AIMessage.usage_metadata (padronizado pelo LangChain)
-        if (msg?.usage_metadata) {
-            usage.input_tokens ??= msg.usage_metadata.input_tokens;
-            usage.output_tokens ??= msg.usage_metadata.output_tokens;
-            usage.total_tokens ??= msg.usage_metadata.total_tokens;
-
-            // reasoning tokens (quando presentes)
-            const outDet = msg.usage_metadata?.output_token_details;
-            if (outDet?.reasoning_tokens != null) {
-                (usage as any).output_reasoning_tokens =
-                    outDet.reasoning_tokens;
+        // Padrão UsageMetadata (LangChain)
+        const um = msg.usage_metadata;
+        if (um) {
+            usage.input_tokens ??= um.input_tokens;
+            usage.output_tokens ??= um.output_tokens;
+            usage.total_tokens ??= um.total_tokens;
+            const det = um.output_token_details ?? um.output_tokens_details;
+            if (
+                det &&
+                (det.reasoning_tokens != null || det.reasoning != undefined)
+            ) {
+                usage.output_reasoning_tokens =
+                    det.reasoning_tokens ?? det.reasoning;
             }
         }
 
-        // AIMessage.response_metadata.tokenUsage (OpenAI-style)
-        const rm = msg?.response_metadata ?? {};
-        const tu = rm?.tokenUsage ?? rm?.usage ?? undefined;
+        const rm = msg.response_metadata;
+        const tu = rm?.tokenUsage ?? rm?.usage;
         if (tu) {
-            usage.input_tokens ??= tu.promptTokens ?? tu.input_tokens;
-            usage.output_tokens ??= tu.completionTokens ?? tu.output_tokens;
-            usage.total_tokens ??= tu.totalTokens ?? tu.total_tokens;
-            const det = tu.output_token_details ?? tu.outputTokenDetails;
-            if (det?.reasoning_tokens != null) {
-                (usage as any).output_reasoning_tokens = det.reasoning_tokens;
+            if (isOpenAIUsage(tu)) {
+                usage.input_tokens ??= tu.promptTokens;
+                usage.output_tokens ??= tu.completionTokens;
+                usage.total_tokens ??=
+                    tu.totalTokens ??
+                    (tu.promptTokens ?? 0) + (tu.completionTokens ?? 0);
+                const det = tu.output_token_details;
+                if (det?.reasoning_tokens != null)
+                    usage.output_reasoning_tokens = det.reasoning_tokens;
+            } else {
+                const a = tu;
+                usage.input_tokens ??= a.input_tokens;
+                usage.output_tokens ??= a.output_tokens;
+                usage.total_tokens ??=
+                    a.total_tokens ??
+                    (a.input_tokens ?? 0) + (a.output_tokens ?? 0);
+                const det = a.output_token_details;
+                if (det?.reasoning_tokens != null)
+                    usage.output_reasoning_tokens = det.reasoning_tokens;
             }
         }
     }
 
     /**
-     * Normaliza formatos comuns:
-     * - OpenAI / OpenAI-compatível: llmOutput.tokenUsage {promptTokens, completionTokens, totalTokens}
-     * - Anthropic: llmOutput.usage/usage_metadata {input_tokens, output_tokens, total_tokens}
-     * - Gemini / Vertex: llmOutput.usageMetadata {promptTokenCount, candidatesTokenCount, totalTokenCount}
+     * Normaliza formatos:
+     * - OpenAI/compat: llmOutput.tokenUsage {promptTokens, completionTokens, totalTokens}
+     * - Anthropic: llmOutput.usage / usage_metadata {input_tokens, output_tokens, total_tokens}
+     * - Gemini/Vertex: llmOutput.usageMetadata {promptTokenCount, candidatesTokenCount/completionTokenCount, totalTokenCount}
      */
     private extractUsageMetadata(
         output: LLMResult,
     ): Omit<TokenUsage, 'model' | 'runId' | 'parentRunId'> {
-        try {
-            const usage: Omit<TokenUsage, 'model' | 'runId' | 'parentRunId'> =
-                {};
-            const o: any = output?.llmOutput ?? {};
+        const usage: Omit<TokenUsage, 'model' | 'runId' | 'parentRunId'> = {};
+        const o = output?.llmOutput as LLMOutputLike | undefined;
 
-            if (o?.tokenUsage) {
-                // OpenAI / compat.
-                usage.input_tokens = o.tokenUsage.promptTokens ?? 0;
-                usage.output_tokens = o.tokenUsage.completionTokens ?? 0;
-                usage.total_tokens =
-                    o.tokenUsage.totalTokens ??
-                    (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
-            } else if (o?.usage || o?.usage_metadata) {
-                // Anthropic / outros
-                const u = o.usage ?? o.usage_metadata;
-                usage.input_tokens =
-                    u.input_tokens ?? u.prompt_tokens ?? usage.input_tokens;
-                usage.output_tokens =
-                    u.output_tokens ??
-                    u.completion_tokens ??
-                    usage.output_tokens;
-                usage.total_tokens =
-                    u.total_tokens ??
-                    (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
+        if (o?.tokenUsage) {
+            usage.input_tokens = o.tokenUsage.promptTokens ?? 0;
+            usage.output_tokens = o.tokenUsage.completionTokens ?? 0;
+            usage.total_tokens =
+                o.tokenUsage.totalTokens ??
+                (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
 
-                const outDet = u?.output_token_details ?? u?.outputTokenDetails;
-                if (outDet?.reasoning_tokens != null) {
-                    (usage as any).output_reasoning_tokens =
-                        outDet.reasoning_tokens;
-                }
-            } else if (o?.usageMetadata) {
-                // Google Gemini / Vertex
-                const u = o.usageMetadata;
-                usage.input_tokens =
-                    u.promptTokenCount ?? usage.input_tokens ?? 0;
-                usage.output_tokens =
-                    u.candidatesTokenCount ??
-                    u.completionTokenCount ??
-                    usage.output_tokens ??
-                    0;
-                usage.total_tokens =
-                    u.totalTokenCount ??
-                    (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
+            const det = o.tokenUsage.output_token_details;
+            if (det?.reasoning_tokens != null) {
+                usage.output_reasoning_tokens = det.reasoning_tokens;
             }
+        } else if (o?.usage || o?.usage_metadata) {
+            const u = (o.usage ?? o.usage_metadata) as AnthropicStyleUsage;
+            usage.input_tokens = u.input_tokens ?? usage.input_tokens;
+            usage.output_tokens = u.output_tokens ?? usage.output_tokens;
+            usage.total_tokens =
+                u.total_tokens ??
+                (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
 
-            // fallback: tenta puxar do AIMessage
-            this.mergeUsageFromMessage(usage, output);
-
-            if (
-                usage.total_tokens == null &&
-                (usage.input_tokens != null || usage.output_tokens != null)
-            ) {
-                usage.total_tokens =
-                    (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
+            const det = u.output_token_details;
+            if (det?.reasoning_tokens != null) {
+                usage.output_reasoning_tokens = det.reasoning_tokens;
             }
-            return usage;
-        } catch {
-            return {};
+        } else if (o?.usageMetadata) {
+            const u = o.usageMetadata;
+            usage.input_tokens = u.promptTokenCount ?? usage.input_tokens ?? 0;
+            usage.output_tokens =
+                u.candidatesTokenCount ??
+                u.completionTokenCount ??
+                usage.output_tokens ??
+                0;
+            usage.total_tokens =
+                u.totalTokenCount ??
+                (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
         }
+
+        // Fallback: tenta puxar do AIMessage
+        this.mergeUsageFromMessage(usage, output);
+
+        if (
+            usage.total_tokens == null &&
+            (usage.input_tokens != null || usage.output_tokens != null)
+        ) {
+            usage.total_tokens =
+                (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
+        }
+        return usage;
     }
 
-    // ---------- chains ----------
+    // ===================== Chains =====================
 
     handleChainStart(
         chain: Serialized,
-        inputs: ChainValues,
+        _inputs: ChainValues,
         runId: string,
         parentRunId?: string,
-        tags?: string[],
-        metadata?: Record<string, unknown>,
-        runType?: string,
+        _tags?: string[],
+        _metadata?: Record<string, unknown>,
+        _runType?: string,
         runName?: string,
     ) {
         if (runName) this.activeChains.set(runId, runName);
@@ -185,17 +265,22 @@ export class TokenTrackingHandler extends BaseCallbackHandler {
     }
 
     handleChainEnd(
-        outputs: ChainValues,
+        _outputs: ChainValues,
         runId: string,
-        parentRunId?: string,
-        tags?: string[],
-        kwargs?: { inputs?: Record<string, unknown> },
+        _parentRunId?: string,
     ) {
         this.activeChains.delete(runId);
         this.parentRunMap.delete(runId);
     }
 
-    // ---------- LLMs puros ----------
+    handleChainError(_e: Error, runId: string) {
+        // limpeza defensiva
+        this.activeChains.delete(runId);
+        this.inProgressTokenUsages.delete(runId);
+        this.parentRunMap.delete(runId);
+    }
+
+    // ===================== LLM (completion) =====================
 
     handleLLMStart(
         llm: Serialized,
@@ -210,10 +295,12 @@ export class TokenTrackingHandler extends BaseCallbackHandler {
         runName?: string,
     ) {
         const model =
-            (metadata as any)?.ls_model_name ||
+            metadata?.ls_model_name ||
             extraParams?.invocation_params?.model ||
             extraParams?.invocation_params?.modelName ||
-            (llm as any)?.kwargs?.model ||
+            // alguns wrappers expõem o model em kwargs
+            (llm as unknown as { kwargs?: { model?: string } })?.kwargs
+                ?.model ||
             llm?.name ||
             'unknown';
 
@@ -232,24 +319,15 @@ export class TokenTrackingHandler extends BaseCallbackHandler {
         this.inProgressTokenUsages.set(runId, usage);
     }
 
-    handleLLMEnd(
-        output: LLMResult,
-        runId: string,
-        parentRunId?: string,
-        _tags?: string[],
-        _extraParams?: Record<string, unknown>,
-    ) {
+    handleLLMEnd(output: LLMResult, runId: string, parentRunId?: string) {
         const current = this.inProgressTokenUsages.get(runId);
         if (!current) {
-            console.warn(
-                'No in-progress token usage found for LLM end event.',
-                { runId, parentRunId },
-            );
+            // nada para agregar (já limpo/erro anterior?)
             return;
         }
 
-        const usage = this.extractUsageMetadata(output);
-        const finalUsage: TokenUsage = { ...current, ...usage };
+        const norm = this.extractUsageMetadata(output);
+        const finalUsage: TokenUsage = { ...current, ...norm };
 
         const runKey = this.getRootRunId(runId);
         const bucket = this.finalTokenUsages.get(runKey) ?? [];
@@ -262,7 +340,12 @@ export class TokenTrackingHandler extends BaseCallbackHandler {
         this.parentRunMap.delete(runId);
     }
 
-    // ---------- Chat models ----------
+    handleLLMError(_e: Error, runId: string) {
+        this.inProgressTokenUsages.delete(runId);
+        this.parentRunMap.delete(runId);
+    }
+
+    // ===================== ChatModel =====================
 
     handleChatModelStart(
         llm: Serialized,
@@ -277,10 +360,11 @@ export class TokenTrackingHandler extends BaseCallbackHandler {
         runName?: string,
     ) {
         const model =
-            (metadata as any)?.ls_model_name ||
+            metadata?.ls_model_name ||
             extraParams?.invocation_params?.model ||
             extraParams?.invocation_params?.modelName ||
-            (llm as any)?.kwargs?.model ||
+            (llm as unknown as { kwargs?: { model?: string } })?.kwargs
+                ?.model ||
             llm?.name ||
             'unknown';
 
@@ -299,8 +383,22 @@ export class TokenTrackingHandler extends BaseCallbackHandler {
         this.inProgressTokenUsages.set(runId, usage);
     }
 
-    // ---------- consumo / reset ----------
+    handleChatModelEnd(output: LLMResult, runId: string, parentRunId?: string) {
+        // mesma lógica do LLMEnd — ChatModels também retornam LLMResult
+        this.handleLLMEnd(output, runId, parentRunId);
+    }
 
+    handleChatModelError(_e: Error, runId: string) {
+        this.inProgressTokenUsages.delete(runId);
+        this.parentRunMap.delete(runId);
+    }
+
+    // ===================== consumo / reset =====================
+
+    /**
+     * Retorna um bucket completo de usages (por run raiz). Se `targetRunName` for passado,
+     * tenta priorizar o primeiro bucket que contenha esse nome.
+     */
     consumeCompletedRunUsages(targetRunName?: string): {
         runKey: string | null;
         runName?: string;
@@ -309,12 +407,13 @@ export class TokenTrackingHandler extends BaseCallbackHandler {
         let runKey: string | null = null;
 
         if (targetRunName) {
-            const index = this.completedRuns.findIndex((key) => {
+            const idx = this.completedRuns.findIndex((key) => {
                 const payload = this.finalTokenUsages.get(key) ?? [];
                 return payload.some((u) => u.runName === targetRunName);
             });
-            if (index >= 0)
-                runKey = this.completedRuns.splice(index, 1)[0] ?? null;
+            if (idx >= 0) {
+                runKey = this.completedRuns.splice(idx, 1)[0] ?? null;
+            }
         }
 
         if (!runKey) runKey = this.completedRuns.shift() ?? null;
