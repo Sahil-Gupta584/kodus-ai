@@ -91,6 +91,7 @@ export class ParametersRepository implements IParametersRepository {
                         organizationName: organizationName,
                     }),
                 })
+                .andWhere('parameters.active = :active', { active: true })
                 .getOne();
 
             if (!response) {
@@ -228,6 +229,7 @@ export class ParametersRepository implements IParametersRepository {
             .andWhere('parameters.team_id = :teamId', {
                 teamId: organizationAndTeamData.teamId,
             })
+            .andWhere('parameters.active = :active', { active: true })
             .getOne();
 
         return mapSimpleModelToEntity(

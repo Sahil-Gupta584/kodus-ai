@@ -7,6 +7,7 @@ export class ParametersEntity<K extends ParametersKey>
     implements IParameters<K>
 {
     private _uuid: string;
+    private _active: boolean;
     private _configKey: K;
     private _configValue: ConfigValueMap[K];
     private _team?: Partial<ITeam>;
@@ -20,6 +21,7 @@ export class ParametersEntity<K extends ParametersKey>
         this._team = parameters.team;
         this._createdAt = parameters.createdAt;
         this._updatedAt = parameters.updatedAt;
+        this._active = parameters.active;
     }
 
     public static create<K extends ParametersKey>(
@@ -30,12 +32,13 @@ export class ParametersEntity<K extends ParametersKey>
 
     public toJson(): IParameters<K> {
         return {
-            uuid: this._uuid,
-            configKey: this._configKey,
-            configValue: this._configValue,
-            team: this._team,
-            createdAt: this._createdAt,
-            updatedAt: this._updatedAt,
+            uuid: this.uuid,
+            configKey: this.configKey,
+            configValue: this.configValue,
+            team: this.team,
+            createdAt: this.createdAt,
+            updatedAt: this.updatedAt,
+            active: this.active,
         };
     }
 
@@ -65,5 +68,9 @@ export class ParametersEntity<K extends ParametersKey>
 
     public get updatedAt() {
         return this._updatedAt;
+    }
+
+    public get active() {
+        return this._active;
     }
 }

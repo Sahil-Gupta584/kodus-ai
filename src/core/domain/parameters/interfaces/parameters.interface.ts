@@ -9,4 +9,5 @@ export interface IParameters<K extends ParametersKey> {
     configValue: ConfigValueMap[K];
     createdAt?: Date;
     updatedAt?: Date;
+    active: boolean;
 }

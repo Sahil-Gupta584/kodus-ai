@@ -53,7 +53,15 @@ export class MigrateCodeReviewParametersUseCase {
 
                     await this.parametersService.update(
                         { uuid: config.uuid },
-                        { configValue: newConfig },
+                        { active: false },
+                    );
+
+                    await this.parametersService.createOrUpdateConfig(
+                        ParametersKey.CODE_REVIEW_CONFIG,
+                        newConfig,
+                        {
+                            teamId: config.team.uuid,
+                        },
                     );
 
                     this.logger.log({

@@ -78,6 +78,7 @@ export class ParametersService implements IParametersService {
             const parameters = await this.findOne({
                 team: { uuid: organizationAndTeamData.teamId },
                 configKey: parametersKey,
+                active: true,
             });
 
             if (!parameters) {
@@ -88,6 +89,7 @@ export class ParametersService implements IParametersService {
                     configKey: parametersKey,
                     configValue: configValue,
                     team: { uuid: organizationAndTeamData.teamId },
+                    active: true,
                 });
             } else {
                 await this.update(
