@@ -14,6 +14,7 @@ import { CodeReviewPipelineContext } from '@/core/infrastructure/adapters/servic
 import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { IClusterizedSuggestion } from '@/core/domain/kodyFineTuning/interfaces/kodyFineTuning.interface';
 import { DeepPartial } from 'typeorm';
+import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
@@ -374,6 +375,10 @@ export type KodusConfigFile = DeepPartial<
     Omit<CodeReviewConfig, 'llmProvider' | 'languageResultPrompt' | 'kodyRules'>
 > & {
     version: string;
+    customMessages?: Pick<
+        IPullRequestMessages,
+        'startReviewMessage' | 'endReviewMessage' | 'globalSettings'
+    >;
 };
 
 export enum ReviewModeResponse {

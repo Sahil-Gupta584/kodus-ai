@@ -19,6 +19,7 @@ import {
     ReviewCadenceType,
 } from '@/config/types/general/codeReview.type';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+import { PullRequestMessageStatus } from '@/config/types/general/pullRequestMessages.type';
 
 class ReviewOptionsDto {
     @IsBoolean()
@@ -220,6 +221,49 @@ class V2PromptOverridesDto {
     severity?: V2PromptOverridesSeverityDto;
 }
 
+class CustomMessagesGlobalSettingsDto {
+    @IsOptional()
+    @IsBoolean()
+    hideComments?: boolean;
+}
+
+class CustomMessagesStartReviewMessageDto {
+    @IsOptional()
+    @IsEnum(PullRequestMessageStatus)
+    status?: PullRequestMessageStatus;
+
+    @IsOptional()
+    @IsString()
+    content?: string;
+}
+
+class CustomMessagesEndReviewMessageDto {
+    @IsOptional()
+    @IsEnum(PullRequestMessageStatus)
+    status?: PullRequestMessageStatus;
+
+    @IsOptional()
+    @IsString()
+    content?: string;
+}
+
+class CustomMessagesDto {
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => CustomMessagesGlobalSettingsDto)
+    globalSettings?: CustomMessagesGlobalSettingsDto;
+
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => CustomMessagesStartReviewMessageDto)
+    startReviewMessage?: CustomMessagesStartReviewMessageDto;
+
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => CustomMessagesEndReviewMessageDto)
+    endReviewMessage?: CustomMessagesEndReviewMessageDto;
+}
+
 class CodeReviewConfigWithoutLLMProviderDto {
     @IsOptional()
     @IsString()
@@ -301,11 +345,15 @@ class CodeReviewConfigWithoutLLMProviderDto {
     @IsEnum(CodeReviewVersion)
     codeReviewVersion?: CodeReviewVersion;
 
-    // v2-only prompt overrides (categories and severity guidance)
     @IsOptional()
     @ValidateNested()
     @Type(() => V2PromptOverridesDto)
     v2PromptOverrides?: V2PromptOverridesDto;
+
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => CustomMessagesDto)
+    customMessages?: CustomMessagesDto;
 }
 
 export class CreateOrUpdateCodeReviewParameterDto {
@@ -318,7 +366,7 @@ export class CreateOrUpdateCodeReviewParameterDto {
 
     @IsString()
     @IsOptional()
-    repositoryId?: string;
+    repositoryId: string;
 
     @IsString()
     @IsOptional()

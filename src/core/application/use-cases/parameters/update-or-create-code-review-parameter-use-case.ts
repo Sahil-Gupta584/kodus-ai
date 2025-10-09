@@ -13,10 +13,6 @@ import {
 } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { IntegrationConfigKey } from '@/shared/domain/enums/Integration-config-key.enum';
 import {
-    CodeReviewConfigWithoutLLMProvider,
-    CodeReviewVersion,
-} from '@/config/types/general/codeReview.type';
-import {
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
     ICodeReviewSettingsLogService,
 } from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
@@ -41,13 +37,7 @@ import { DeepPartial } from 'typeorm';
 import { getDefaultKodusConfigFile } from '@/shared/utils/validateCodeReviewConfigFile';
 import { produce } from 'immer';
 import { deepDifference, deepMerge } from '@/shared/utils/deep';
-
-interface CodeReviewParameterBody {
-    organizationAndTeamData: OrganizationAndTeamData;
-    configValue: DeepPartial<CodeReviewConfigWithoutLLMProvider>;
-    repositoryId?: string;
-    directoryId?: string;
-}
+import { CreateOrUpdateCodeReviewParameterDto } from '@/core/infrastructure/http/dtos/create-or-update-code-review-parameter.dto';
 
 @Injectable()
 export class UpdateOrCreateCodeReviewParameterUseCase {
@@ -70,7 +60,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
     ) {}
 
     async execute(
-        body: CodeReviewParameterBody,
+        body: CreateOrUpdateCodeReviewParameterDto,
     ): Promise<ParametersEntity<ParametersKey.CODE_REVIEW_CONFIG> | boolean> {
         try {
             const {
@@ -156,7 +146,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 
     private async createNewGlobalConfig(
         organizationAndTeamData: OrganizationAndTeamData,
-        configValue: DeepPartial<CodeReviewConfigWithoutLLMProvider>,
+        configValue: CreateOrUpdateCodeReviewParameterDto['configValue'],
         filteredRepositoryInfo: RepositoryCodeReviewConfig[],
     ) {
         const defaultConfig = getDefaultKodusConfigFile();
@@ -199,7 +189,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
     private async handleConfigUpdate(
         organizationAndTeamData: OrganizationAndTeamData,
         codeReviewConfigs: CodeReviewParameter,
-        newConfigValue: DeepPartial<CodeReviewConfigWithoutLLMProvider>,
+        newConfigValue: CreateOrUpdateCodeReviewParameterDto['configValue'],
         repositoryId?: string,
         directoryId?: string,
     ) {
@@ -210,7 +200,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             directoryId,
         );
 
-        let oldConfig: DeepPartial<CodeReviewConfigWithoutLLMProvider> = {};
+        let oldConfig: CreateOrUpdateCodeReviewParameterDto['configValue'] = {};
         let level: ConfigLevel;
         let repository: RepositoryCodeReviewConfig | undefined;
         let directory: DirectoryCodeReviewConfig | undefined;
@@ -269,8 +259,8 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 
     private async logConfigUpdate(options: {
         organizationAndTeamData: OrganizationAndTeamData;
-        oldConfig: DeepPartial<CodeReviewConfigWithoutLLMProvider>;
-        newConfig: DeepPartial<CodeReviewConfigWithoutLLMProvider>;
+        oldConfig: CreateOrUpdateCodeReviewParameterDto['configValue'];
+        newConfig: CreateOrUpdateCodeReviewParameterDto['configValue'];
         level: ConfigLevel;
         sourceFunctionName: string;
         repository?: RepositoryCodeReviewConfig;
@@ -328,7 +318,10 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         }
     }
 
-    private handleError(error: any, body: CodeReviewParameterBody) {
+    private handleError(
+        error: any,
+        body: CreateOrUpdateCodeReviewParameterDto,
+    ) {
         this.logger.error({
             message:
                 'Error creating or updating code review configuration parameter',
@@ -372,7 +365,7 @@ class ConfigResolver {
     public async getResolvedParentConfig(
         repositoryId?: string,
         directoryId?: string,
-    ): Promise<DeepPartial<CodeReviewConfigWithoutLLMProvider>> {
+    ): Promise<CreateOrUpdateCodeReviewParameterDto['configValue']> {
         if (directoryId && repositoryId) {
             return this.getResolvedRepositoryConfig(repositoryId);
         }
@@ -380,11 +373,12 @@ class ConfigResolver {
             return this.getResolvedGlobalConfig();
         }
 
-        return this.defaultConfig as CodeReviewConfigWithoutLLMProvider;
+        return this
+            .defaultConfig as CreateOrUpdateCodeReviewParameterDto['configValue'];
     }
 
     public createUpdater(
-        newDelta: DeepPartial<CodeReviewConfigWithoutLLMProvider>,
+        newDelta: CreateOrUpdateCodeReviewParameterDto['configValue'],
         repositoryId?: string,
         directoryId?: string,
     ): (draft: CodeReviewParameter) => void {
@@ -419,16 +413,17 @@ class ConfigResolver {
         };
     }
 
-    private getResolvedGlobalConfig(): DeepPartial<CodeReviewConfigWithoutLLMProvider> {
+    private getResolvedGlobalConfig(): CreateOrUpdateCodeReviewParameterDto['configValue'] {
         return deepMerge(
-            this.defaultConfig as CodeReviewConfigWithoutLLMProvider,
+            this
+                .defaultConfig as CreateOrUpdateCodeReviewParameterDto['configValue'],
             this.codeReviewConfigs.configs ?? {},
         );
     }
 
     private async getResolvedRepositoryConfig(
         repositoryId: string,
-    ): Promise<DeepPartial<CodeReviewConfigWithoutLLMProvider>> {
+    ): Promise<CreateOrUpdateCodeReviewParameterDto['configValue']> {
         const repository = this.findRepository(repositoryId);
         const resolvedGlobal = this.getResolvedGlobalConfig();
 

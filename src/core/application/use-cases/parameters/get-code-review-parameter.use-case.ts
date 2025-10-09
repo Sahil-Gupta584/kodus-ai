@@ -1,9 +1,9 @@
 import { CodeReviewConfigWithoutLLMProvider } from '@/config/types/general/codeReview.type';
 import {
-    CodeReviewParameter,
-    RepositoryCodeReviewConfig,
-    DirectoryCodeReviewConfig,
-    CodeReviewParameterBaseConfig,
+    FormattedCodeReviewConfig,
+    FormattedConfigLevel,
+    FormattedGlobalCodeReviewConfig,
+    IFormattedConfigProperty,
 } from '@/config/types/general/codeReviewConfig.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import {
@@ -26,65 +26,6 @@ import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { getDefaultKodusConfigFile } from '@/shared/utils/validateCodeReviewConfigFile';
 import { Inject, Injectable } from '@nestjs/common';
 import { DeepPartial } from 'typeorm';
-
-export enum FormattedConfigLevel {
-    DEFAULT = 'default', // default overrides nothing
-    GLOBAL = 'global', // global can override default
-    REPOSITORY = 'repository', // repository can override global and default
-    REPOSITORY_FILE = 'repository_file', // file can override global, default and repository
-    DIRECTORY = 'directory', // directory can override global, default, repository and repository file
-    DIRECTORY_FILE = 'directory_file', // directory_file overrides all
-}
-
-export interface IFormattedConfigProperty<T> {
-    value: T;
-    level: FormattedConfigLevel;
-    overriddenValue?: T;
-    overriddenLevel?: FormattedConfigLevel;
-}
-
-export type FormattedConfig<T> = {
-    [P in keyof T]: NonNullable<T[P]> extends Array<any>
-        ? IFormattedConfigProperty<NonNullable<T[P]>>
-        : NonNullable<T[P]> extends object
-          ? FormattedConfig<NonNullable<T[P]>>
-          : IFormattedConfigProperty<NonNullable<T[P]>>;
-};
-
-export type FormattedCodeReviewConfig =
-    FormattedConfig<CodeReviewConfigWithoutLLMProvider>;
-
-export type FormattedCodeReviewBaseConfig = Omit<
-    CodeReviewParameterBaseConfig,
-    'configs'
-> & {
-    configs: FormattedCodeReviewConfig;
-};
-
-export type FormattedGlobalCodeReviewConfig = Omit<
-    CodeReviewParameter,
-    'configs' | 'repositories'
-> & {
-    configs: FormattedCodeReviewConfig & {
-        showToggleCodeReviewVersion: boolean;
-    }; // TODO: remove showToggleCodeReviewVersion from here once migration is done
-    repositories: FormattedRepositoryCodeReviewConfig[];
-};
-
-export type FormattedRepositoryCodeReviewConfig = Omit<
-    RepositoryCodeReviewConfig,
-    'configs' | 'directories'
-> & {
-    configs: FormattedCodeReviewConfig;
-    directories: FormattedDirectoryCodeReviewConfig[];
-};
-
-export type FormattedDirectoryCodeReviewConfig = Omit<
-    DirectoryCodeReviewConfig,
-    'configs'
-> & {
-    configs: FormattedCodeReviewConfig;
-};
 
 @Injectable()
 export class GetCodeReviewParameterUseCase {
