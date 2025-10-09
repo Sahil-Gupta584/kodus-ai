@@ -31,12 +31,13 @@ import {
 
 const ERROR_TO_MESSAGE_TYPE: Record<
     ValidationErrorType,
-    'user' | 'general' | 'byok_required'
+    'user' | 'general' | 'byok_required' | 'no_error'
 > = {
     [ValidationErrorType.INVALID_LICENSE]: 'general',
     [ValidationErrorType.USER_NOT_LICENSED]: 'user',
     [ValidationErrorType.BYOK_REQUIRED]: 'byok_required',
     [ValidationErrorType.PLAN_LIMIT_EXCEEDED]: 'general',
+    [ValidationErrorType.NOT_ERROR]: 'no_error',
 };
 
 @Injectable()
@@ -406,7 +407,11 @@ export class RunCodeReviewAutomationUseCase {
                             RunCodeReviewAutomationUseCase.name,
                         );
 
-                    if (!validationResult.allowed) {
+                    if (
+                        !validationResult.allowed &&
+                        validationResult.errorType !==
+                            ValidationErrorType.NOT_ERROR
+                    ) {
                         const noActiveSubscriptionType =
                             validationResult.errorType
                                 ? ERROR_TO_MESSAGE_TYPE[
@@ -432,6 +437,12 @@ export class RunCodeReviewAutomationUseCase {
                             },
                         });
 
+                        return null;
+                    } else if (
+                        !validationResult.allowed &&
+                        validationResult.errorType ===
+                            ValidationErrorType.NOT_ERROR
+                    ) {
                         return null;
                     }
 
@@ -464,8 +475,16 @@ export class RunCodeReviewAutomationUseCase {
         organizationAndTeamData: OrganizationAndTeamData;
         repository: { id: string; name: string };
         prNumber: number;
-        noActiveSubscriptionType: 'user' | 'general' | 'byok_required';
+        noActiveSubscriptionType:
+            | 'user'
+            | 'general'
+            | 'byok_required'
+            | 'no_error';
     }) {
+        if (params.noActiveSubscriptionType === 'no_error') {
+            return;
+        }
+
         const repositoryPayload = {
             id: params.repository.id,
             name: params.repository.name,

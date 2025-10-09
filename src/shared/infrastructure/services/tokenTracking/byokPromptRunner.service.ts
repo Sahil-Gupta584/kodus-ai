@@ -12,6 +12,7 @@ export class BYOKPromptRunnerService {
     private readonly defaultProvider: LLMModelProvider;
     private readonly fallbackProvider?: LLMModelProvider;
     private readonly byokConfig?: BYOKConfig;
+    public readonly executeMode: string;
 
     constructor(
         basePromptRunnerService: PromptRunnerService,
@@ -23,6 +24,7 @@ export class BYOKPromptRunnerService {
         this.defaultProvider = provider;
         this.fallbackProvider = fallbackProvider;
         this.byokConfig = byokConfig;
+        this.executeMode = !!byokConfig ? 'byok' : 'system';
     }
 
     /**

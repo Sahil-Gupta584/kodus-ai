@@ -43,30 +43,29 @@ export class KodyIssuesAnalysisService {
         promptData: any,
         byokConfig: BYOKConfig | null,
     ): Promise<any> {
-        const provider = LLMModelProvider.GEMINI_2_5_PRO;
-        const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
-        const runName = 'mergeSuggestionsIntoIssues';
-
-        const spanName = `${KodyIssuesAnalysisService.name}::${runName}`;
-        const spanAttrs = {
-            type: 'byok',
-            organizationId: organizationAndTeamData?.organizationId,
-            prNumber: pullRequest?.number,
-        };
-
         try {
+            const provider = LLMModelProvider.GEMINI_2_5_PRO;
+            const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
+            const runName = 'mergeSuggestionsIntoIssues';
+
+            const promptRunner = new BYOKPromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
+            const spanName = `${KodyIssuesAnalysisService.name}::${runName}`;
+            const spanAttrs = {
+                type: promptRunner.executeMode,
+                organizationId: organizationAndTeamData?.organizationId,
+                prNumber: pullRequest?.number,
+            };
+
             const { result } = await this.observabilityService.runLLMInSpan({
                 spanName,
                 runName,
                 attrs: spanAttrs,
                 exec: async (callbacks) => {
-                    const promptRunner = new BYOKPromptRunnerService(
-                        this.promptRunnerService,
-                        provider,
-                        fallbackProvider,
-                        byokConfig,
-                    );
-
                     return await promptRunner
                         .builder()
                         .setParser(ParserType.STRING)
@@ -141,24 +140,24 @@ export class KodyIssuesAnalysisService {
         promptData: any,
         byokConfig: BYOKConfig | null,
     ): Promise<any> {
-        const provider = LLMModelProvider.GEMINI_2_5_PRO;
-        const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
-        const runName = 'resolveExistingIssues';
-
-        const spanName = `${KodyIssuesAnalysisService.name}::${runName}`;
-        const spanAttrs = {
-            type: 'byok',
-            organizationId: context.organizationAndTeamData?.organizationId,
-            prNumber: context.pullRequest?.number,
-        };
-
         try {
+            const provider = LLMModelProvider.GEMINI_2_5_PRO;
+            const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+            const runName = 'resolveExistingIssues';
+
             const promptRunner = new BYOKPromptRunnerService(
                 this.promptRunnerService,
                 provider,
                 fallbackProvider,
                 byokConfig,
             );
+
+            const spanName = `${KodyIssuesAnalysisService.name}::${runName}`;
+            const spanAttrs = {
+                type: promptRunner.executeMode,
+                organizationId: context.organizationAndTeamData?.organizationId,
+                prNumber: context.pullRequest?.number,
+            };
 
             const { result } = await this.observabilityService.runLLMInSpan({
                 spanName,

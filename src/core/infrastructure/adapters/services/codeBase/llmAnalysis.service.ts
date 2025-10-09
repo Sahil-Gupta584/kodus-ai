@@ -128,7 +128,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         const baseContext = this.prepareAnalysisContext(fileContext, context);
         const spanName = `${LLMAnalysisService.name}::${runName}`;
         const spanAttrs = {
-            type: 'byok',
+            type: promptRunner.executeMode,
             organizationId: organizationAndTeamData?.organizationId,
             prNumber,
             file: { filePath: fileContext?.file?.filename },
@@ -242,7 +242,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         const baseContext = this.prepareAnalysisContext(fileContext, context);
         const spanName = `${LLMAnalysisService.name}::${runName}`;
         const spanAttrs = {
-            type: 'byok',
+            type: promptRunner.executeMode,
             organizationId: organizationAndTeamData?.organizationId,
             prNumber,
             file: { filePath: fileContext?.file?.filename },
@@ -418,7 +418,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
 
         const spanName = `${LLMAnalysisService.name}::${runName}`;
         const spanAttrs = {
-            type: 'byok',
+            type: 'system',
             organizationId: organizationAndTeamData?.organizationId,
             sessionId,
         };
@@ -520,7 +520,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
 
         const spanName = `${LLMAnalysisService.name}::${runName}`;
         const spanAttrs = {
-            type: 'byok',
+            type: promptRunner.executeMode,
             organizationId: organizationAndTeamData?.organizationId,
             prNumber,
         };
@@ -651,7 +651,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
 
         const spanName = `${LLMAnalysisService.name}::${runName}`;
         const spanAttrs = {
-            type: 'byok',
+            type: promptRunner.executeMode,
             organizationId: organizationAndTeamData?.organizationId,
             prNumber,
             file: { filePath: file?.filename },

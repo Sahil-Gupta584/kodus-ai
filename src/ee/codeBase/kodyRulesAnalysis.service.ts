@@ -272,32 +272,33 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         suggestion: Partial<CodeSuggestion>,
         byokConfig?: BYOKConfig,
     ): Promise<string[]> {
-        const provider = LLMModelProvider.GEMINI_2_5_FLASH;
-        const fallbackProvider = LLMModelProvider.GEMINI_2_5_PRO;
-        const runName = 'extractKodyRuleIdsFromContent';
-        const spanName = `${KodyRulesAnalysisService.name}::${runName}`;
-        const spanAttrs = {
-            type: 'byok',
-            organizationId: organizationAndTeamData?.organizationId,
-            teamId: organizationAndTeamData?.teamId,
-            prNumber,
-            suggestionId: suggestion?.id,
-        };
-
         try {
+            const provider = LLMModelProvider.GEMINI_2_5_FLASH;
+            const fallbackProvider = LLMModelProvider.GEMINI_2_5_PRO;
+
+            const promptRunner = new BYOKPromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
+
+            const runName = 'extractKodyRuleIdsFromContent';
+            const spanName = `${KodyRulesAnalysisService.name}::${runName}`;
+            const spanAttrs = {
+                type: promptRunner.executeMode,
+                organizationId: organizationAndTeamData?.organizationId,
+                teamId: organizationAndTeamData?.teamId,
+                prNumber,
+                suggestionId: suggestion?.id,
+            };
+
             const { result: extraction } =
                 await this.observabilityService.runLLMInSpan({
                     spanName,
                     runName,
                     attrs: spanAttrs,
                     exec: async (callbacks) => {
-                        const promptRunner = new BYOKPromptRunnerService(
-                            this.promptRunnerService,
-                            provider,
-                            fallbackProvider,
-                            byokConfig,
-                        );
-
                         return await promptRunner
                             .builder()
                             .setParser(ParserType.STRING)
