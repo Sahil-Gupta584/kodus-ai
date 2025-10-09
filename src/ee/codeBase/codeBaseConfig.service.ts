@@ -691,6 +691,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 ({ normalizedPath }) =>
                     affectedPaths.some((filePath: string) => {
                         const normalizedFile = normalizePath(filePath);
+
                         return isPathCoveredByDirectory(
                             normalizedPath,
                             normalizedFile,
@@ -728,16 +729,10 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 groupedDirectories.length === 1 &&
                 groupedDirectories[0]?.path !== null
             ) {
-                // Apenas um diretório configurado afetado, usar sua config
-                return this.buildConfigFromDirectory(
-                    groupedDirectories[0],
-                    organizationAndTeamData,
-                    repository,
-                );
+                return groupedDirectories[0];
             }
 
-            // Múltiplos diretórios configurados afetados, usar config do nível superior
-            return this.getConfig(organizationAndTeamData, repository);
+            return;
         } catch (error) {
             this.logger.error({
                 message: 'Error resolving config by directories',
