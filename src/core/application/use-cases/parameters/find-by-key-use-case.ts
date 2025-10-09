@@ -8,13 +8,6 @@ import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { IParameters } from '@/core/domain/parameters/interfaces/parameters.interface';
-import { getDefaultKodusConfigFile } from '@/shared/utils/validateCodeReviewConfigFile';
-import { CodeReviewConfigWithoutLLMProvider } from '@/config/types/general/codeReview.type';
-import {
-    CodeReviewParameter,
-    DirectoryCodeReviewConfig,
-    RepositoryCodeReviewConfig,
-} from '@/config/types/general/codeReviewConfig.type';
 
 @Injectable()
 export class FindByKeyParametersUseCase {

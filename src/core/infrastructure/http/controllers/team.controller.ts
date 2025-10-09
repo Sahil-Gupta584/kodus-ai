@@ -1,6 +1,5 @@
 import { CreateTeamUseCase } from '@/core/application/use-cases/team/create.use-case';
 import { FindFirstCreatedTeamUseCase } from '@/core/application/use-cases/team/find-first-created-team.use-case';
-import { FinishSetupUseCase } from '@/core/application/use-cases/team/finish-setup.use-case';
 import { GetByIdUseCase } from '@/core/application/use-cases/team/get-by-id.use-case';
 import { ListTeamsUseCase } from '@/core/application/use-cases/team/list.use-case';
 import { UpdateTeamUseCase } from '@/core/application/use-cases/team/update.use-case';
@@ -27,7 +26,6 @@ export class TeamController {
         private readonly listTeamsUseCase: ListTeamsUseCase,
         private readonly findFirstCreatedTeamUseCase: FindFirstCreatedTeamUseCase,
         private readonly getByIdUseCase: GetByIdUseCase,
-        private readonly finishSetupUseCase: FinishSetupUseCase,
         private readonly deleteTeamUseCase: DeleteTeamUseCase,
         private readonly listTeamsWithIntegrationsUseCase: ListTeamsWithIntegrationsUseCase,
     ) {}
@@ -68,10 +66,5 @@ export class TeamController {
     @Get('/first-created')
     public async findFirstCreatedTeam() {
         return await this.findFirstCreatedTeamUseCase.execute();
-    }
-
-    @Post('/finish-setup')
-    public async startDiagnostic(@Body() body: TeamQueryDto) {
-        return this.finishSetupUseCase.execute(body.teamId);
     }
 }

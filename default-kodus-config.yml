@@ -111,3 +111,17 @@ customMessages:
             **[Access your configuration settings here.](https://app.kodus.io/settings/code-review/global/general)**
 
             </details>
+
+# Prompt overrides
+v2PromptOverrides:
+    categories:
+        descriptions:
+            bug: ''
+            performance: ''
+            security: ''
+    severity:
+        flags:
+            critical: ''
+            high: ''
+            medium: ''
+            low: ''

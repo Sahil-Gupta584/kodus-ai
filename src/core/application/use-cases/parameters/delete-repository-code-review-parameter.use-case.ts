@@ -9,15 +9,7 @@ import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { DeleteRepositoryCodeReviewParameterDto } from '@/core/infrastructure/http/dtos/delete-repository-code-review-parameter.dto';
-import {
-    ICodeReviewSettingsLogService,
-    CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
-} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
-import {
-    ActionType,
-    ConfigLevel,
-} from '@/config/types/general/codeReviewSettingsLog.type';
-import { Request } from 'express';
+import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
 import { RepositoryWithDirectoriesException } from '@/shared/infrastructure/filters/repository-with-directories.exception';
 import { DeleteByRepositoryOrDirectoryPullRequestMessagesUseCase } from '../pullRequestMessages/delete-by-repository-or-directory.use-case';
 import {
@@ -27,6 +19,11 @@ import {
 import { KodyRulesStatus } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import { CodeReviewParameter } from '@/config/types/general/codeReviewConfig.type';
 import { produce } from 'immer';
+import {
+    CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
+    ICodeReviewSettingsLogService,
+} from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+import { UserRequest } from '@/config/types/http/user-request.type';
 
 @Injectable()
 export class DeleteRepositoryCodeReviewParameterUseCase {
