@@ -15,15 +15,13 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 @Injectable()
 export class PreviewPrSummaryUseCase {
     constructor(
-        //private readonly parametersService: ParametersService,
-
-        private readonly codeManagementService: CodeManagementService,
-
         @Inject(COMMENT_MANAGER_SERVICE_TOKEN)
         private readonly commentManagerService: ICommentManagerService,
 
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
+
+        private readonly codeManagementService: CodeManagementService,
     ) {}
 
     async execute(body: PreviewPrSummaryDto) {

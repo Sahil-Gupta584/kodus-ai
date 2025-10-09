@@ -26,6 +26,7 @@ export enum ValidationErrorType {
     USER_NOT_LICENSED = 'USER_NOT_LICENSED',
     BYOK_REQUIRED = 'BYOK_REQUIRED',
     PLAN_LIMIT_EXCEEDED = 'PLAN_LIMIT_EXCEEDED',
+    NOT_ERROR = 'NOT_ERROR',
 }
 
 export class ValidationError extends Error {
@@ -173,6 +174,22 @@ export class PermissionValidationService {
                         },
                     };
                 }
+            }
+
+            if (identifiedPlanType === PlanType.MANAGED && !userGitId) {
+                this.logger.warn({
+                    message: 'Managed plan requires licensed user, NOT_ERROR',
+                    context: contextName || PermissionValidationService.name,
+                    metadata: { organizationAndTeamData },
+                });
+
+                return {
+                    allowed: false,
+                    errorType: ValidationErrorType.NOT_ERROR,
+                    metadata: {
+                        reason: 'USER_ID_REQUIRED',
+                    },
+                };
             }
 
             // 6. Validar usuário específico (SEMPRE valida se userGitId fornecido, exceto trial)

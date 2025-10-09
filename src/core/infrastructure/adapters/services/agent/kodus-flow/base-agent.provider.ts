@@ -121,6 +121,7 @@ export abstract class BaseAgentProvider {
                             fallbackProvider,
                         model: self.byokConfig?.main?.model,
                         fallbackModel: self.byokConfig?.fallback?.model,
+                        type: promptRunner.executeMode,
                     })
                     .setRunName(`${moduleName}`)
                     .execute();
