@@ -19,6 +19,8 @@ import { GitlabService } from '@/core/infrastructure/adapters/services/gitlab.se
 import { Gitlab } from '@gitbeaker/rest';
 import { AuthMode } from '@/core/domain/platformIntegrations/enums/codeManagement/authMode.enum';
 import { decrypt } from '@/shared/utils/crypto';
+import { CreateIssueManuallyUseCase } from '../../issues/create-issue-manually.use-case';
+import { CreateIssueManuallyDto } from '@/core/infrastructure/http/dtos/create-issue-manually.dto';
 
 // Constants
 const KODY_COMMANDS = {
@@ -90,7 +92,7 @@ class ConversationCommandHandler implements CommandHandler {
 }
 
 class ManualIssueCreationCommandHandler implements CommandHandler {
-    private params: WebhookParams;
+    private readonly params: WebhookParams;
 
     constructor(params: WebhookParams) {
         this.params = params;
@@ -201,6 +203,7 @@ export class ChatWithKodyFromGitUseCase {
         private readonly gitlabService: GitlabService,
         private readonly codeManagementService: CodeManagementService,
         private readonly conversationAgentUseCase: ConversationAgentUseCase,
+        private readonly createIssueManuallyUseCase: CreateIssueManuallyUseCase,
         private readonly businessRulesValidationAgentUseCase: BusinessRulesValidationAgentUseCase,
     ) {}
 
@@ -378,40 +381,28 @@ export class ChatWithKodyFromGitUseCase {
                     },
                 });
             }
-
-            await this.issuesService.create({
+            const issueDto: CreateIssueManuallyDto = {
                 title: suggestion.oneSentenceSummary,
                 description: suggestion.suggestionContent,
                 filePath: suggestion.relevantFile,
                 language: suggestion.language,
                 label: suggestion?.label as LabelType,
                 severity: suggestion?.severity as SeverityLevel,
-                contributingSuggestions: [
-                    {
-                        id: suggestion.id,
-                        prNumber: pullRequestNumber,
-                        prAuthor: {
-                            id: pullRequest?.user?.id || '',
-                            name: pullRequest?.user?.name || '',
-                        },
-                    },
-                ],
+                organizationId: organizationAndTeamData.organizationId,
                 repository: {
                     id: repository.id,
                     name: repository.name,
                     full_name: repository.full_name,
                     platform: params.platformType,
                 },
-                organizationId: organizationAndTeamData.organizationId,
-                status: IssueStatus.OPEN,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
                 owner: {
                     gitId: pullRequest.user.id,
                     username: pullRequest.user.username,
                 },
                 reporter,
-            });
+            };
+
+            await this.createIssueManuallyUseCase.execute(issueDto);
 
             this.logger.log({
                 message: 'Manual Issue record created',
@@ -431,7 +422,6 @@ export class ChatWithKodyFromGitUseCase {
                 params.platformType,
             );
         } catch (error) {
-            console.log('help', error);
             this.logger.error({
                 message: 'Error to complete manual issue creation',
                 context: ChatWithKodyFromGitUseCase.name,

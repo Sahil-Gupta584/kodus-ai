@@ -96,7 +96,7 @@ export class KodyIssuesManagementService
                     await this.filterValidSuggestionsFromPrByStatus(
                         params.prFiles,
                     );
-                    
+
                 const filteredSuggestions = this.applyIssuesFilters(
                     issuesConfig.configValue,
                     allSuggestions,
@@ -122,14 +122,17 @@ export class KodyIssuesManagementService
                         params,
                         filePath,
                         suggestionsByFile[filePath],
-                        byokConfig
+                        byokConfig,
                     );
                 }
             } else {
                 this.logger.log({
                     message: 'Automatic Issues creation is disabled',
                     context: KodyIssuesManagementService.name,
-                    metadata: { pullRequest: params.pullRequest },
+                    metadata: {
+                        pullRequest: params.pullRequest,
+                        organizationAndTeamData: params.organizationAndTeamData,
+                    },
                 });
             }
 
@@ -658,7 +661,7 @@ export class KodyIssuesManagementService
     private applyIssuesFilters(
         issuesConfigValue: IssueCreationConfig,
         allSuggestions: CodeSuggestion[],
-    ) {
+    ): CodeSuggestion[] {
         const { severityFilters, sourceFilters } = issuesConfigValue;
         return allSuggestions.filter((suggestion) => {
             if (!issuesConfigValue) return true;

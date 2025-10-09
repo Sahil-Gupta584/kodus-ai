@@ -82,8 +82,11 @@ export class IssuesController {
             body.value,
         );
     }
+
     @Post()
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.Issues))
     async createIssue(@Body() body: CreateIssueManuallyDto) {
-        return this.createIssueManuallyUseCase.execute(body)
+        return await this.createIssueManuallyUseCase.execute(body)
     }
 }

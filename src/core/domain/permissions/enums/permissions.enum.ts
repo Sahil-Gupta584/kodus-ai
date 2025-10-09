@@ -20,6 +20,7 @@ export enum ResourceType {
     Cockpit = 'cockpit',
     Billing = 'billing',
     CodeReviewSettings = 'code_review_settings',
+    IssuesSettings = 'issues_settings',
     GitSettings = 'git_settings',
     UserSettings = 'user_settings',
     OrganizationSettings = 'organization_settings',

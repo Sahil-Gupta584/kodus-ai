@@ -15,6 +15,7 @@ import {
     ResourceType,
 } from '@/core/domain/permissions/enums/permissions.enum';
 import { UpdateOrCreateIssuesParameterBodyDto } from '@/core/infrastructure/http/dtos/create-or-update-issues-parameter.dto';
+import { IssueCreationConfig } from '@/core/domain/issues/entities/issue-creation-config.entity';
 
 interface IssuesParameterBody {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -47,12 +48,12 @@ export class UpdateOrCreateIssuesParameterUseCase {
         body: UpdateOrCreateIssuesParameterBodyDto,
     ): Promise<ParametersEntity | boolean> {
         try {
-        const { organizationAndTeamData, configValue } = body;
-        const { organizationId, teamId } = organizationAndTeamData;
+            const { organizationAndTeamData, configValue } = body;
+            const { organizationId, teamId } = organizationAndTeamData;
             await this.authorizationService.ensure({
                 user: this.request.user,
                 action: Action.Create,
-                resource: ResourceType.Issues,
+                resource: ResourceType.IssuesSettings,
             });
 
             const issuesConfig = await this.parametersService.findByKey(
@@ -77,9 +78,15 @@ export class UpdateOrCreateIssuesParameterUseCase {
                     organizationId,
                     teamId,
                 };
+
+                const finalConfig: IssueCreationConfig = {
+                    ...defaultIssueParameterConfig,
+                    ...(configValue || {}),
+                };
+
                 return await this.parametersService.createOrUpdateConfig(
                     ParametersKey.ISSUE_CREATION_CONFIG,
-                    defaultIssueParameterConfig,
+                    finalConfig,
                     { organizationId, teamId },
                 );
             }
@@ -95,6 +102,8 @@ export class UpdateOrCreateIssuesParameterUseCase {
                 error: error,
                 metadata: {
                     parametersKey: ParametersKey.ISSUE_CREATION_CONFIG,
+                    organizationId: body.organizationAndTeamData.organizationId,
+                    teamId: body.organizationAndTeamData.teamId,
                 },
             });
             throw new Error('Error creating or updating issues parameters');

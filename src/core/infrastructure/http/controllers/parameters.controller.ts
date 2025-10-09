@@ -249,7 +249,7 @@ export class ParametersController {
 
     @Post('/create-or-update-issues-config')
     @UseGuards(PolicyGuard)
-    @CheckPolicies(checkPermissions(Action.Create, ResourceType.Issues))
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.IssuesSettings))
     public async updateOrCreateIssuesParameter(
         @Body()
         body: UpdateOrCreateIssuesParameterBodyDto,

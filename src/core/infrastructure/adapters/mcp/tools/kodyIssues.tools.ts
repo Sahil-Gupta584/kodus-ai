@@ -19,10 +19,12 @@ import { PinoLoggerService } from '../../services/logger/pino.service';
 @Injectable()
 export class KodyIssuesTools {
     constructor(
-        @Inject(ISSUES_SERVICE_TOKEN) private issuesService: IIssuesService,
-        private createIssueManuallyUseCase: CreateIssueManuallyUseCase,
-        private updateIssuePropertyUseCase: UpdateIssuePropertyUseCase,
-        private logger: PinoLoggerService,
+        @Inject(ISSUES_SERVICE_TOKEN)
+        private readonly issuesService: IIssuesService,
+
+        private readonly logger: PinoLoggerService,
+        private readonly createIssueManuallyUseCase: CreateIssueManuallyUseCase,
+        private readonly updateIssuePropertyUseCase: UpdateIssuePropertyUseCase,
     ) {}
 
     createKodyIssue(): McpToolDefinition {
@@ -56,6 +58,7 @@ export class KodyIssuesTools {
                     .describe('Details of user who is creating this issue'),
             })
             .strict();
+        type InputType = z.infer<typeof inputSchema>;
 
         return {
             name: name,
@@ -66,14 +69,14 @@ export class KodyIssuesTools {
                 data: z.object({}).passthrough(),
             }),
             execute: wrapToolHandler(
-                async (args) => {
+                async (args: InputType) => {
                     if (!args.reporter) {
                         args.reporter = {
                             gitId: 'kody',
                             username: 'Kody-MCP',
                         };
                     }
-                    
+
                     // not validating through zod coz its making field optional after parsing
                     const dtoInstance = plainToInstance(
                         CreateIssueManuallyDto,
@@ -81,7 +84,10 @@ export class KodyIssuesTools {
                     );
                     await validateOrReject(dtoInstance);
 
-                    const entity = await this.createIssueManuallyUseCase.execute(dtoInstance);
+                    const entity =
+                        await this.createIssueManuallyUseCase.execute(
+                            dtoInstance,
+                        );
                     return { success: true, data: entity };
                 },
                 name,
@@ -136,7 +142,10 @@ export class KodyIssuesTools {
                 data: z.object({}).passthrough().nullable(),
             }),
             execute: wrapToolHandler(async (args: InputType) => {
-                const issue = await this.issuesService.findById(args.issueId);
+                const issue = await this.issuesService.findOne({
+                    uuid: args.issueId,
+                    organizationId: args.organizationId,
+                });
                 return {
                     success: !!issue,
                     data: issue,

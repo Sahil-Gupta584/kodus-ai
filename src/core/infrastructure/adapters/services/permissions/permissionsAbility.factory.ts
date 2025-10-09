@@ -103,6 +103,10 @@ export class PermissionsAbilityFactory {
                 canInRepo(Action.Update, ResourceType.Issues);
                 canInRepo(Action.Create, ResourceType.Issues);
 
+                canInOrg(Action.Read, ResourceType.IssuesSettings);
+                canInOrg(Action.Update, ResourceType.IssuesSettings);
+                canInOrg(Action.Create, ResourceType.IssuesSettings);
+
                 canInRepo(Action.Read, ResourceType.Logs, {}, true);
 
                 canInRepo(Action.Read, ResourceType.PullRequests);
@@ -124,6 +128,8 @@ export class PermissionsAbilityFactory {
 
                 canInOrg(Action.Read, ResourceType.UserSettings);
 
+                canInOrg(Action.Read, ResourceType.IssuesSettings);
+
                 canInOrg(Action.Read, ResourceType.Logs);
                 break;
 
@@ -138,6 +144,8 @@ export class PermissionsAbilityFactory {
                 canInRepo(Action.Read, ResourceType.KodyRules, {}, true);
 
                 canInRepo(Action.Read, ResourceType.Issues);
+
+                canInOrg(Action.Read, ResourceType.IssuesSettings);
                 break;
 
             default:

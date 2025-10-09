@@ -35,9 +35,7 @@ export class CreateIssueManuallyUseCase {
         },
     ) {}
 
-    async execute(
-        dto: CreateIssueManuallyDto,
-    ): Promise<IssuesEntity> {
+    async execute(dto: CreateIssueManuallyDto): Promise<IssuesEntity> {
         const user = this.request.user;
         const organizationId = dto.organizationId || user?.organization?.uuid;
         const org = await this.organizationService.findOne({
@@ -47,14 +45,10 @@ export class CreateIssueManuallyUseCase {
         if (!org) {
             throw new NotFoundException('api.organizations.not_found');
         }
-        
-        if (user?.uuid) {
-            const isUserBelongsToOrg = org.user?.find(
-                (u) => u.uuid === user.uuid,
-            );
-            if (!isUserBelongsToOrg)
-                throw new ForbiddenException('Invalid permission');
-        }
+
+        const isUserBelongsToOrg = org.user?.find((u) => u?.uuid === user?.uuid);
+        if (!isUserBelongsToOrg)
+            throw new ForbiddenException('Invalid permission');
 
         const issue: IIssue = {
             title: dto.title,

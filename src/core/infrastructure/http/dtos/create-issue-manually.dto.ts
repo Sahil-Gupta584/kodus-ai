@@ -5,8 +5,15 @@ import {
     IsEnum,
     IsObject,
     IsOptional,
+    ValidateNested,
 } from 'class-validator';
 import { IRepositoryToIssues } from '../../adapters/services/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
+import { Type } from 'class-transformer';
+
+class GitUserDto {
+    @IsString() gitId: string;
+    @IsString() username: string;
+}
 
 export class CreateIssueManuallyDto {
     @IsString()
@@ -34,9 +41,11 @@ export class CreateIssueManuallyDto {
     repository: IRepositoryToIssues;
 
     @IsOptional()
-    @IsObject()
-    owner: { gitId: string; username: string; };
+    @ValidateNested()
+    @Type(() => GitUserDto)
+    owner: GitUserDto;
 
-    @IsObject()
-    reporter: { gitId: string; username: string; };
+    @ValidateNested()
+    @Type(() => GitUserDto)
+    reporter: GitUserDto;
 }
