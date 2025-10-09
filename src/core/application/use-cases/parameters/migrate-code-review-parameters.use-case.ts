@@ -6,6 +6,8 @@ import {
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
+import { deepDifference, deepMerge } from '@/shared/utils/deep';
+import { getDefaultKodusConfigFile } from '@/shared/utils/validateCodeReviewConfigFile';
 import { Inject, Injectable } from '@nestjs/common';
 
 type OldReviewConfig = CodeReviewConfigWithoutLLMProvider & {
@@ -88,19 +90,30 @@ export class MigrateCodeReviewParametersUseCase {
         const { repositories, id, name, isSelected, ...globalConfig } =
             oldConfig;
 
+        const defaultConfig = getDefaultKodusConfigFile();
+
+        const globalDelta = deepDifference(defaultConfig, globalConfig);
+        const resolvedGlobalConfig = deepMerge(defaultConfig, globalDelta);
+
         const newRepos = repositories.map((repo) => {
             const { directories, id, name, isSelected, ...repoConfig } = repo;
+
+            const repoDelta = deepDifference(resolvedGlobalConfig, repoConfig);
+            const resolvedRepoConfig = deepMerge(
+                resolvedGlobalConfig,
+                repoDelta,
+            );
 
             const newDirectories = (directories || []).map((dir) => {
                 const { id, name, isSelected, path, ...dirConfig } = dir;
 
+                const dirDelta = deepDifference(resolvedRepoConfig, dirConfig);
+
                 return {
                     id: dir.id,
                     name: dir.name,
-                    isSelected: dir.isSelected,
-                    configs: {
-                        ...dirConfig,
-                    },
+                    isSelected: dir.isSelected === 'true',
+                    configs: dirDelta,
                     path: dir.path,
                 };
             });
@@ -108,21 +121,18 @@ export class MigrateCodeReviewParametersUseCase {
             return {
                 id: repo.id,
                 name: repo.name,
-                isSelected: repo.isSelected,
-                configs: {
-                    ...repoConfig,
-                },
+                isSelected: repo.isSelected === 'true',
+                configs: repoDelta,
                 directories: newDirectories,
             };
         });
 
         const newConfig = {
-            configs: {
-                ...globalConfig,
-            },
+            configs: globalDelta,
             id: 'global',
             name: 'Global',
             repositories: newRepos,
+            isSelected: true,
         };
 
         return newConfig as unknown as CodeReviewParameter;

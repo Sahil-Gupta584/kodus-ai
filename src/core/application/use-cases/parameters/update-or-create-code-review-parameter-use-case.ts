@@ -41,10 +41,6 @@ import { DeepPartial } from 'typeorm';
 import { getDefaultKodusConfigFile } from '@/shared/utils/validateCodeReviewConfigFile';
 import { produce } from 'immer';
 import { deepDifference, deepMerge } from '@/shared/utils/deep';
-import {
-    CODE_BASE_CONFIG_SERVICE_TOKEN,
-    ICodeBaseConfigService,
-} from '@/core/domain/codeBase/contracts/CodeBaseConfigService.contract';
 
 interface CodeReviewParameterBody {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -71,9 +67,6 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         private readonly logger: PinoLoggerService,
 
         private readonly authorizationService: AuthorizationService,
-
-        @Inject(CODE_BASE_CONFIG_SERVICE_TOKEN)
-        private readonly codeBaseConfigService: ICodeBaseConfigService,
     ) {}
 
     async execute(
@@ -210,11 +203,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         repositoryId?: string,
         directoryId?: string,
     ) {
-        const resolver = new ConfigResolver(
-            codeReviewConfigs,
-            this.codeBaseConfigService,
-            organizationAndTeamData,
-        );
+        const resolver = new ConfigResolver(codeReviewConfigs);
 
         const parentConfig = await resolver.getResolvedParentConfig(
             repositoryId,
@@ -357,11 +346,7 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
 class ConfigResolver {
     private readonly defaultConfig = getDefaultKodusConfigFile();
 
-    constructor(
-        private readonly codeReviewConfigs: CodeReviewParameter,
-        private readonly codeBaseConfigService: ICodeBaseConfigService,
-        private readonly organizationAndTeamData: OrganizationAndTeamData,
-    ) {}
+    constructor(private readonly codeReviewConfigs: CodeReviewParameter) {}
 
     public findRepository(repositoryId: string): RepositoryCodeReviewConfig {
         const repo = this.codeReviewConfigs.repositories.find(
