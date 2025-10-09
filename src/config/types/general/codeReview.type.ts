@@ -138,7 +138,6 @@ export type CodeSuggestion = {
     createdAt?: string;
     updatedAt?: string;
     action?: string;
-    source?: 'kody_rules' | 'code_review_engine'
 };
 
 export type FileChange = {

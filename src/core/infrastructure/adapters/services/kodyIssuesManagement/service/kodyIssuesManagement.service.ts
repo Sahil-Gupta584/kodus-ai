@@ -84,12 +84,7 @@ export class KodyIssuesManagementService
                 params.organizationAndTeamData,
             );
 
-            // automatic creation is enabled if issues_config not found (to handle existing users) otherwise goes according to config
-            const isIssueCreationEnabled = issuesConfig?.configValue
-                ? issuesConfig?.configValue?.automaticCreationEnabled
-                : true;
-
-            if (isIssueCreationEnabled) {
+            if (issuesConfig?.configValue?.automaticCreationEnabled) {
                 this.logger.log({
                     message: `Starting issue processing for closed PR#${params.pullRequest.number}`,
                     context: KodyIssuesManagementService.name,
@@ -101,6 +96,7 @@ export class KodyIssuesManagementService
                     await this.filterValidSuggestionsFromPrByStatus(
                         params.prFiles,
                     );
+                    
                 const filteredSuggestions = this.applyIssuesFilters(
                     issuesConfig.configValue,
                     allSuggestions,
@@ -108,7 +104,7 @@ export class KodyIssuesManagementService
 
                 if (filteredSuggestions.length === 0) {
                     this.logger.log({
-                        message: `No suggestions found for PR#${params.pullRequest.number}`,
+                        message: `No suggestions found to create issue for PR#${params.pullRequest.number}`,
                         context: KodyIssuesManagementService.name,
                         metadata: params,
                     });
@@ -685,12 +681,12 @@ export class KodyIssuesManagementService
 
             if (
                 !sourceFilters?.includeCodeReviewEngine &&
-                suggestion?.source === 'code_review_engine'
+                suggestion?.label !== 'kody_rules'
             )
                 return false;
             if (
                 !sourceFilters?.includeKodyRules &&
-                suggestion?.source === 'kody_rules'
+                suggestion?.label === 'kody_rules'
             )
                 return false;
             return true;
