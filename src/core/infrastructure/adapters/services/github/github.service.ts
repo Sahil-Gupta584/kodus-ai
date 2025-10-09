@@ -62,7 +62,10 @@ import { decrypt, encrypt } from '@/shared/utils/crypto';
 import { AuthMode } from '@/core/domain/platformIntegrations/enums/codeManagement/authMode.enum';
 import { CodeManagementConnectionStatus } from '@/shared/utils/decorators/validate-code-management-integration.decorator';
 import { CacheService } from '@/shared/utils/cache/cache.service';
-import { GitHubReaction, GitlabReaction } from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
+import {
+    GitHubReaction,
+    GitlabReaction,
+} from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
 import {
     getTranslationsForLanguageByCategory,
     TranslationsCategory,
@@ -455,12 +458,14 @@ export class GithubService
      * @returns owner correto para usar nas chamadas de API
      */
     private async getCorrectOwner(
-        githubAuthDetail: any,
+        githubAuthDetail: GithubAuthDetail,
         octokit: any,
     ): Promise<string> {
         // Usar cache do accountType se disponível
         if (githubAuthDetail.accountType) {
             if (githubAuthDetail.accountType === 'organization') {
+                return githubAuthDetail.org;
+            } else if (githubAuthDetail.authMode === AuthMode.OAUTH) {
                 return githubAuthDetail.org;
             } else {
                 // Para contas pessoais, usar o nome do usuário autenticado
