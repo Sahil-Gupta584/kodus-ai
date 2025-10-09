@@ -58,16 +58,13 @@ export class IntegrationService implements IIntegrationService {
         }[]
     > {
         try {
-            const [projectManagementConnection, codeManagementConnection] =
-                await Promise.all([
-                    this.projectManagementService.verifyConnection(params),
-                    this.codeManagementService.verifyConnection(params),
-                ]);
+            const [codeManagementConnection] = await Promise.all([
+                this.codeManagementService.verifyConnection(params),
+            ]);
 
-            return [
-                projectManagementConnection,
-                codeManagementConnection,
-            ]?.filter((connection) => connection);
+            return [codeManagementConnection]?.filter(
+                (connection) => connection,
+            );
         } catch (error) {
             throw new BadRequestException(error);
         }
