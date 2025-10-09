@@ -51,6 +51,33 @@ If you prefer manual setup or need to customize settings:
    yarn dev:quick-start
    ```
 
+### Conectar aos bancos de QA/Prod
+
+1. Gere o arquivo de variáveis do ambiente desejado (`aws ssm` requerido):
+   ```bash
+   ./scripts/fetch-env-qa.sh qa    # ou ./scripts/fetch-env-prod.sh prod
+   ```
+2. Suba os serviços (por padrão o compose usa o `.env` da raiz). Se preferir outro arquivo, exporte `ENV_FILE` antes do comando:
+   ```bash
+   docker compose -f docker-compose.dev.yml up
+   # ou, para usar o arquivo baixado via fetch:
+   ENV_FILE=.env.qa docker compose -f docker-compose.dev.yml up
+   ```
+3. Caso queira incluir os bancos locais no mesmo comando, habilite o perfil `local-db`:
+   ```bash
+   ENV_FILE=.env.qa docker compose --profile local-db -f docker-compose.dev.yml up
+   ```
+   O perfil pode ser combinado com `down`, `logs` e demais subcomandos do Docker Compose.
+   Se estiver usando apenas o `.env` principal, remova o prefixo `ENV_FILE=...`.
+
+> Prefere um atalho? Rode `yarn docker:start:env qa` ou `yarn docker:start:env prod` para ajustar `API_DATABASE_ENV` e subir o compose (usando o `.env` por padrão).
+
+> Preferindo manter apenas o `.env`, defina manualmente as credenciais remotas e exporte `API_DATABASE_ENV=production` ou `API_DATABASE_ENV=homolog` antes de subir:
+> ```bash
+> API_DATABASE_ENV=production docker compose -f docker-compose.dev.yml up
+> ```
+> Assim o serviço usa os hosts remotos mesmo carregando o `.env` padrão.
+
 ## Available Scripts
 
 | Command | Description |

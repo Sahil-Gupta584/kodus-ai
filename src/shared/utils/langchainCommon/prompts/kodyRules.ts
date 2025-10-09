@@ -70,7 +70,6 @@ DISCUSSION HERE
 
 //#region updater
 export const kodyRulesUpdateSuggestionsSchema = z.object({
-    overallSummary: z.string(),
     codeSuggestions: z.array(
         z.object({
             id: z.string(),
@@ -128,7 +127,6 @@ Data you have access to
 
 \`\`\`jsonc
 {
-  "overallSummary": "High-level summary of changes in the PR",
   "codeSuggestions": [
     {
       "id": "string",
@@ -174,7 +172,6 @@ ${patchWithLinesStr}
 
 //#region generator
 export const kodyRulesSuggestionGenerationSchema = z.object({
-    overallSummary: z.string(),
     codeSuggestions: z.array(
         z.object({
             id: z.string(),
@@ -304,7 +301,6 @@ DISCUSSION HERE
 
 \`\`\`json
 {
-    "overallSummary": "Summary of changes in the PR",
     "codeSuggestions": [
         {
             "id": string,

@@ -9,7 +9,9 @@ import { ParametersModule } from './parameters.module';
 import { CodebaseModule } from './codeBase.module';
 import { PlatformIntegrationModule } from './platformIntegration.module';
 import { LicenseModule } from '@/ee/license/license.module';
+import { OrganizationParametersModule } from './organizationParameters.module';
 import { WebhookLogModule } from './webhookLog.module';
+import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
 
 @Module({
     imports: [
@@ -19,8 +21,10 @@ import { WebhookLogModule } from './webhookLog.module';
         forwardRef(() => ParametersModule),
         forwardRef(() => CodebaseModule),
         forwardRef(() => PlatformIntegrationModule),
-        LicenseModule,
+        forwardRef(() => OrganizationParametersModule),
         forwardRef(() => WebhookLogModule),
+        LicenseModule,
+        PermissionValidationModule,
     ],
     providers: [
         {

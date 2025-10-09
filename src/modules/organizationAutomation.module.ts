@@ -2,7 +2,6 @@ import { UseCases } from '@/core/application/use-cases/organizationAutomation';
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AutomationStrategyModule } from './automationStrategy.module';
-import { SlackModule } from './slack.module';
 import { OrganizationModule } from './organization.module';
 import { AutomationModule } from './automation.module';
 import { PlatformIntegrationModule } from './platformIntegration.module';
@@ -22,7 +21,6 @@ import { OrganizationAutomationController } from '@/core/infrastructure/http/con
         TypeOrmModule.forFeature([OrganizationAutomationModel]),
         forwardRef(() => OrganizationModel),
         forwardRef(() => AutomationStrategyModule),
-        forwardRef(() => SlackModule),
         forwardRef(() => AutomationModule),
         forwardRef(() => PlatformIntegrationModule),
         forwardRef(() => IntegrationModule),
@@ -47,4 +45,4 @@ import { OrganizationAutomationController } from '@/core/infrastructure/http/con
         ORGANIZATION_AUTOMATION_SERVICE_TOKEN,
     ],
 })
-export class OrganizationAutomationModule { }
+export class OrganizationAutomationModule {}

@@ -7,7 +7,6 @@ import { UpdateOrCreateTeamAutomationUseCase } from './updateOrCreateTeamAutomat
 import { ActiveCodeManagementTeamAutomationsUseCase } from './active-code-manegement-automations.use-case';
 import { ActiveProjectManagementTeamAutomationsUseCase } from './active-project-management-automations.use-case';
 import { ActiveCommunicationManagementTeamAutomationsUseCase } from './active-communication-management-automations.use-case';
-import { GenerateCodeArtifactsUseCase } from '../platformIntegration/codeManagement/generate-code-artifacts.use-case';
 import { ActiveCodeReviewAutomationUseCase } from './active-code-review-automation.use-case';
 
 export const UseCases = [
@@ -20,6 +19,5 @@ export const UseCases = [
     ActiveCodeManagementTeamAutomationsUseCase,
     ActiveProjectManagementTeamAutomationsUseCase,
     ActiveCommunicationManagementTeamAutomationsUseCase,
-    GenerateCodeArtifactsUseCase,
-    ActiveCodeReviewAutomationUseCase
+    ActiveCodeReviewAutomationUseCase,
 ];

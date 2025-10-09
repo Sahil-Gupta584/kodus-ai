@@ -148,6 +148,10 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 ignorePaths: mergedConfigs.ignorePaths.concat(
                     globalIgnorePathsJson?.paths ?? [],
                 ),
+                // v2-only prompt overrides (categories and severity guidance). Read from repo/global parameters.
+                v2PromptOverrides: this.sanitizeV2PromptOverrides(
+                    mergedConfigs.v2PromptOverrides,
+                ),
             };
 
             return fullConfig;
@@ -160,6 +164,53 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
             });
             throw new Error('Error getting code review config parameters');
         }
+    }
+
+    private sanitizeV2PromptOverrides(
+        overrides: CodeReviewConfig['v2PromptOverrides'],
+    ): CodeReviewConfig['v2PromptOverrides'] {
+        if (!overrides) return undefined;
+
+        const sanitizeString = (value: any): string | undefined => {
+            if (typeof value === 'string' && value.trim().length > 0) {
+                return value.trim();
+            }
+            return undefined;
+        };
+
+        const categories = overrides.categories?.descriptions
+            ? {
+                  descriptions: {
+                      bug: sanitizeString(
+                          overrides.categories.descriptions.bug,
+                      ),
+                      performance: sanitizeString(
+                          overrides.categories.descriptions.performance,
+                      ),
+                      security: sanitizeString(
+                          overrides.categories.descriptions.security,
+                      ),
+                  },
+              }
+            : undefined;
+
+        const severity = overrides.severity?.flags
+            ? {
+                  flags: {
+                      critical: sanitizeString(
+                          overrides.severity.flags.critical,
+                      ),
+                      high: sanitizeString(overrides.severity.flags.high),
+                      medium: sanitizeString(overrides.severity.flags.medium),
+                      low: sanitizeString(overrides.severity.flags.low),
+                  },
+              }
+            : undefined;
+
+        return {
+            categories,
+            severity,
+        };
     }
 
     async getMergedCodeReviewConfigs(
@@ -615,24 +666,78 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 return path.startsWith('/') ? path.substring(1) : path;
             };
 
-            const matchingDirectories = repoConfig.directories.filter((dir) => {
-                const normalizedDirPath = normalizePath(dir.path);
+            const isPathCoveredByDirectory = (
+                normalizedDir: string,
+                normalizedFile: string,
+            ): boolean => {
+                if (normalizedDir === '') {
+                    return true;
+                }
 
-                return affectedPaths.some((filePath) => {
-                    const normalizedFilePath = normalizePath(filePath);
+                return (
+                    normalizedFile === normalizedDir ||
+                    normalizedFile.startsWith(normalizedDir + '/')
+                );
+            };
 
-                    return (
-                        normalizedFilePath === normalizedDirPath ||
-                        normalizedFilePath.startsWith(normalizedDirPath + '/')
+            const directoryMatchers = repoConfig.directories.map(
+                (dir: any) => ({
+                    dir,
+                    normalizedPath: normalizePath(dir.path),
+                }),
+            );
+
+            const matchingDirectories = directoryMatchers.filter(
+                ({ normalizedPath }) =>
+                    affectedPaths.some((filePath: string) => {
+                        const normalizedFile = normalizePath(filePath);
+                        return isPathCoveredByDirectory(
+                            normalizedPath,
+                            normalizedFile,
+                        );
+                    }),
+            );
+
+            const hasNotClassifiedPaths = affectedPaths.some(
+                (filePath: string) => {
+                    const normalizedFile = normalizePath(filePath);
+
+                    return !matchingDirectories.some(({ normalizedPath }) =>
+                        isPathCoveredByDirectory(
+                            normalizedPath,
+                            normalizedFile,
+                        ),
                     );
-                });
-            });
+                },
+            );
 
-            if (matchingDirectories.length !== 1) {
+            // Agrupar diretórios configurados atingidos e sinalizar paths fora de qualquer config
+            const groupedDirectories = matchingDirectories.map(
+                ({ dir }) => dir,
+            );
+
+            if (groupedDirectories.length > 0 && hasNotClassifiedPaths) {
+                groupedDirectories.push({ name: 'not classified', path: null });
+            }
+
+            if (groupedDirectories.length !== 1) {
                 return;
             }
 
-            return matchingDirectories[0];
+            if (
+                groupedDirectories.length === 1 &&
+                groupedDirectories[0]?.path !== null
+            ) {
+                // Apenas um diretório configurado afetado, usar sua config
+                return this.buildConfigFromDirectory(
+                    groupedDirectories[0],
+                    organizationAndTeamData,
+                    repository,
+                );
+            }
+
+            // Múltiplos diretórios configurados afetados, usar config do nível superior
+            return this.getConfig(organizationAndTeamData, repository);
         } catch (error) {
             this.logger.error({
                 message: 'Error resolving config by directories',
@@ -717,11 +822,14 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         const paths = new Set<string>();
 
         files.forEach((file) => {
-            const parts = file.filename.split('/');
+            const lastSlashIndex = file.filename.lastIndexOf('/');
 
-            for (let i = parts.length - 1; i > 0; i--) {
-                const path = parts.slice(0, i).join('/');
-                paths.add(path);
+            if (lastSlashIndex > 0) {
+                const directoryPath = file.filename.substring(
+                    0,
+                    lastSlashIndex,
+                );
+                paths.add(directoryPath);
             }
         });
 

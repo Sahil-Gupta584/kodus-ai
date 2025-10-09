@@ -7,6 +7,18 @@ import { LogLevel, LogContext, LogProcessor } from './types.js';
 
 let pinoLogger: pino.Logger | null = null;
 let globalLogProcessors: LogProcessor[] = [];
+let spanContextProvider:
+    | (() => { traceId: string; spanId: string } | undefined)
+    | null = null;
+let observabilityContextProvider:
+    | (() =>
+          | {
+                correlationId?: string;
+                tenantId?: string;
+                sessionId?: string;
+            }
+          | undefined)
+    | null = null;
 
 /**
  * Get or create Pino logger instance
@@ -82,8 +94,10 @@ function getPinoLogger(): pino.Logger {
  */
 export class SimpleLogger {
     private logger: pino.Logger;
+    private component: string;
 
     constructor(component: string) {
+        this.component = component;
         this.logger = getPinoLogger().child({
             component,
             service: 'kodus-observability',
@@ -130,35 +144,73 @@ export class SimpleLogger {
 
     private mergeContext(context?: LogContext): LogContext | undefined {
         if (!context) {
-            return undefined;
+            const base: LogContext = {} as any;
+            return this.attachTracingContext(base);
         }
 
-        // Ensure we don't log huge objects that could impact performance
         const sanitized = this.sanitizeContext(context);
 
-        // Add common fields that might be missing
-        return {
+        const withDefaults: LogContext = {
             ...sanitized,
-            timestamp: context.timestamp || new Date().toISOString(),
-        };
+            ...(sanitized.component === undefined && this.component
+                ? { component: this.component }
+                : {}),
+        } as any;
+
+        return this.attachTracingContext(withDefaults);
     }
 
     private sanitizeContext(context: LogContext): LogContext {
         const sanitized: any = {};
+        const sensitiveKeyPattern =
+            /pass(word)?|token|secret|api[-_]?key|authorization|access[-_]?key|refresh[-_]?token|cookie|set-cookie|cpf|cnpj/i;
 
         for (const [key, value] of Object.entries(context)) {
+            if (sensitiveKeyPattern.test(key)) {
+                sanitized[key] = '[REDACTED]';
+                continue;
+            }
+
             if (typeof value === 'object' && value !== null) {
-                // Limit object depth and size
+                if (key.toLowerCase() === 'headers') {
+                    sanitized[key] = this.sanitizeHeaders(value as any);
+                    continue;
+                }
                 sanitized[key] = this.truncateObject(value);
-            } else if (typeof value === 'string' && value.length > 1000) {
-                // Truncate long strings
-                sanitized[key] = value.substring(0, 1000) + '...';
+            } else if (typeof value === 'string') {
+                sanitized[key] =
+                    value.length > 1000
+                        ? value.substring(0, 1000) + '...'
+                        : value;
             } else {
                 sanitized[key] = value;
             }
         }
 
         return sanitized;
+    }
+
+    private sanitizeHeaders(
+        headers: Record<string, unknown>,
+    ): Record<string, unknown> {
+        const out: Record<string, unknown> = {};
+        const redact = new Set([
+            'authorization',
+            'cookie',
+            'set-cookie',
+            'x-api-key',
+            'x-access-token',
+        ]);
+        for (const [h, v] of Object.entries(headers || {})) {
+            if (redact.has(h.toLowerCase())) {
+                out[h] = '[REDACTED]';
+            } else if (typeof v === 'string' && v.length > 500) {
+                out[h] = v.substring(0, 500) + '...';
+            } else {
+                out[h] = v;
+            }
+        }
+        return out;
     }
 
     private truncateObject(obj: any, depth = 0): any {
@@ -189,6 +241,45 @@ export class SimpleLogger {
         }
 
         return obj;
+    }
+
+    private attachTracingContext(ctx: LogContext): LogContext {
+        const out: any = { ...ctx };
+
+        try {
+            const sc = spanContextProvider ? spanContextProvider() : undefined;
+
+            if (sc) {
+                if (out.traceId === undefined) out.traceId = sc.traceId;
+                if (out.spanId === undefined) out.spanId = sc.spanId;
+            }
+        } catch {}
+        try {
+            const oc = observabilityContextProvider
+                ? observabilityContextProvider()
+                : undefined;
+
+            if (oc) {
+                if (
+                    out.correlationId === undefined &&
+                    oc.correlationId !== undefined
+                ) {
+                    out.correlationId = oc.correlationId;
+
+                    if (
+                        out.tenantId === undefined &&
+                        oc.tenantId !== undefined
+                    ) {
+                        out.tenantId = oc.tenantId;
+                    }
+                }
+
+                if (out.sessionId === undefined && oc.sessionId !== undefined) {
+                    out.sessionId = oc.sessionId;
+                }
+            }
+        } catch {}
+        return out;
     }
 
     /**
@@ -238,6 +329,9 @@ export class SimpleLogger {
         context?: LogContext,
         error?: Error,
     ): void {
+        if (context && (context as any).skipProcessors === true) {
+            return; // allow internal logs without re-processing/exporting
+        }
         for (const processor of globalLogProcessors) {
             try {
                 processor.process(level, message, context, error);
@@ -277,4 +371,39 @@ export function removeLogProcessor(processor: LogProcessor): void {
  */
 export function clearLogProcessors(): void {
     globalLogProcessors = [];
+}
+
+/**
+ * Allow ObservabilitySystem to control runtime log level
+ */
+export function setGlobalLogLevel(level: LogLevel | string): void {
+    const logger = getPinoLogger();
+    // Pino accepts broader levels; keep flexible
+    logger.level = level as any;
+}
+
+/**
+ * Allow ObservabilitySystem to provide current span context for log correlation
+ */
+export function setSpanContextProvider(
+    provider: (() => { traceId: string; spanId: string } | undefined) | null,
+): void {
+    spanContextProvider = provider;
+}
+
+/**
+ * Allow ObservabilitySystem to provide current observability context
+ */
+export function setObservabilityContextProvider(
+    provider:
+        | (() =>
+              | {
+                    correlationId?: string;
+                    tenantId?: string;
+                    sessionId?: string;
+                }
+              | undefined)
+        | null,
+): void {
+    observabilityContextProvider = provider;
 }

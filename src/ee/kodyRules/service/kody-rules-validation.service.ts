@@ -3,10 +3,12 @@
  * Kodus Tech. All rights reserved.
  */
 
+import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import {
     IKodyRule,
     KodyRulesStatus,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
+import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
 import { environment } from '@/ee/configs/environment';
 import { isFileMatchingGlob } from '@/shared/utils/glob-utils';
 import { Injectable } from '@nestjs/common';
@@ -17,9 +19,11 @@ import { Injectable } from '@nestjs/common';
 @Injectable()
 export class KodyRulesValidationService {
     public readonly MAX_KODY_RULES = 10;
-    public readonly isCloud: boolean;
+    private readonly isCloud: boolean;
 
-    constructor() {
+    constructor(
+        private readonly permissionValidationService: PermissionValidationService,
+    ) {
         this.isCloud = environment.API_CLOUD_MODE;
     }
 
@@ -28,19 +32,21 @@ export class KodyRulesValidationService {
      * @param totalRules Total number of rules.
      * @returns True if the number of rules is within the limit, false otherwise.
      */
-    validateRulesLimit(totalRules: number): boolean {
-        return this.isCloud ? true : totalRules <= this.MAX_KODY_RULES;
-    }
+    async validateRulesLimit(
+        organizationAndTeamData: OrganizationAndTeamData,
+        totalRules: number,
+    ): Promise<boolean> {
+        const limited =
+            await this.permissionValidationService.shouldLimitResources(
+                organizationAndTeamData,
+                KodyRulesValidationService.name,
+            );
 
-    /**
-     * Returns the error message for exceeded rules limit.
-     * @param organizationId Organization identifier.
-     * @returns Error message if limit exceeded, or empty string.
-     */
-    getExceededLimitErrorMessage(organizationId: string): string {
-        return this.isCloud
-            ? ''
-            : `Maximum number of Kody Rules (${this.MAX_KODY_RULES}) reached for organization ${organizationId}`;
+        if (!limited) {
+            return true;
+        }
+
+        return totalRules <= this.MAX_KODY_RULES;
     }
 
     /**
@@ -239,7 +245,9 @@ export class KodyRulesValidationService {
         // Check if the rule matches the repository (global or specific)
         const isRepositoryMatch = (rule: Partial<IKodyRule>): boolean => {
             // If we aren't checking a specific repository, all rules match.
-            if (!repositoryId) return true;
+            if (!repositoryId) {
+                return true;
+            }
 
             // Match if the rule is global or specific to the repository
             return (
@@ -250,7 +258,9 @@ export class KodyRulesValidationService {
 
         const isInheritanceMatch = (rule: Partial<IKodyRule>): boolean => {
             // If we aren't checking a specific directory or repository, all rules match.
-            if (!directoryId && !repositoryId) return true;
+            if (!directoryId && !repositoryId) {
+                return true;
+            }
 
             const {
                 inheritable = true,
@@ -259,7 +269,9 @@ export class KodyRulesValidationService {
             } = rule.inheritance ?? {};
 
             // If the rule is not inheritable, it doesn't match.
-            if (!inheritable) return false;
+            if (!inheritable) {
+                return false;
+            }
 
             // Check if the current directory or repository is excluded or included
             const isExcluded =
@@ -277,7 +289,9 @@ export class KodyRulesValidationService {
         };
 
         return kodyRules?.filter((rule) => {
-            if (!rule) return false; // Skip invalid rules
+            if (!rule) {
+                return false;
+            } // Skip invalid rules
 
             // If we are querying at the repository level (no directoryId is provided)
             // we do not allow rules that are specific to a directory (they cannot match)

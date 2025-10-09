@@ -13,8 +13,8 @@ import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import {
     IContributingSuggestion,
     IIssueDetails,
-} from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
-import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
+} from '@/core/infrastructure/adapters/services/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
+import { KodyIssuesManagementService } from '@/core/infrastructure/adapters/services/kodyIssuesManagement/service/kodyIssuesManagement.service';
 import { KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/KodyIssuesManagement.contract';
 import { REQUEST } from '@nestjs/core';
 import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';

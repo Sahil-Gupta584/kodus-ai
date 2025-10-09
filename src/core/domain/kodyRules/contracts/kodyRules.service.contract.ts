@@ -53,4 +53,10 @@ export interface IKodyRulesService extends IKodyRulesRepository {
         kodyRule: CreateKodyRuleDto,
         userInfo?: UserInfo,
     ): Promise<Partial<IKodyRule> | IKodyRule | null>;
+
+    getRulesLimitStatus(
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<{
+        total: number;
+    }>;
 }

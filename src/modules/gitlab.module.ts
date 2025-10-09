@@ -11,15 +11,15 @@ import { PlatformIntegrationModule } from './platformIntegration.module';
 import { TeamsModule } from './team.module';
 import { OrganizationModule } from './organization.module';
 import { UsersModule } from './user.module';
-import { MetricsModule } from './metrics.module';
-import { OrganizationMetricsModule } from './organizationMetrics.module';
 import { ParametersModule } from './parameters.module';
 import { GlobalCacheModule } from './cache.module';
 import { RunCodeReviewAutomationUseCase } from '@/ee/automation/runCodeReview.use-case';
 import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 import { CodebaseModule } from './codeBase.module';
 import { LicenseModule } from '@/ee/license/license.module';
+import { OrganizationParametersModule } from './organizationParameters.module';
 import { WebhookLogModule } from './webhookLog.module';
+import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
 
 @Module({
     imports: [
@@ -30,8 +30,6 @@ import { WebhookLogModule } from './webhookLog.module';
         forwardRef(() => PlatformIntegrationModule),
         forwardRef(() => OrganizationModule),
         forwardRef(() => UsersModule),
-        forwardRef(() => MetricsModule),
-        forwardRef(() => OrganizationMetricsModule),
         forwardRef(() => ParametersModule),
         forwardRef(() => GlobalCacheModule),
         forwardRef(() => AutomationModule),
@@ -39,8 +37,10 @@ import { WebhookLogModule } from './webhookLog.module';
         forwardRef(() => AutomationStrategyModule),
         forwardRef(() => CodeReviewFeedbackModule),
         forwardRef(() => CodebaseModule),
-        LicenseModule,
+        forwardRef(() => OrganizationParametersModule),
         forwardRef(() => WebhookLogModule),
+        LicenseModule,
+        PermissionValidationModule,
     ],
     providers: [RunCodeReviewAutomationUseCase, PromptService],
     controllers: [GitlabController],

@@ -7,7 +7,7 @@ import { IUseCase } from '@/shared/domain/interfaces/use-case.interface';
 import { Inject, Injectable } from '@nestjs/common';
 import { IIssue } from '@/core/domain/issues/interfaces/issues.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { KodyIssuesManagementService } from '@/ee/kodyIssuesManagement/service/kodyIssuesManagement.service';
+import { KodyIssuesManagementService } from '@/core/infrastructure/adapters/services/kodyIssuesManagement/service/kodyIssuesManagement.service';
 import { KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN } from '@/core/domain/codeBase/contracts/KodyIssuesManagement.contract';
 import { CacheService } from '@/shared/utils/cache/cache.service';
 import { REQUEST } from '@nestjs/core';

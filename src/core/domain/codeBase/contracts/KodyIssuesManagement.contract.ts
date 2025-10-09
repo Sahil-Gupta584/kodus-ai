@@ -1,5 +1,6 @@
 import { CodeSuggestion } from '@/config/types/general/codeReview.type';
-import { contextToGenerateIssues } from '@/ee/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
+import { contextToGenerateIssues } from '@/core/infrastructure/adapters/services/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
+import { BYOKConfig } from '@kodus/kodus-common/llm';
 
 export const KODY_ISSUES_MANAGEMENT_SERVICE_TOKEN = Symbol(
     'KodyIssuesManagementService',
@@ -15,6 +16,7 @@ export interface IKodyIssuesManagementService {
         >,
         filePath: string,
         newSuggestions: Partial<CodeSuggestion>[],
+        byokConfig: BYOKConfig | null,
     ): Promise<any>;
 
     createNewIssues(
@@ -31,5 +33,6 @@ export interface IKodyIssuesManagementService {
             'organizationAndTeamData' | 'repository' | 'pullRequest'
         >,
         files: any[],
+        byokConfig: BYOKConfig | null,
     ): Promise<void>;
 }

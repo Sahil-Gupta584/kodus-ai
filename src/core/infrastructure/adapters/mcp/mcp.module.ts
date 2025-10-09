@@ -8,6 +8,8 @@ import { CodeManagementTools, KodyRulesTools } from './tools';
 import { MCPManagerService } from './services/mcp-manager.service';
 import { JwtModule } from '@nestjs/jwt';
 import { KodyRulesModule } from '@/modules/kodyRules.module';
+import { LicenseModule } from '@/ee/license/license.module';
+import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
 
 @Module({})
 export class McpModule {
@@ -17,14 +19,21 @@ export class McpModule {
         const controllers = [];
         const exports = [];
 
+        // Always provide MCPManagerService, controllers and full functionality are conditional
         const isEnabled =
             process.env.API_MCP_SERVER_ENABLED === 'true' ||
             configService?.get<boolean>('API_MCP_SERVER_ENABLED', false);
 
+        // Always provide MCPManagerService for dependency injection
+        providers.push(MCPManagerService);
+        exports.push(MCPManagerService);
+
+        // Always import required modules for MCPManagerService dependencies
+        imports.push(JwtModule, PermissionValidationModule);
+
         if (isEnabled) {
             imports.push(
                 forwardRef(() => PlatformIntegrationModule),
-                JwtModule,
                 forwardRef(() => KodyRulesModule),
             );
 
@@ -35,10 +44,9 @@ export class McpModule {
                 McpEnabledGuard,
                 CodeManagementTools,
                 KodyRulesTools,
-                MCPManagerService,
             );
 
-            exports.push(McpServerService, MCPManagerService);
+            exports.push(McpServerService);
         }
 
         return {

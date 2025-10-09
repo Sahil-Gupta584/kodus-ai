@@ -110,7 +110,7 @@ export class GitlabMappedPlatform implements IMappedPlatform {
         }
 
         return {
-            id: params?.payload?.object_attributes?.noteable_id.toString(),
+            id: params?.payload?.object_attributes?.id.toString(),
             body: params?.payload?.object_attributes?.note,
         };
     }

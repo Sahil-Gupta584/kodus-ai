@@ -13,8 +13,11 @@ import {
     ICodeReviewSettingsLogService,
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
 } from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
-import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
-import { UserRequest } from '@/config/types/http/user-request.type';
+import {
+    ActionType,
+    ConfigLevel,
+} from '@/config/types/general/codeReviewSettingsLog.type';
+import { Request } from 'express';
 import { RepositoryWithDirectoriesException } from '@/shared/infrastructure/filters/repository-with-directories.exception';
 import { DeleteByRepositoryOrDirectoryPullRequestMessagesUseCase } from '../pullRequestMessages/delete-by-repository-or-directory.use-case';
 import {

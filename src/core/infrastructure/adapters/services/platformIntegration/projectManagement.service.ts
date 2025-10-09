@@ -26,7 +26,6 @@ import {
 } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { WorkItemsFilter } from '@/core/domain/integrationConfigs/types/projectManagement/workItemsFilter.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { ISprint } from '@/core/domain/platformIntegrations/interfaces/jiraSprint.interface';
 import { extractOrganizationAndTeamData } from '@/shared/utils/helpers';
 import { MODULE_WORKITEMS_TYPES } from '@/core/domain/integrationConfigs/enums/moduleWorkItemTypes.enum';
 import { ModuleWorkItemType } from '@/core/domain/integrationConfigs/types/projectManagement/moduleWorkItemTypes.type';
@@ -477,116 +476,6 @@ export class ProjectManagementService {
         ).workItemTypes;
 
         return workItemsTypes;
-    }
-    //#endregion
-
-    //#region Get Sprints Data
-    async getAllSprintsForTeam(
-        params: {
-            organizationAndTeamData: OrganizationAndTeamData;
-            originBoardId?: number;
-        },
-        type?: PlatformType,
-    ) {
-        if (!type) {
-            type = await this.getTypeIntegration(
-                extractOrganizationAndTeamData(params),
-            );
-        }
-
-        const projectManagementService =
-            this.platformIntegrationFactory.getProjectManagementService(type);
-
-        return projectManagementService.getAllSprintsForTeam(
-            params.organizationAndTeamData,
-            params?.originBoardId,
-        );
-    }
-
-    async getCurrentSprintForTeam(
-        params: { organizationAndTeamData: OrganizationAndTeamData },
-        type?: PlatformType,
-    ) {
-        if (!type) {
-            type = await this.getTypeIntegration(
-                extractOrganizationAndTeamData(params),
-            );
-        }
-
-        const projectManagementService =
-            this.platformIntegrationFactory.getProjectManagementService(type);
-
-        return projectManagementService.getCurrentSprintForTeam(
-            params.organizationAndTeamData,
-        );
-    }
-
-    async getLastCompletedSprintForTeam(
-        params: {
-            organizationAndTeamData: OrganizationAndTeamData;
-            originBoardId?: number;
-        },
-        type?: PlatformType,
-    ) {
-        if (!type) {
-            type = await this.getTypeIntegration(
-                extractOrganizationAndTeamData(params),
-            );
-        }
-
-        const projectManagementService =
-            this.platformIntegrationFactory.getProjectManagementService(type);
-
-        return projectManagementService.getLastCompletedSprintForTeam(
-            params.organizationAndTeamData,
-            params?.originBoardId,
-        );
-    }
-
-    async getSprintByProjectManagementId(
-        params: {
-            organizationAndTeamData: OrganizationAndTeamData;
-            projectManagementSprintId: string;
-        },
-        type?: PlatformType,
-    ): Promise<ISprint> {
-        if (!type) {
-            type = await this.getTypeIntegration(
-                extractOrganizationAndTeamData(params),
-            );
-        }
-
-        const projectManagementService =
-            this.platformIntegrationFactory.getProjectManagementService(type);
-
-        return projectManagementService.getSprintByProjectManagementId(
-            params.organizationAndTeamData,
-            params.projectManagementSprintId,
-        );
-    }
-
-    async getNextSprintForTeam(
-        params: {
-            organizationAndTeamData: any;
-            currentSprintId: string;
-            originBoardId?: number;
-        },
-        type?: PlatformType,
-    ): Promise<ISprint> {
-        if (!type) {
-            type = await this.getTypeIntegration(
-                extractOrganizationAndTeamData(params),
-            );
-        }
-
-        const projectManagementService =
-            this.platformIntegrationFactory.getProjectManagementService(type);
-
-        return projectManagementService.getNextSprintForTeam(
-            params.organizationAndTeamData,
-            params.currentSprintId,
-            params?.originBoardId,
-        );
     }
     //#endregion
 

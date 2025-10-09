@@ -8,6 +8,10 @@ if (key.length !== 32) {
 }
 
 export function encrypt(text: string): string {
+    if (!text) {
+        return '';
+    }
+
     const iv = randomBytes(16);
     const cipher = createCipheriv(algorithm, key, iv);
     let encrypted = cipher.update(text, 'utf8', 'hex');
@@ -16,6 +20,10 @@ export function encrypt(text: string): string {
 }
 
 export function decrypt(encryptedText: string): string {
+    if (!encryptedText) {
+        return '';
+    }
+
     const [ivHex, encrypted] = encryptedText.split(':');
     const iv = Buffer.from(ivHex, 'hex');
     const decipher = createDecipheriv(algorithm, key, iv);

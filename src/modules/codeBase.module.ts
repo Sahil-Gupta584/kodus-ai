@@ -26,22 +26,19 @@ import { CodeReviewFeedbackModule } from './codeReviewFeedback.module';
 
 import { SuggestionService } from '@/core/infrastructure/adapters/services/codeBase/suggestion.service';
 import { PromptService } from '@/core/infrastructure/adapters/services/prompt.service';
-import { KodyFineTuningService } from '@/ee/kodyFineTuning/kodyFineTuning.service';
 import { CodeReviewPipelineModule } from './codeReviewPipeline.module';
 import { FileReviewModule } from '@/ee/codeReview/fileReviewContextPreparation/fileReview.module';
 import { PipelineModule } from './pipeline.module';
-import { KodyFineTuningContextModule } from '@/ee/kodyFineTuning/fineTuningContext/kodyFineTuningContext.module';
 import { KodyASTAnalyzeContextModule } from '@/ee/kodyASTAnalyze/kodyAstAnalyzeContext.module';
 import CodeBaseConfigService from '@/ee/codeBase/codeBaseConfig.service';
 import { CodeAnalysisOrchestrator } from '@/ee/codeBase/codeAnalysisOrchestrator.service';
-import { CodeAstAnalysisService } from '@/ee/kodyAST/codeASTAnalysis.service';
 import {
     KODY_RULES_ANALYSIS_SERVICE_TOKEN,
     KodyRulesAnalysisService,
 } from '@/ee/codeBase/kodyRulesAnalysis.service';
 import { GlobalParametersModule } from './global-parameters.module';
-import { LogModule } from './log.module';
 import { CodeBaseController } from '@/core/infrastructure/http/controllers/codeBase.controller';
+import { ModelTestController } from '@/core/infrastructure/http/controllers/model-test.controller';
 import {
     KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN,
     KodyRulesPrLevelAnalysisService,
@@ -51,11 +48,12 @@ import {
     CrossFileAnalysisService,
 } from '@/core/infrastructure/adapters/services/codeBase/crossFileAnalysis.service';
 import { TokenChunkingModule } from './tokenChunking.module';
-import {
-    TOKEN_TRACKING_SERVICE_TOKEN,
-    TokenTrackingService,
-} from '@/shared/infrastructure/services/tokenTracking/tokenTracking.service';
 import { MessageTemplateProcessor } from '@/core/infrastructure/adapters/services/codeBase/utils/services/messageTemplateProcessor.service';
+import { KodyFineTuningService } from '@/core/infrastructure/adapters/services/kodyFineTuning/kodyFineTuning.service';
+import { LicenseModule } from '@/ee/license/license.module';
+import { LicenseService } from '@/ee/license/license.service';
+import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
+import { KodyFineTuningContextModule } from './kodyFineTuningContext.module';
 
 @Module({
     imports: [
@@ -78,7 +76,8 @@ import { MessageTemplateProcessor } from '@/core/infrastructure/adapters/service
         forwardRef(() => KodyASTAnalyzeContextModule),
         forwardRef(() => GlobalParametersModule),
         forwardRef(() => TokenChunkingModule),
-        LogModule,
+        forwardRef(() => LicenseModule),
+        PermissionValidationModule,
     ],
     providers: [
         {
@@ -110,10 +109,6 @@ import { MessageTemplateProcessor } from '@/core/infrastructure/adapters/service
             useClass: CrossFileAnalysisService,
         },
         {
-            provide: TOKEN_TRACKING_SERVICE_TOKEN,
-            useClass: TokenTrackingService,
-        },
-        {
             provide: SUGGESTION_SERVICE_TOKEN,
             useClass: SuggestionService,
         },
@@ -123,6 +118,7 @@ import { MessageTemplateProcessor } from '@/core/infrastructure/adapters/service
         KodyFineTuningService,
         CommentAnalysisService,
         MessageTemplateProcessor,
+        LicenseService,
     ],
     exports: [
         PULL_REQUEST_MANAGER_SERVICE_TOKEN,
@@ -132,7 +128,6 @@ import { MessageTemplateProcessor } from '@/core/infrastructure/adapters/service
         KODY_RULES_ANALYSIS_SERVICE_TOKEN,
         KODY_RULES_PR_LEVEL_ANALYSIS_SERVICE_TOKEN,
         CROSS_FILE_ANALYSIS_SERVICE_TOKEN,
-        TOKEN_TRACKING_SERVICE_TOKEN,
         SUGGESTION_SERVICE_TOKEN,
         PromptService,
         CodeAnalysisOrchestrator,
@@ -141,6 +136,6 @@ import { MessageTemplateProcessor } from '@/core/infrastructure/adapters/service
         CommentAnalysisService,
         MessageTemplateProcessor,
     ],
-    controllers: [CodeBaseController],
+    controllers: [CodeBaseController, ModelTestController],
 })
 export class CodebaseModule {}

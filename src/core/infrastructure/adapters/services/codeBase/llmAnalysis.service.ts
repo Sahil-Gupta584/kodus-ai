@@ -12,7 +12,6 @@ import {
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PinoLoggerService } from '../logger/pino.service';
 
-import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { z } from 'zod';
 import { LLMResponseProcessor } from './utils/transforms/llmResponseProcessor.transform';
 import { prompt_validateImplementedSuggestions } from '@/shared/utils/langchainCommon/prompts/validateImplementedSuggestions';
@@ -27,101 +26,27 @@ import {
 import { prompt_severity_analysis_user } from '@/shared/utils/langchainCommon/prompts/severityAnalysis';
 import { prompt_codeReviewSafeguard_system } from '@/shared/utils/langchainCommon/prompts';
 import {
+    BYOKConfig,
     LLMModelProvider,
     ParserType,
     PromptRole,
     PromptRunnerService,
     PromptScope,
 } from '@kodus/kodus-common/llm';
-
-// Interface for token tracking
-interface TokenUsage {
-    input_tokens?: number;
-    output_tokens?: number;
-    total_tokens?: number;
-    model?: string;
-    runId?: string;
-    parentRunId?: string;
-    output_reasoning_tokens?: number;
-}
-
-// Handler for token tracking
-class TokenTrackingHandler extends BaseCallbackHandler {
-    name = 'TokenTrackingHandler';
-    tokenUsages: TokenUsage[] = [];
-
-    private extractUsageMetadata(output: any): TokenUsage {
-        try {
-            // Attempts to extract information from different locations in the response
-            const usage: TokenUsage = {};
-
-            // Extracts token information
-            if (output?.llmOutput?.tokenUsage) {
-                Object.assign(usage, output.llmOutput.tokenUsage);
-            } else if (output?.llmOutput?.usage) {
-                Object.assign(usage, output.llmOutput.usage);
-            } else if (output?.generations?.[0]?.[0]?.message?.usage_metadata) {
-                const metadata =
-                    output.generations[0][0].message.usage_metadata;
-                usage.input_tokens = metadata.input_tokens;
-                usage.output_tokens = metadata.output_tokens;
-                usage.total_tokens = metadata.total_tokens;
-                usage.output_reasoning_tokens =
-                    metadata.output_token_details.reasoning;
-            }
-
-            // Extracts model
-            usage.model =
-                output?.llmOutput?.model ||
-                output?.generations?.[0]?.[0]?.message?.response_metadata
-                    ?.model ||
-                'unknown';
-
-            return usage;
-        } catch (error) {
-            console.error('Error extracting usage metadata:', error);
-            return {};
-        }
-    }
-
-    async handleLLMEnd(
-        output: any,
-        runId: string,
-        parentRunId?: string,
-        tags?: string[],
-    ) {
-        const usage = this.extractUsageMetadata(output);
-
-        if (Object.keys(usage).length > 0) {
-            this.tokenUsages.push({
-                ...usage,
-                runId,
-                parentRunId,
-            });
-        }
-    }
-
-    getTokenUsages(): TokenUsage[] {
-        return this.tokenUsages;
-    }
-
-    reset() {
-        this.tokenUsages = [];
-    }
-}
+import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
+import { ObservabilityService } from '../logger/observability.service';
 
 export const LLM_ANALYSIS_SERVICE_TOKEN = Symbol('LLMAnalysisService');
 
 @Injectable()
 export class LLMAnalysisService implements IAIAnalysisService {
-    private readonly tokenTracker: TokenTrackingHandler;
     private readonly llmResponseProcessor: LLMResponseProcessor;
 
     constructor(
         private readonly logger: PinoLoggerService,
         private readonly promptRunnerService: PromptRunnerService,
+        private readonly observabilityService: ObservabilityService,
     ) {
-        this.tokenTracker = new TokenTrackingHandler();
         this.llmResponseProcessor = new LLMResponseProcessor(logger);
     }
 
@@ -179,16 +104,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
 </suggestionsContext>`;
     }
 
-    private async logTokenUsage(metadata: any) {
-        // Log token usage for analysis and monitoring
-        this.logger.log({
-            message: 'Token usage',
-            context: LLMAnalysisService.name,
-            metadata: {
-                ...metadata,
-            },
-        });
-    }
     //#endregion
 
     //#region Analyze Code with AI
@@ -201,51 +116,69 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
     ): Promise<AIAnalysisResult> {
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
         const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+        const runName = 'analyzeCodeWithAI';
 
-        // Reset token tracking for new analysis
-        this.tokenTracker.reset();
+        const promptRunner = new BYOKPromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            context?.codeReviewConfig?.byokConfig,
+        );
 
-        // Prepare base context
         const baseContext = this.prepareAnalysisContext(fileContext, context);
+        const spanName = `${LLMAnalysisService.name}::${runName}`;
+        const spanAttrs = {
+            type: promptRunner.executeMode,
+            organizationId: organizationAndTeamData?.organizationId,
+            prNumber,
+            file: { filePath: fileContext?.file?.filename },
+        };
 
         try {
-            const analysis = await this.promptRunnerService
-                .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
-                .setParser(ParserType.STRING)
-                .setLLMJsonMode(true)
-                .setPayload(baseContext)
-                .addPrompt({
-                    prompt: prompt_codereview_system_gemini,
-                    role: PromptRole.SYSTEM,
-                    scope: PromptScope.MAIN,
-                })
-                .addPrompt({
-                    prompt: prompt_codereview_user_gemini,
-                    role: PromptRole.USER,
-                    scope: PromptScope.MAIN,
-                })
-                .addPrompt({
-                    prompt: prompt_codereview_user_deepseek,
-                    role: PromptRole.USER,
-                    scope: PromptScope.FALLBACK,
-                })
-                .setTemperature(0)
-                .addCallbacks([this.tokenTracker])
-                .addMetadata({
-                    organizationId:
-                        baseContext?.organizationAndTeamData?.organizationId,
-                    teamId: baseContext?.organizationAndTeamData?.teamId,
-                    pullRequestId: baseContext?.pullRequest?.number,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
-                    reviewMode: reviewModeResponse,
-                })
-                .setRunName('analyzeCodeWithAI')
-                .execute();
+            const { result: analysis } =
+                await this.observabilityService.runLLMInSpan({
+                    spanName,
+                    runName,
+                    attrs: spanAttrs,
+                    exec: async (callbacks) => {
+                        return await promptRunner
+                            .builder()
+                            .setParser(ParserType.STRING)
+                            .setLLMJsonMode(true)
+                            .setPayload(baseContext)
+                            .addPrompt({
+                                prompt: prompt_codereview_system_gemini,
+                                role: PromptRole.SYSTEM,
+                                scope: PromptScope.MAIN,
+                            })
+                            .addPrompt({
+                                prompt: prompt_codereview_user_gemini,
+                                role: PromptRole.USER,
+                                scope: PromptScope.MAIN,
+                            })
+                            .addPrompt({
+                                prompt: prompt_codereview_user_deepseek,
+                                role: PromptRole.USER,
+                                scope: PromptScope.FALLBACK,
+                            })
+                            .setTemperature(0)
+                            .addCallbacks(callbacks)
+                            .addMetadata({
+                                organizationId:
+                                    baseContext?.organizationAndTeamData
+                                        ?.organizationId,
+                                teamId: baseContext?.organizationAndTeamData
+                                    ?.teamId,
+                                pullRequestId: baseContext?.pullRequest?.number,
+                                provider,
+                                fallbackProvider,
+                                reviewMode: reviewModeResponse,
+                                runName,
+                            })
+                            .setRunName(runName)
+                            .execute();
+                    },
+                });
 
             if (!analysis) {
                 const message = `No analysis result for PR#${prNumber}`;
@@ -261,29 +194,17 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 throw new Error(message);
             }
 
-            // Process result and tokens
             const analysisResult = this.llmResponseProcessor.processResponse(
                 organizationAndTeamData,
                 prNumber,
                 analysis,
             );
-
             if (!analysisResult) {
                 return null;
             }
-
             analysisResult.codeReviewModelUsed = {
                 generateSuggestions: provider,
             };
-
-            const tokenUsages = this.tokenTracker.getTokenUsages();
-            await this.logTokenUsage({
-                tokenUsages,
-                organizationAndTeamData,
-                prNumber,
-                analysis,
-            });
-
             return analysisResult;
         } catch (error) {
             this.logger.error({
@@ -305,78 +226,109 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         fileContext: FileChangeContext,
         reviewModeResponse: ReviewModeResponse,
         context: AnalysisContext,
+        byokConfig: BYOKConfig,
     ): Promise<AIAnalysisResult> {
-        const provider = LLMModelProvider.GEMINI_2_5_PRO;
-        const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+        const defaultProvider = LLMModelProvider.GEMINI_2_5_PRO;
+        const defaultFallback = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+        const runName = 'analyzeCodeWithAI_v2';
 
-        // Reset token tracking for new analysis
-        this.tokenTracker.reset();
+        const promptRunner = new BYOKPromptRunnerService(
+            this.promptRunnerService,
+            defaultProvider,
+            defaultFallback,
+            byokConfig,
+        );
 
-        // Prepare base context
         const baseContext = this.prepareAnalysisContext(fileContext, context);
+        const spanName = `${LLMAnalysisService.name}::${runName}`;
+        const spanAttrs = {
+            type: promptRunner.executeMode,
+            organizationId: organizationAndTeamData?.organizationId,
+            prNumber,
+            file: { filePath: fileContext?.file?.filename },
+        };
 
         try {
-            const schema = z.object({
-                codeSuggestions: z.array(
-                    z.object({
-                        id: z.string().optional(),
-                        relevantFile: z.string(),
-                        language: z.string(),
-                        suggestionContent: z.string(),
-                        existingCode: z.string().optional(),
-                        improvedCode: z.string(),
-                        oneSentenceSummary: z.string().optional(),
-                        relevantLinesStart: z.number().min(1).optional(),
-                        relevantLinesEnd: z.number().min(1).optional(),
-                        label: z.string(),
-                        severity: z.string().optional(),
-                        rankScore: z.number().optional(),
-                    }),
-                ),
-                overallSummary: z.string(),
-            });
+            const { result: analysis } =
+                await this.observabilityService.runLLMInSpan({
+                    spanName,
+                    runName,
+                    attrs: spanAttrs,
+                    exec: async (callbacks) => {
+                        const schema = z.object({
+                            codeSuggestions: z.array(
+                                z.object({
+                                    id: z.string().optional(),
+                                    relevantFile: z.string(),
+                                    language: z.string(),
+                                    suggestionContent: z.string(),
+                                    existingCode: z.string().optional(),
+                                    improvedCode: z.string(),
+                                    oneSentenceSummary: z.string().optional(),
+                                    relevantLinesStart: z
+                                        .number()
+                                        .min(1)
+                                        .optional(),
+                                    relevantLinesEnd: z
+                                        .number()
+                                        .min(1)
+                                        .optional(),
+                                    label: z.string(),
+                                    severity: z.string().optional(),
+                                    rankScore: z.number().optional(),
+                                }),
+                            ),
+                        });
 
-            const analysis = await this.promptRunnerService
-                .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
-                .setParser(ParserType.ZOD, schema, {
-                    provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
-                    fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
-                })
-                .setLLMJsonMode(true)
-                .setPayload(baseContext)
-                .addPrompt({
-                    prompt: prompt_codereview_system_gemini_v2,
-                    role: PromptRole.SYSTEM,
-                    scope: PromptScope.MAIN,
-                })
-                .addPrompt({
-                    prompt: prompt_codereview_user_gemini_v2,
-                    role: PromptRole.USER,
-                    scope: PromptScope.MAIN,
-                })
-                .addPrompt({
-                    prompt: prompt_codereview_user_deepseek,
-                    role: PromptRole.USER,
-                    scope: PromptScope.FALLBACK,
-                })
-                .setTemperature(0)
-                .addCallbacks([this.tokenTracker])
-                .addMetadata({
-                    organizationId:
-                        baseContext?.organizationAndTeamData?.organizationId,
-                    teamId: baseContext?.organizationAndTeamData?.teamId,
-                    pullRequestId: baseContext?.pullRequest?.number,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
-                    reviewMode: reviewModeResponse,
-                })
-                .setRunName('analyzeCodeWithAI_v2')
-                .setMaxReasoningTokens(3000)
-                .execute();
+                        return await promptRunner
+                            .builder()
+                            .setParser(ParserType.ZOD, schema as any, {
+                                provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
+                                fallbackProvider:
+                                    LLMModelProvider.OPENAI_GPT_4O,
+                            })
+                            .setLLMJsonMode(true)
+                            .setPayload(baseContext)
+                            .addPrompt({
+                                prompt: prompt_codereview_system_gemini_v2,
+                                role: PromptRole.SYSTEM,
+                                scope: PromptScope.MAIN,
+                            })
+                            .addPrompt({
+                                prompt: prompt_codereview_user_gemini_v2,
+                                role: PromptRole.USER,
+                                scope: PromptScope.MAIN,
+                            })
+                            .addPrompt({
+                                prompt: prompt_codereview_user_deepseek,
+                                role: PromptRole.USER,
+                                scope: PromptScope.FALLBACK,
+                            })
+                            .setTemperature(0)
+                            .addCallbacks(callbacks)
+                            .addMetadata({
+                                organizationId:
+                                    baseContext?.organizationAndTeamData
+                                        ?.organizationId,
+                                teamId: baseContext?.organizationAndTeamData
+                                    ?.teamId,
+                                pullRequestId: baseContext?.pullRequest?.number,
+                                provider:
+                                    byokConfig?.main?.provider ||
+                                    defaultProvider,
+                                model: byokConfig?.main?.model,
+                                fallbackProvider:
+                                    byokConfig?.fallback?.provider ||
+                                    defaultFallback,
+                                fallbackModel: byokConfig?.fallback?.model,
+                                reviewMode: reviewModeResponse,
+                                runName,
+                            })
+                            .setRunName(runName)
+                            .setMaxReasoningTokens(3000)
+                            .execute();
+                    },
+                });
 
             if (!analysis) {
                 const message = `No analysis result for PR#${prNumber}`;
@@ -392,23 +344,13 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 throw new Error(message);
             }
 
-            // Com o parser zod, a resposta já vem estruturada
             const analysisResult: AIAnalysisResult = {
-                codeSuggestions:
-                    analysis.codeSuggestions as Partial<CodeSuggestion>[],
-                overallSummary: analysis.overallSummary,
+                codeSuggestions: analysis.codeSuggestions,
                 codeReviewModelUsed: {
-                    generateSuggestions: provider,
+                    generateSuggestions:
+                        byokConfig?.main?.provider || defaultProvider,
                 },
             };
-
-            const tokenUsages = this.tokenTracker.getTokenUsages();
-            await this.logTokenUsage({
-                tokenUsages,
-                organizationAndTeamData,
-                prNumber,
-                analysis,
-            });
 
             return analysisResult;
         } catch (error) {
@@ -450,6 +392,8 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             organizationAndTeamData: context?.organizationAndTeamData,
             relevantContent: fileContext?.relevantContent,
             prSummary: context?.pullRequest?.body,
+            // v2-only prompt customization (categories and severity guidance)
+            v2PromptOverrides: context?.codeReviewConfig?.v2PromptOverrides,
         };
 
         return baseContext;
@@ -470,48 +414,61 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             provider === LLMModelProvider.OPENAI_GPT_4O
                 ? LLMModelProvider.GEMINI_2_5_PRO
                 : LLMModelProvider.OPENAI_GPT_4O;
+        const runName = 'generateCodeSuggestions';
 
-        // Reset token tracking for new suggestions
-        this.tokenTracker.reset();
+        const spanName = `${LLMAnalysisService.name}::${runName}`;
+        const spanAttrs = {
+            type: 'system',
+            organizationId: organizationAndTeamData?.organizationId,
+            sessionId,
+        };
 
         try {
-            const result = await this.promptRunnerService
-                .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
-                .setParser(ParserType.STRING)
-                .setLLMJsonMode(true)
-                .setPayload({ question })
-                // legacy code compatibility when migrating to PromptRunnerService
-                .addPrompt({
-                    prompt: () => prompt_codereview_system_gemini({}),
-                    role: PromptRole.SYSTEM,
-                    scope: PromptScope.MAIN,
-                })
-                .addPrompt({
-                    prompt: () => prompt_codereview_user_gemini({}),
-                    role: PromptRole.USER,
-                    scope: PromptScope.MAIN,
-                })
-                .addPrompt({
-                    prompt: () => prompt_codereview_user_deepseek({}),
-                    role: PromptRole.USER,
-                    scope: PromptScope.FALLBACK,
-                })
-                .addMetadata({
-                    organizationId: organizationAndTeamData?.organizationId,
-                    teamId: organizationAndTeamData?.teamId,
-                    sessionId,
-                    provider,
-                    fallbackProvider,
-                    reviewMode,
-                })
-                .addCallbacks([this.tokenTracker])
-                .setRunName('generateCodeSuggestions')
-                .setTemperature(0)
-                .execute();
+            const { result } = await this.observabilityService.runLLMInSpan({
+                spanName,
+                runName,
+                attrs: spanAttrs,
+                exec: async (callbacks) => {
+                    return await this.promptRunnerService
+                        .builder()
+                        .setProviders({
+                            main: provider,
+                            fallback: fallbackProvider,
+                        })
+                        .setParser(ParserType.STRING)
+                        .setLLMJsonMode(true)
+                        .setPayload({ question })
+                        .addPrompt({
+                            prompt: () => prompt_codereview_system_gemini({}),
+                            role: PromptRole.SYSTEM,
+                            scope: PromptScope.MAIN,
+                        })
+                        .addPrompt({
+                            prompt: () => prompt_codereview_user_gemini({}),
+                            role: PromptRole.USER,
+                            scope: PromptScope.MAIN,
+                        })
+                        .addPrompt({
+                            prompt: () => prompt_codereview_user_deepseek({}),
+                            role: PromptRole.USER,
+                            scope: PromptScope.FALLBACK,
+                        })
+                        .addMetadata({
+                            organizationId:
+                                organizationAndTeamData?.organizationId,
+                            teamId: organizationAndTeamData?.teamId,
+                            sessionId,
+                            provider,
+                            fallbackProvider,
+                            reviewMode,
+                            runName,
+                        })
+                        .addCallbacks(callbacks)
+                        .setRunName(runName)
+                        .setTemperature(0)
+                        .execute();
+                },
+            });
 
             if (!result) {
                 const message = `No code suggestions generated for session ${sessionId}`;
@@ -527,25 +484,13 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 throw new Error(message);
             }
 
-            // Log token usage
-            const tokenUsages = this.tokenTracker.getTokenUsages();
-            await this.logTokenUsage({
-                tokenUsages,
-                organizationAndTeamData,
-                sessionId,
-                parameters,
-            });
             return result;
         } catch (error) {
             this.logger.error({
                 message: `Error generating code suggestions`,
                 error,
                 context: LLMAnalysisService.name,
-                metadata: {
-                    organizationAndTeamData,
-                    sessionId,
-                    parameters,
-                },
+                metadata: { organizationAndTeamData, sessionId, parameters },
             });
             throw error;
         }
@@ -558,37 +503,62 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         prNumber: number,
         provider: LLMModelProvider,
         codeSuggestions: CodeSuggestion[],
+        byokConfig: BYOKConfig,
     ): Promise<Partial<CodeSuggestion>[]> {
         const fallbackProvider =
             provider === LLMModelProvider.OPENAI_GPT_4O
                 ? LLMModelProvider.NOVITA_DEEPSEEK_V3_0324
                 : LLMModelProvider.OPENAI_GPT_4O;
+        const runName = 'severityAnalysis';
+
+        const promptRunner = new BYOKPromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            byokConfig,
+        );
+
+        const spanName = `${LLMAnalysisService.name}::${runName}`;
+        const spanAttrs = {
+            type: promptRunner.executeMode,
+            organizationId: organizationAndTeamData?.organizationId,
+            prNumber,
+        };
 
         try {
-            const result = await this.promptRunnerService
-                .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
-                .setParser(ParserType.STRING)
-                .setLLMJsonMode(true)
-                .setPayload(codeSuggestions)
-                .addPrompt({
-                    prompt: prompt_severity_analysis_user,
-                    role: PromptRole.USER,
-                })
-                .addCallbacks([this.tokenTracker])
-                .addMetadata({
-                    organizationId: organizationAndTeamData?.organizationId,
-                    teamId: organizationAndTeamData?.teamId,
-                    pullRequestId: prNumber,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
-                })
-                .setRunName('severityAnalysis')
-                .setTemperature(0)
-                .execute();
+            const { result } = await this.observabilityService.runLLMInSpan({
+                spanName,
+                runName,
+                attrs: spanAttrs,
+                exec: async (callbacks) => {
+                    return await promptRunner
+                        .builder()
+                        .setParser(ParserType.STRING)
+                        .setLLMJsonMode(true)
+                        .setPayload(codeSuggestions)
+                        .addPrompt({
+                            prompt: prompt_severity_analysis_user,
+                            role: PromptRole.USER,
+                        })
+                        .addCallbacks(callbacks)
+                        .addMetadata({
+                            organizationId:
+                                organizationAndTeamData?.organizationId,
+                            teamId: organizationAndTeamData?.teamId,
+                            pullRequestId: prNumber,
+                            provider: byokConfig?.main?.provider || provider,
+                            model: byokConfig?.main?.model,
+                            fallbackProvider:
+                                byokConfig?.fallback?.provider ||
+                                fallbackProvider,
+                            fallbackModel: byokConfig?.fallback?.model,
+                            runName,
+                        })
+                        .setRunName(runName)
+                        .setTemperature(0)
+                        .execute();
+                },
+            });
 
             if (!result) {
                 const message = `No severity analysis result for PR#${prNumber}`;
@@ -642,99 +612,116 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
         suggestions: any[],
         languageResultPrompt: string,
         reviewMode: ReviewModeResponse,
+        byokConfig: BYOKConfig,
     ): Promise<ISafeguardResponse> {
+        const runName = 'filterSuggestionsSafeGuard';
+
+        suggestions?.forEach((suggestion) => {
+            if (
+                suggestion &&
+                Object.prototype.hasOwnProperty.call(
+                    suggestion,
+                    'suggestionEmbedded',
+                )
+            ) {
+                delete suggestion?.suggestionEmbedded;
+            }
+        });
+
+        const provider = LLMModelProvider.GEMINI_2_5_PRO;
+        const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
+
+        const promptRunner = new BYOKPromptRunnerService(
+            this.promptRunnerService,
+            provider,
+            fallbackProvider,
+            byokConfig,
+        );
+
+        const payload = {
+            fileContent: file?.fileContent,
+            relevantContent,
+            patchWithLinesStr: codeDiff,
+            language: file?.language,
+            filePath: file?.filename,
+            suggestions,
+            languageResultPrompt,
+            reviewMode,
+        };
+
+        const spanName = `${LLMAnalysisService.name}::${runName}`;
+        const spanAttrs = {
+            type: promptRunner.executeMode,
+            organizationId: organizationAndTeamData?.organizationId,
+            prNumber,
+            file: { filePath: file?.filename },
+        };
+
         try {
-            suggestions?.forEach((suggestion) => {
-                if (
-                    suggestion &&
-                    Object.prototype.hasOwnProperty.call(
-                        suggestion,
-                        'suggestionEmbedded',
-                    )
-                ) {
-                    delete suggestion?.suggestionEmbedded;
-                }
-            });
-
-            const provider = LLMModelProvider.GEMINI_2_5_PRO;
-            const fallbackProvider = LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET;
-
-            this.tokenTracker.reset();
-
-            const payload = {
-                fileContent: file?.fileContent,
-                relevantContent,
-                patchWithLinesStr: codeDiff,
-                language: file?.language,
-                filePath: file?.filename,
-                suggestions,
-                languageResultPrompt,
-                reviewMode,
-            };
-
             const schema = z.object({
                 codeSuggestions: z.array(
-                    z
-                        .object({
-                            id: z.string(),
-                            suggestionContent: z.string(),
-                            existingCode: z.string(),
-                            improvedCode: z.string().nullable(),
-                            oneSentenceSummary: z.string(),
-                            relevantLinesStart: z.number().min(1),
-                            relevantLinesEnd: z.number().min(1),
-                            label: z.string().optional(),
-                            action: z.string(),
-                            reason: z.string().optional(),
-                        })
-                        .refine(
-                            (data) =>
-                                data.suggestionContent &&
-                                data.existingCode &&
-                                data.oneSentenceSummary &&
-                                data.relevantLinesStart &&
-                                data.relevantLinesEnd &&
-                                data.action,
-                            {
-                                message: 'All fields are required',
-                            },
-                        ),
+                    z.object({
+                        id: z.string(),
+                        suggestionContent: z.string(),
+                        existingCode: z.string(),
+                        improvedCode: z.string().nullable(),
+                        oneSentenceSummary: z.string(),
+                        relevantLinesStart: z.number().min(1),
+                        relevantLinesEnd: z.number().min(1),
+                        label: z.string().optional(),
+                        action: z.string(),
+                        reason: z.string().optional(),
+                    }),
                 ),
             });
 
-            const filteredSuggestions = await this.promptRunnerService
-                .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
-                .setParser(ParserType.ZOD, schema, {
-                    provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
-                    fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
-                })
-                .setLLMJsonMode(true)
-                .setPayload(payload)
-                .addPrompt({
-                    prompt: prompt_codeReviewSafeguard_system,
-                    role: PromptRole.SYSTEM,
-                })
-                .addPrompt({
-                    prompt: this.preparePrefixChainForCache(payload),
-                    role: PromptRole.USER,
-                })
-                .addMetadata({
-                    organizationId: organizationAndTeamData?.organizationId,
-                    teamId: organizationAndTeamData?.teamId,
-                    pullRequestId: prNumber,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
-                    reviewMode: reviewMode,
-                })
-                .setTemperature(0)
-                .addCallbacks([this.tokenTracker])
-                .setRunName('filterSuggestionsSafeGuard')
-                .setMaxReasoningTokens(5000)
-                .execute();
+            const { result: filteredSuggestions } =
+                await this.observabilityService.runLLMInSpan({
+                    spanName,
+                    runName,
+                    attrs: spanAttrs,
+                    exec: async (callbacks) => {
+                        return await promptRunner
+                            .builder()
+                            .setParser(ParserType.ZOD, schema as any, {
+                                provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
+                                fallbackProvider:
+                                    LLMModelProvider.OPENAI_GPT_4O,
+                            })
+                            .setLLMJsonMode(true)
+                            .setPayload(payload)
+                            .addPrompt({
+                                prompt: prompt_codeReviewSafeguard_system,
+                                role: PromptRole.SYSTEM,
+                            })
+                            .addPrompt({
+                                prompt: this.preparePrefixChainForCache(
+                                    payload,
+                                ),
+                                role: PromptRole.USER,
+                            })
+                            .addMetadata({
+                                organizationId:
+                                    organizationAndTeamData?.organizationId,
+                                teamId: organizationAndTeamData?.teamId,
+                                pullRequestId: prNumber,
+                                reviewMode,
+                                model: byokConfig?.main?.model,
+                                fallbackModel: byokConfig?.fallback?.model,
+                                provider:
+                                    byokConfig?.main?.provider || provider,
+                                fallbackProvider:
+                                    byokConfig?.fallback?.provider ||
+                                    fallbackProvider,
+                                runName,
+                            })
+                            .setTemperature(0)
+                            .addCallbacks(callbacks)
+                            .setRunName(runName)
+                            .setMaxReasoningTokens(5000)
+                            .execute();
+                    },
+                });
 
             if (!filteredSuggestions) {
                 const message = `No response from safeguard for PR#${prNumber}`;
@@ -750,8 +737,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 throw new Error(message);
             }
 
-            const tokenUsages = this.tokenTracker.getTokenUsages();
-
             // Filter and update suggestions
             const suggestionsToUpdate =
                 filteredSuggestions?.codeSuggestions?.filter(
@@ -762,14 +747,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                     ?.filter((s) => s.action === 'discard')
                     .map((s) => s.id),
             );
-
-            this.logTokenUsage({
-                tokenUsages,
-                pullRequestId: prNumber,
-                fileContext: file?.filename,
-                provider,
-                organizationAndTeamData,
-            });
 
             const filteredAndMappedSuggestions = suggestions
                 ?.filter(
@@ -800,7 +777,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             return {
                 suggestions: filteredAndMappedSuggestions,
                 codeReviewModelUsed: {
-                    safeguard: provider,
+                    safeguard: byokConfig?.main?.provider || provider,
                 },
             };
         } catch (error) {
@@ -831,37 +808,50 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             provider === LLMModelProvider.OPENAI_GPT_4O
                 ? LLMModelProvider.NOVITA_DEEPSEEK_V3_0324
                 : LLMModelProvider.OPENAI_GPT_4O;
+        const runName = 'validateImplementedSuggestions';
 
-        const payload = {
-            codePatch,
-            codeSuggestions,
+        const payload = { codePatch, codeSuggestions };
+        const spanName = `${LLMAnalysisService.name}::${runName}`;
+        const spanAttrs = {
+            type: 'system',
+            organizationId: organizationAndTeamData?.organizationId,
+            prNumber,
         };
 
         try {
-            const result = await this.promptRunnerService
-                .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
-                .setParser(ParserType.STRING)
-                .setLLMJsonMode(true)
-                .setTemperature(0)
-                .setPayload(payload)
-                .addPrompt({
-                    prompt: prompt_validateImplementedSuggestions,
-                    role: PromptRole.USER,
-                })
-                .addMetadata({
-                    organizationId: organizationAndTeamData?.organizationId,
-                    teamId: organizationAndTeamData?.teamId,
-                    pullRequestId: prNumber,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
-                })
-                .addCallbacks([this.tokenTracker])
-                .setRunName('validateImplementedSuggestions')
-                .execute();
+            const { result } = await this.observabilityService.runLLMInSpan({
+                spanName,
+                runName,
+                attrs: spanAttrs,
+                exec: async (callbacks) => {
+                    return await this.promptRunnerService
+                        .builder()
+                        .setProviders({
+                            main: provider,
+                            fallback: fallbackProvider,
+                        })
+                        .setParser(ParserType.STRING)
+                        .setLLMJsonMode(true)
+                        .setTemperature(0)
+                        .setPayload(payload)
+                        .addPrompt({
+                            prompt: prompt_validateImplementedSuggestions,
+                            role: PromptRole.USER,
+                        })
+                        .addMetadata({
+                            organizationId:
+                                organizationAndTeamData?.organizationId,
+                            teamId: organizationAndTeamData?.teamId,
+                            pullRequestId: prNumber,
+                            provider,
+                            fallbackProvider,
+                            runName,
+                        })
+                        .addCallbacks(callbacks)
+                        .setRunName(runName)
+                        .execute();
+                },
+            });
 
             if (!result) {
                 const message = `No response from validate implemented suggestions for PR#${prNumber}`;
@@ -901,7 +891,6 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
                 },
             });
         }
-
         return codeSuggestions;
     }
     //#endregion
@@ -918,37 +907,50 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
             provider === LLMModelProvider.OPENAI_GPT_4O
                 ? LLMModelProvider.NOVITA_DEEPSEEK_V3_0324
                 : LLMModelProvider.OPENAI_GPT_4O;
+        const runName = 'selectReviewMode';
 
-        const payload = {
-            file,
-            codeDiff,
+        const payload = { file, codeDiff };
+        const spanName = `${LLMAnalysisService.name}::${runName}`;
+        const spanAttrs = {
+            type: 'system',
+            organizationId: organizationAndTeamData?.organizationId,
+            prNumber,
         };
 
         try {
-            const result = await this.promptRunnerService
-                .builder()
-                .setProviders({
-                    main: provider,
-                    fallback: fallbackProvider,
-                })
-                .setParser(ParserType.STRING)
-                .setLLMJsonMode(true)
-                .setTemperature(0)
-                .setPayload(payload)
-                .addPrompt({
-                    prompt: prompt_selectorLightOrHeavyMode_system,
-                    role: PromptRole.SYSTEM,
-                })
-                .addCallbacks([this.tokenTracker])
-                .addMetadata({
-                    organizationId: organizationAndTeamData?.organizationId,
-                    teamId: organizationAndTeamData?.teamId,
-                    pullRequestId: prNumber,
-                    provider: provider,
-                    fallbackProvider: fallbackProvider,
-                })
-                .setRunName('selectReviewMode')
-                .execute();
+            const { result } = await this.observabilityService.runLLMInSpan({
+                spanName,
+                runName,
+                attrs: spanAttrs,
+                exec: async (callbacks) => {
+                    return await this.promptRunnerService
+                        .builder()
+                        .setProviders({
+                            main: provider,
+                            fallback: fallbackProvider,
+                        })
+                        .setParser(ParserType.STRING)
+                        .setLLMJsonMode(true)
+                        .setTemperature(0)
+                        .setPayload(payload)
+                        .addPrompt({
+                            prompt: prompt_selectorLightOrHeavyMode_system,
+                            role: PromptRole.SYSTEM,
+                        })
+                        .addCallbacks(callbacks)
+                        .addMetadata({
+                            organizationId:
+                                organizationAndTeamData?.organizationId,
+                            teamId: organizationAndTeamData?.teamId,
+                            pullRequestId: prNumber,
+                            provider,
+                            fallbackProvider,
+                            runName,
+                        })
+                        .setRunName(runName)
+                        .execute();
+                },
+            });
 
             if (!result) {
                 const message = `No response from select review mode for PR#${prNumber}`;

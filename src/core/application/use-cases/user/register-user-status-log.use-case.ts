@@ -4,7 +4,7 @@ import { UserStatusDto } from '@/core/infrastructure/http/dtos/user-status-chang
 import {
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
     ICodeReviewSettingsLogService,
-} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+} from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 

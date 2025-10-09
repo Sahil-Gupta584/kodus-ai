@@ -13,6 +13,7 @@ import {
     BaseMessageLike,
     isBaseMessage,
 } from '@langchain/core/messages';
+import { BYOKConfig } from './byokProvider.service';
 
 export type PromptFn<Payload> = (input: Payload) => string;
 
@@ -43,6 +44,8 @@ export type PromptRunnerParams<Payload, OutputType = any> = {
     parser: BaseOutputParser<OutputType>;
     prompts: PromptConfig<Payload>[];
     payload?: Payload;
+    byokConfig?: BYOKConfig;
+    byokFallbackConfig?: BYOKConfig;
 } & Partial<Omit<LLMProviderOptions, 'model'>> &
     /** Options passed to the `withConfig` langchain method */
     Partial<RunnableConfig>;
@@ -138,25 +141,35 @@ export class PromptRunnerService {
         try {
             this.validateParams(params);
 
-            const { fallbackProvider } = params;
+            const { fallbackProvider, byokConfig, byokFallbackConfig } = params;
 
             const mainChain = this.createProviderChain<Payload, OutputType>(
                 params,
             );
-
             if (!mainChain) {
                 throw new Error('Main chain could not be created');
             }
 
-            if (!fallbackProvider) {
-                return mainChain.withConfig(params);
+            // Se não houver fallback / byokFallback, só retorna mainChain ou com config,
+            // mas se byokConfig existir, evitar aplicar withConfig
+            if (!fallbackProvider && !byokFallbackConfig) {
+                const sanitizedParams = { ...params };
+
+                if (byokConfig) {
+                    delete sanitizedParams?.maxReasoningTokens;
+                    delete sanitizedParams?.byokConfig;
+                    delete sanitizedParams?.byokFallbackConfig;
+                    delete sanitizedParams?.jsonMode;
+                    delete sanitizedParams?.json;
+                }
+
+                return mainChain.withConfig(sanitizedParams);
             }
 
             const fallbackChain = this.createProviderChain<Payload, OutputType>(
                 params,
                 true,
             );
-
             if (!fallbackChain) {
                 throw new Error('Fallback chain could not be created');
             }
@@ -165,7 +178,19 @@ export class PromptRunnerService {
                 fallbacks: [fallbackChain],
             });
 
-            return withFallbacks.withConfig(params);
+            const sanitizedParams = { ...params };
+
+            if (byokConfig) {
+                if (byokConfig) {
+                    delete sanitizedParams?.maxReasoningTokens;
+                    delete sanitizedParams?.byokConfig;
+                    delete sanitizedParams?.byokFallbackConfig;
+                    delete sanitizedParams?.jsonMode;
+                    delete sanitizedParams?.json;
+                }
+            }
+
+            return withFallbacks.withConfig(sanitizedParams);
         } catch (error) {
             this.logger.error({
                 message: 'Error creating chain',
@@ -204,10 +229,15 @@ export class PromptRunnerService {
             const providerToUse =
                 fallback && fallbackProvider ? fallbackProvider : provider;
 
+            const byokConfig = fallback
+                ? params.byokFallbackConfig
+                : params.byokConfig;
+
             const llm = this.llmProvider.getLLMProvider({
                 ...params,
                 model: providerToUse,
                 temperature,
+                byokConfig,
             });
 
             const promptFn = (input: Payload) => {
@@ -304,8 +334,11 @@ export class PromptRunnerService {
     private validateParams<Payload>(
         params: PromptRunnerParams<Payload>,
     ): asserts params is PromptRunnerParams<Payload> {
-        if (!params.provider) {
-            throw new Error('Provider must be defined in the parameters.');
+        // BYOK é opcional, então ajustar validação
+        if (!params.provider && !params.byokConfig) {
+            throw new Error(
+                'Provider or BYOK config must be defined in the parameters.',
+            );
         }
         if (!params.parser) {
             throw new Error('Parser must be defined in the parameters.');

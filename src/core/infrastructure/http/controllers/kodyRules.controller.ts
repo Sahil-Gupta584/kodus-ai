@@ -42,6 +42,7 @@ import {
     checkRepoPermissions,
 } from '../../adapters/services/permissions/policy.handlers';
 import { GetInheritedRulesKodyRulesUseCase } from '@/core/application/use-cases/kodyRules/get-inherited-kody-rules.use-case';
+import { GetRulesLimitStatusUseCase } from '@/core/application/use-cases/kodyRules/get-rules-limit-status.use-case';
 import { UserRequest } from '@/config/types/http/user-request.type';
 
 @Controller('kody-rules')
@@ -63,6 +64,7 @@ export class KodyRulesController {
         private readonly cacheService: CacheService,
         private readonly syncSelectedReposKodyRulesUseCase: SyncSelectedRepositoriesKodyRulesUseCase,
         private readonly getInheritedRulesKodyRulesUseCase: GetInheritedRulesKodyRulesUseCase,
+        private readonly getRulesLimitStatusUseCase: GetRulesLimitStatusUseCase,
 
         @Inject(REQUEST)
         private readonly request: UserRequest,
@@ -89,6 +91,13 @@ export class KodyRulesController {
     @CheckPolicies(checkPermissions(Action.Read, ResourceType.KodyRules))
     public async findByOrganizationId() {
         return this.findByOrganizationIdKodyRulesUseCase.execute();
+    }
+
+    @Get('/limits')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Read, ResourceType.KodyRules))
+    public async getRulesLimitStatus() {
+        return this.getRulesLimitStatusUseCase.execute();
     }
 
     @Get('/find-rule-in-organization-by-id')

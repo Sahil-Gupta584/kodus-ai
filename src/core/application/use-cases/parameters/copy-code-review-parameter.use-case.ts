@@ -11,7 +11,7 @@ import { REQUEST } from '@nestjs/core';
 import {
     ICodeReviewSettingsLogService,
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
-} from '@/core/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
+} from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
 import {
     ActionType,
     ConfigLevel,

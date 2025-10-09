@@ -1,4 +1,7 @@
-import { CodeReviewConfig, FileChange } from "@/config/types/general/codeReview.type";
+import {
+    CodeReviewConfig,
+    FileChange,
+} from '@/config/types/general/codeReview.type';
 
 export interface LogInfo {
     message: string;
@@ -9,13 +12,13 @@ export interface LogInfo {
 export interface ValidateConfigResult {
     status: 'SKIP' | 'CONTINUE';
     codeReviewConfig?: CodeReviewConfig;
-    loginfo?: LogInfo
+    loginfo?: LogInfo;
 }
 
 export interface GetChangedFilesResult {
     status: 'SKIP' | 'CONTINUE';
     files?: FileChange[];
-    loginfo?: LogInfo
+    loginfo?: LogInfo;
     lastExecution?: {
         commentId?: number;
         noteId?: number;
@@ -31,13 +34,12 @@ export interface GetOrCreateInitialCommentResult {
         noteId: number;
         threadId?: number;
     };
-    loginfo?: LogInfo
+    loginfo?: LogInfo;
 }
 
 export interface ProcessFilesForCodeReviewResult {
     status: 'SKIP' | 'CONTINUE';
     data?: {
-        overallComments: { filepath: string; summary: string }[];
         lastAnalyzedCommit: string;
         lineComments: any[];
     };
@@ -58,14 +60,12 @@ export interface ProcessSingleFileResult {
     status: 'SKIP' | 'CONTINUE';
     data?: {
         allSuggestions: any[];
-        overallComments: { filepath: string; summary: string }[];
     };
     loginfo?: LogInfo;
 }
 
 export interface ProcessFileResult {
     allSuggestions: any[];
-    overallComments: { filepath: string; summary: string }[];
 }
 
 export interface PrioritizeSuggestionsResult {

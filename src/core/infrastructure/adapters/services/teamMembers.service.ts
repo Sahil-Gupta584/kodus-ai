@@ -9,7 +9,6 @@ import {
     IUpdateOrCreateMembersResponse,
 } from '@/core/domain/teamMembers/interfaces/team-members.interface';
 import { Inject, Injectable, forwardRef } from '@nestjs/common';
-import { CommunicationService } from './platformIntegration/communication.service';
 import {
     IMSTeamsService,
     MSTEAMS_SERVICE_TOKEN,
@@ -36,8 +35,6 @@ export class TeamMemberService implements ITeamMemberService {
 
         @Inject(forwardRef(() => MSTEAMS_SERVICE_TOKEN))
         private readonly msTeamsService: IMSTeamsService,
-
-        private readonly communication: CommunicationService,
 
         @Inject(USER_SERVICE_TOKEN)
         private readonly usersService: IUsersService,
