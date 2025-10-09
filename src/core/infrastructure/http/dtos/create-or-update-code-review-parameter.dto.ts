@@ -371,4 +371,8 @@ export class CreateOrUpdateCodeReviewParameterDto {
     @IsString()
     @IsOptional()
     directoryId?: string;
+
+    @IsString()
+    @IsOptional()
+    directoryPath?: string;
 }

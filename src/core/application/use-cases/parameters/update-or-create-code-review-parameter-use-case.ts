@@ -38,6 +38,7 @@ import { getDefaultKodusConfigFile } from '@/shared/utils/validateCodeReviewConf
 import { produce } from 'immer';
 import { deepDifference, deepMerge } from '@/shared/utils/deep';
 import { CreateOrUpdateCodeReviewParameterDto } from '@/core/infrastructure/http/dtos/create-or-update-code-review-parameter.dto';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class UpdateOrCreateCodeReviewParameterUseCase {
@@ -63,12 +64,13 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
         body: CreateOrUpdateCodeReviewParameterDto,
     ): Promise<ParametersEntity<ParametersKey.CODE_REVIEW_CONFIG> | boolean> {
         try {
-            const {
-                organizationAndTeamData,
-                configValue,
-                repositoryId,
-                directoryId,
-            } = body;
+            const { organizationAndTeamData, configValue, repositoryId } = body;
+            let directoryPath = body.directoryPath;
+            let directoryId = body.directoryId;
+
+            if (directoryPath === '/' || directoryPath === '') {
+                directoryPath = undefined;
+            }
 
             if (!organizationAndTeamData.organizationId) {
                 organizationAndTeamData.organizationId =
@@ -101,6 +103,55 @@ export class UpdateOrCreateCodeReviewParameterUseCase {
             }
 
             this.mergeRepositories(codeReviewConfigs, filteredRepositoryInfo);
+
+            if (directoryPath) {
+                if (directoryId) {
+                    throw new Error(
+                        'Directory ID should not be provided when directory path is provided',
+                    );
+                }
+
+                if (!repositoryId) {
+                    throw new Error(
+                        'Repository ID is required when directory path is provided',
+                    );
+                }
+
+                const repoIndex = codeReviewConfigs.repositories.findIndex(
+                    (r) => r.id === repositoryId,
+                );
+
+                if (repoIndex === -1) {
+                    throw new Error('Repository configuration not found');
+                }
+
+                const targetRepo = codeReviewConfigs.repositories[repoIndex];
+                if (!targetRepo.directories) {
+                    targetRepo.directories = [];
+                }
+
+                const existingDirectory = targetRepo.directories.find(
+                    (d) => d.path === directoryPath,
+                );
+
+                if (existingDirectory) {
+                    directoryId = existingDirectory.id;
+                } else {
+                    const segments = directoryPath.split('/');
+                    const name = segments[segments.length - 1];
+
+                    const newDirectory: DirectoryCodeReviewConfig = {
+                        id: uuidv4(),
+                        name,
+                        path: directoryPath,
+                        isSelected: true,
+                        configs: {},
+                    };
+
+                    targetRepo.directories.push(newDirectory);
+                    directoryId = newDirectory.id;
+                }
+            }
 
             return await this.handleConfigUpdate(
                 organizationAndTeamData,
