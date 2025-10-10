@@ -69,8 +69,8 @@ export class PullRequestMessagesController {
         @Query('directoryId') directoryId?: string,
     ) {
         return await this.findByRepositoryOrDirectoryIdPullRequestMessagesUseCase.execute(
-            repositoryId,
             organizationId,
+            repositoryId,
             directoryId,
         );
     }
