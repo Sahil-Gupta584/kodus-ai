@@ -181,13 +181,11 @@ export class PromptRunnerService {
             const sanitizedParams = { ...params };
 
             if (byokConfig) {
-                if (byokConfig) {
-                    delete sanitizedParams?.maxReasoningTokens;
-                    delete sanitizedParams?.byokConfig;
-                    delete sanitizedParams?.byokFallbackConfig;
-                    delete sanitizedParams?.jsonMode;
-                    delete sanitizedParams?.json;
-                }
+                delete sanitizedParams?.maxReasoningTokens;
+                delete sanitizedParams?.byokConfig;
+                delete sanitizedParams?.byokFallbackConfig;
+                delete sanitizedParams?.jsonMode;
+                delete sanitizedParams?.json;
             }
 
             return withFallbacks.withConfig(sanitizedParams);

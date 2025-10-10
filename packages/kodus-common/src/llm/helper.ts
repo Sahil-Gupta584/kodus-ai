@@ -259,9 +259,7 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
     // Anthropic
     [LLMModelProvider.CLAUDE_3_5_SONNET]: {
         provider: 'anthropic',
-        factory: getChatAnthropic as (
-            args: FactoryArgs,
-        ) => BaseChatModel | Runnable,
+        factory: getChatAnthropic,
         modelName: 'claude-3-5-sonnet-20241022',
         defaultMaxTokens: -1,
     },
@@ -269,18 +267,14 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
     // Google Gemini
     [LLMModelProvider.GEMINI_2_0_FLASH]: {
         provider: 'google',
-        factory: getChatGemini as (
-            args: FactoryArgs,
-        ) => BaseChatModel | Runnable,
+        factory: getChatGemini,
         modelName: 'gemini-2.0-flash',
         defaultMaxTokens: 8000,
         maxReasoningTokens: 15000,
     },
     [LLMModelProvider.GEMINI_2_5_PRO]: {
         provider: 'google',
-        factory: getChatGemini as (
-            args: FactoryArgs,
-        ) => BaseChatModel | Runnable,
+        factory: getChatGemini,
         modelName: 'gemini-2.5-pro',
         defaultMaxTokens: 60000,
         inputMaxTokens: 1000000,
@@ -288,9 +282,7 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
     },
     [LLMModelProvider.GEMINI_2_5_FLASH]: {
         provider: 'google',
-        factory: getChatGemini as (
-            args: FactoryArgs,
-        ) => BaseChatModel | Runnable,
+        factory: getChatGemini,
         modelName: 'gemini-2.5-flash',
         defaultMaxTokens: 60000,
         maxReasoningTokens: 15000,
@@ -299,27 +291,21 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
     // Vertex AI
     [LLMModelProvider.VERTEX_GEMINI_2_0_FLASH]: {
         provider: 'vertex',
-        factory: getChatVertexAI as (
-            args: FactoryArgs,
-        ) => BaseChatModel | Runnable,
+        factory: getChatVertexAI,
         modelName: 'gemini-2.0-flash',
         defaultMaxTokens: 8000,
         maxReasoningTokens: 15000,
     },
     [LLMModelProvider.VERTEX_GEMINI_2_5_PRO]: {
         provider: 'vertex',
-        factory: getChatVertexAI as (
-            args: FactoryArgs,
-        ) => BaseChatModel | Runnable,
+        factory: getChatVertexAI,
         modelName: 'gemini-2.5-pro',
         defaultMaxTokens: 60000,
         maxReasoningTokens: 15000,
     },
     [LLMModelProvider.VERTEX_GEMINI_2_5_FLASH]: {
         provider: 'vertex',
-        factory: getChatVertexAI as (
-            args: FactoryArgs,
-        ) => BaseChatModel | Runnable,
+        factory: getChatVertexAI,
         modelName: 'gemini-2.5-flash',
         defaultMaxTokens: 60000,
         maxReasoningTokens: 15000,
@@ -327,9 +313,7 @@ export const MODEL_STRATEGIES: Record<LLMModelProvider, ModelStrategy> = {
 
     [LLMModelProvider.VERTEX_CLAUDE_3_5_SONNET]: {
         provider: 'vertex',
-        factory: getChatVertexAI as (
-            args: FactoryArgs,
-        ) => BaseChatModel | Runnable,
+        factory: getChatVertexAI,
         modelName: 'claude-3-5-sonnet-v2@20241022',
         defaultMaxTokens: 4000,
         inputMaxTokens: 200000,
