@@ -495,7 +495,7 @@ export const prompt_codereview_system_gemini_v2 = (
 ) => {
     const languageNote = payload?.languageResultPrompt || 'en-US';
     const overrides = payload?.v2PromptOverrides || {};
-    const defaults = getDefaultKodusConfigFile().v2PromptOverrides;
+    const defaults = getDefaultKodusConfigFile()?.v2PromptOverrides;
 
     // Build dynamic bullet lists with safe fallbacks
     const limitText = (text: string, max = 2000): string =>

@@ -230,7 +230,7 @@ export const prompt_kodyrules_suggestiongeneration_user = (payload: any) => {
         payload;
     const overrides = payload?.v2PromptOverrides || {};
 
-    const defaults = getDefaultKodusConfigFile().v2PromptOverrides;
+    const defaults = getDefaultKodusConfigFile()?.v2PromptOverrides;
 
     const limitText = (text: string, max = 2000): string =>
         text.length > max ? text.slice(0, max) : text;
