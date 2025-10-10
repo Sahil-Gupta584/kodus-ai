@@ -6,7 +6,6 @@ import {
     Get,
     Param,
     Patch,
-    Post,
     Query,
     UseGuards,
 } from '@nestjs/common';
@@ -21,13 +20,11 @@ import {
 } from '../../adapters/services/permissions/policy.guard';
 import {
     checkPermissions,
-    checkRepoPermissions,
 } from '../../adapters/services/permissions/policy.handlers';
 import {
     Action,
     ResourceType,
 } from '@/core/domain/permissions/enums/permissions.enum';
-import { CreateIssueManuallyDto } from '../dtos/create-issue-manually.dto';
 import { CreateIssueManuallyUseCase } from '@/core/application/use-cases/issues/create-issue-manually.use-case';
 
 @Controller('issues')
@@ -38,7 +35,6 @@ export class IssuesController {
         private readonly getTotalIssuesUseCase: GetTotalIssuesUseCase,
         private readonly getIssueByIdUseCase: GetIssueByIdUseCase,
         private readonly updateIssuePropertyUseCase: UpdateIssuePropertyUseCase,
-        private readonly createIssueManuallyUseCase: CreateIssueManuallyUseCase,
     ) {}
 
     @Get()
@@ -81,12 +77,5 @@ export class IssuesController {
             body.field,
             body.value,
         );
-    }
-
-    @Post()
-    @UseGuards(PolicyGuard)
-    @CheckPolicies(checkPermissions(Action.Create, ResourceType.Issues))
-    async createIssue(@Body() body: CreateIssueManuallyDto) {
-        return await this.createIssueManuallyUseCase.execute(body)
     }
 }

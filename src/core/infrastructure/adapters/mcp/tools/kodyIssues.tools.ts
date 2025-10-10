@@ -24,7 +24,6 @@ export class KodyIssuesTools {
 
         private readonly logger: PinoLoggerService,
         private readonly createIssueManuallyUseCase: CreateIssueManuallyUseCase,
-        private readonly updateIssuePropertyUseCase: UpdateIssuePropertyUseCase,
     ) {}
 
     createKodyIssue(): McpToolDefinition {
@@ -169,9 +168,8 @@ export class KodyIssuesTools {
                 data: z.object({}).passthrough().nullable(),
             }),
             execute: wrapToolHandler(async (args: InputType) => {
-                const updated = await this.updateIssuePropertyUseCase.execute(
+                const updated = await this.issuesService.updateStatus(
                     args.issueId,
-                    'status',
                     args.status,
                 );
                 return {
@@ -197,9 +195,8 @@ export class KodyIssuesTools {
                 data: z.object({}).passthrough().nullable(),
             }),
             execute: wrapToolHandler(async (args: InputType) => {
-                const updated = await this.updateIssuePropertyUseCase.execute(
+                const updated = await this.issuesService.updateLabel(
                     args.issueId,
-                    'label',
                     args.label,
                 );
                 return {
@@ -222,9 +219,8 @@ export class KodyIssuesTools {
                 data: z.object({}).passthrough().nullable(),
             }),
             execute: wrapToolHandler(async (args: InputType) => {
-                const updated = await this.updateIssuePropertyUseCase.execute(
+                const updated = await this.issuesService.updateStatus(
                     args.issueId,
-                    'status' as any,
                     IssueStatus.DISMISSED,
                 );
                 return {

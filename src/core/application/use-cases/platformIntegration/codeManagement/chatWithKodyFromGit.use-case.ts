@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { AGENT_SERVICE_TOKEN } from '@/core/domain/agents/contracts/agent.service.contracts';
 import { IntegrationConfigEntity } from '@/core/domain/integrationConfigs/entities/integration-config.entity';
+import { AgentService } from '@/core/infrastructure/adapters/services/agent/agent.service';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
@@ -8,19 +10,6 @@ import { ConversationAgentUseCase } from '../../agent/conversation-agent.use-cas
 import { BusinessRulesValidationAgentUseCase } from '../../agent/business-rules-validation-agent.use-case';
 import { createThreadId } from '@kodus/flow';
 import posthogClient from '@/shared/utils/posthog';
-import { IssueStatus } from '@/config/types/general/issues.type';
-import { PULL_REQUESTS_SERVICE_TOKEN } from '@/core/domain/pullRequests/contracts/pullRequests.service.contracts';
-import { PullRequestsService } from '@/core/infrastructure/adapters/services/pullRequests/pullRequests.service';
-import { ISSUES_SERVICE_TOKEN } from '@/core/domain/issues/contracts/issues.service.contract';
-import { IssuesService } from '@/core/infrastructure/adapters/services/issues/issues.service';
-import { LabelType } from '@/shared/utils/codeManagement/labels';
-import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
-import { GitlabService } from '@/core/infrastructure/adapters/services/gitlab.service';
-import { Gitlab } from '@gitbeaker/rest';
-import { AuthMode } from '@/core/domain/platformIntegrations/enums/codeManagement/authMode.enum';
-import { decrypt } from '@/shared/utils/crypto';
-import { CreateIssueManuallyUseCase } from '../../issues/create-issue-manually.use-case';
-import { CreateIssueManuallyDto } from '@/core/infrastructure/http/dtos/create-issue-manually.dto';
 
 // Constants
 const KODY_COMMANDS = {
@@ -44,7 +33,6 @@ const ACKNOWLEDGMENT_MESSAGES = {
 
 enum CommandType {
     BUSINESS_LOGIC_VALIDATION = 'business_logic_validation',
-    MANUAL_ISSUE_CREATION = 'manual_issue_creation',
     CONVERSATION = 'conversation',
     UNKNOWN = 'unknown',
 }
@@ -91,43 +79,12 @@ class ConversationCommandHandler implements CommandHandler {
     }
 }
 
-class ManualIssueCreationCommandHandler implements CommandHandler {
-    private readonly params: WebhookParams;
-
-    constructor(params: WebhookParams) {
-        this.params = params;
-    }
-
-    canHandle(userCommentBody: string): boolean {
-        const trimmedBody = userCommentBody.toLowerCase().trim();
-
-        const codeReviewCommentEvents = [
-            'pull_request_review_comment', // github
-            'ms.vss-code.git-pullrequest-comment-event', // azure repo
-            'Note Hook', // gitlab
-            'pullrequest:comment_created', // bitbucket
-        ];
-        if (!codeReviewCommentEvents.includes(this.params.event)) return false;
-
-        // Matches intentional manual issue creation
-        const ISSUE_REGEX =
-            /^@(kody|kodus)\s*(?:-|:)?\s*(?:create|make)\s+(?:an\s+|a\s+|the\s+)?issue/i;
-
-        return ISSUE_REGEX.test(trimmedBody);
-    }
-
-    getCommandType(): CommandType {
-        return CommandType.MANUAL_ISSUE_CREATION;
-    }
-}
-
 class CommandManager {
     private handlers: CommandHandler[];
 
-    constructor(params: WebhookParams) {
+    constructor() {
         this.handlers = [
             new BusinessLogicValidationCommandHandler(),
-            new ManualIssueCreationCommandHandler(params),
             new ConversationCommandHandler(),
         ];
     }
@@ -147,7 +104,6 @@ interface WebhookParams {
 interface Repository {
     name: string;
     id: string;
-    full_name?: string;
 }
 
 interface Sender {
@@ -193,17 +149,12 @@ export class ChatWithKodyFromGitUseCase {
     private commandManager: CommandManager;
 
     constructor(
-        @Inject(PULL_REQUESTS_SERVICE_TOKEN)
-        private readonly pullRequestService: PullRequestsService,
-
-        @Inject(ISSUES_SERVICE_TOKEN)
-        private readonly issuesService: IssuesService,
+        @Inject(AGENT_SERVICE_TOKEN)
+        private readonly agentService: AgentService,
 
         private readonly logger: PinoLoggerService,
-        private readonly gitlabService: GitlabService,
         private readonly codeManagementService: CodeManagementService,
         private readonly conversationAgentUseCase: ConversationAgentUseCase,
-        private readonly createIssueManuallyUseCase: CreateIssueManuallyUseCase,
         private readonly businessRulesValidationAgentUseCase: BusinessRulesValidationAgentUseCase,
     ) {}
 
@@ -268,7 +219,7 @@ export class ChatWithKodyFromGitUseCase {
                 },
             });
 
-            this.commandManager = new CommandManager(params);
+            this.commandManager = new CommandManager();
             const commandType = this.detectCommandType(params);
 
             if (commandType === CommandType.BUSINESS_LOGIC_VALIDATION) {
@@ -279,16 +230,6 @@ export class ChatWithKodyFromGitUseCase {
                     pullRequestDescription,
                     organizationAndTeamData,
                 );
-            }
-
-            if (commandType === CommandType.MANUAL_ISSUE_CREATION) {
-                await this.handleManualIssueCreation(
-                    params,
-                    repository,
-                    pullRequestNumber,
-                    organizationAndTeamData,
-                );
-                return;
             }
 
             if (commandType === CommandType.CONVERSATION) {
@@ -310,209 +251,6 @@ export class ChatWithKodyFromGitUseCase {
         }
     }
 
-    private async handleManualIssueCreation(
-        params: WebhookParams,
-        repository: Repository,
-        pullRequestNumber: number,
-        organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<void> {
-        try {
-            this.logger.log({
-                message: 'Detected manual issue creation request',
-                context: ChatWithKodyFromGitUseCase.name,
-                metadata: {
-                    repository: repository.name,
-                    pullRequestNumber,
-                },
-            });
-
-            const { reporter, suggestionCommentId, discussionId } =
-                await this.getSuggestionCommentIdAndReporter(
-                    params,
-                    organizationAndTeamData,
-                );
-
-            if (!suggestionCommentId) {
-                this.logger.log({
-                    message:
-                        "Couldn't find review comment id in webhook payload",
-                    context: ChatWithKodyFromGitUseCase.name,
-                    metadata: {
-                        repository: repository.name,
-                        pullRequestNumber,
-                    },
-                });
-                return;
-            }
-
-            const pullRequest =
-                await this.pullRequestService.findByNumberAndRepositoryName(
-                    pullRequestNumber,
-                    repository.name,
-                    organizationAndTeamData,
-                );
-
-            if (!pullRequest) {
-                this.logger.error({
-                    message: 'Pull request not found to create issue manually',
-                    context: ChatWithKodyFromGitUseCase.name,
-                    metadata: {
-                        pullRequestNumber,
-                        repository,
-                        organizationAndTeamData,
-                    },
-                });
-                return;
-            }
-
-            const suggestion = pullRequest.files
-                .flatMap((f) => f.suggestions)
-                .find((s) => s.comment?.id === suggestionCommentId);
-
-            if (!suggestion) {
-                this.logger.log({
-                    message:
-                        "Couldn't find suggestion for manual issue creation",
-                    context: ChatWithKodyFromGitUseCase.name,
-                    metadata: {
-                        repository: repository.name,
-                        pullRequestNumber,
-                        suggestionCommentId,
-                    },
-                });
-            }
-            const issueDto: CreateIssueManuallyDto = {
-                title: suggestion.oneSentenceSummary,
-                description: suggestion.suggestionContent,
-                filePath: suggestion.relevantFile,
-                language: suggestion.language,
-                label: suggestion?.label as LabelType,
-                severity: suggestion?.severity as SeverityLevel,
-                organizationId: organizationAndTeamData.organizationId,
-                repository: {
-                    id: repository.id,
-                    name: repository.name,
-                    full_name: repository.full_name,
-                    platform: params.platformType,
-                },
-                owner: {
-                    gitId: pullRequest.user.id,
-                    username: pullRequest.user.username,
-                },
-                reporter,
-            };
-
-            await this.createIssueManuallyUseCase.execute(issueDto);
-
-            this.logger.log({
-                message: 'Manual Issue record created',
-                context: ChatWithKodyFromGitUseCase.name,
-            });
-
-            await this.codeManagementService.createResponseToComment(
-                {
-                    organizationAndTeamData,
-                    prNumber: pullRequestNumber,
-                    inReplyToId: suggestionCommentId,
-                    threadId: suggestionCommentId,
-                    discussionId,
-                    repository,
-                    body: '[Issue](https://app.kodus.io/issues) have been created successfully.',
-                },
-                params.platformType,
-            );
-        } catch (error) {
-            this.logger.error({
-                message: 'Error to complete manual issue creation',
-                context: ChatWithKodyFromGitUseCase.name,
-                error,
-                metadata: { repository, organizationAndTeamData },
-            });
-        }
-    }
-
-    private async getSuggestionCommentIdAndReporter(
-        params: WebhookParams,
-        organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<{
-        suggestionCommentId: number;
-        discussionId?: string;
-        reporter: {
-            gitId: string;
-            username: string;
-        };
-    }> {
-        if (params.platformType === PlatformType.GITHUB) {
-            return {
-                suggestionCommentId: params.payload?.comment?.in_reply_to_id,
-                reporter: {
-                    gitId: params.payload?.comment?.user?.id,
-                    username: params.payload?.comment?.user?.login,
-                },
-            };
-        }
-
-        if (params.platformType === PlatformType.AZURE_REPOS) {
-            const link = params.payload.resource.comment._links.threads.href;
-            const match = link.match(/\/threads\/(\d+)/);
-
-            const threadId = match ? Number(match[1]) : null;
-
-            return {
-                suggestionCommentId: threadId,
-                reporter: {
-                    gitId: params.payload?.resource?.comment?.author?.id,
-                    username:
-                        params.payload?.resource?.comment?.author?.uniqueName,
-                },
-            };
-        }
-
-        if (params.platformType === PlatformType.GITLAB) {
-            const gitlabAuthDetail = await this.gitlabService.getAuthDetails(
-                organizationAndTeamData,
-            );
-            const gitLabApi = new Gitlab({
-                oauthToken:
-                    gitlabAuthDetail.authMode === AuthMode.OAUTH
-                        ? gitlabAuthDetail.accessToken
-                        : decrypt(gitlabAuthDetail.accessToken),
-                ...(gitlabAuthDetail.host && { host: gitlabAuthDetail.host }),
-                queryTimeout: 600000,
-                camelize: false,
-            });
-            const notesRes = await gitLabApi.MergeRequestDiscussions.show(
-                params.payload?.project_id,
-                params.payload?.merge_request?.iid,
-                params.payload?.object_attributes?.discussion_id,
-            );
-            return {
-                suggestionCommentId: notesRes.notes[0].id,
-                discussionId: params.payload?.object_attributes?.discussion_id,
-                reporter: {
-                    gitId: params.payload?.user?.id,
-                    username: params.payload?.user?.username,
-                },
-            };
-        }
-
-        if (params.platformType === PlatformType.BITBUCKET) {
-            return {
-                suggestionCommentId: params.payload?.comment?.parent?.id,
-                reporter: {
-                    gitId: params.payload?.comment?.user?.uuid,
-                    username: params.payload?.comment?.user?.nickname,
-                },
-            };
-        }
-
-        this.logger.warn({
-            message: 'Unhandled platoformtype for manual issue creation',
-            context: ChatWithKodyFromGitUseCase.name,
-            metadata: { params, organizationAndTeamData },
-        });
-    }
-
     private isRelevantAction(params: WebhookParams): boolean {
         const action = params.payload?.action;
         const eventType = params.payload?.event_type;
@@ -528,26 +266,67 @@ export class ChatWithKodyFromGitUseCase {
     }
 
     private detectCommandType(params: WebhookParams): CommandType {
-        let commentBody: string;
         if (params.event === 'issue_comment' || params.payload?.comment?.body) {
-            commentBody =
+            const commentBody =
                 params.payload?.comment?.body ||
                 params.payload?.issue?.body ||
                 '';
+            return this.commandManager.getCommandType(commentBody);
         }
 
         if (params.platformType === PlatformType.GITLAB) {
-            commentBody = params.payload?.object_attributes?.note || '';
+            const commentType = params.payload?.object_attributes?.type;
+            const isSuggestion = commentType === 'DiffNote';
+            const isGeneralFlow = commentType === null;
+            const commentBody = params.payload?.object_attributes?.note || '';
+
+            if (isSuggestion) {
+                return CommandType.CONVERSATION;
+            }
+
+            if (isGeneralFlow) {
+                return this.commandManager.getCommandType(commentBody);
+            }
+
+            return CommandType.CONVERSATION;
         }
 
         if (params.platformType === PlatformType.BITBUCKET) {
-            commentBody = params.payload?.comment?.content?.raw || '';
+            const comment = params.payload?.comment;
+            const isSuggestion =
+                comment?.inline !== null && comment?.inline !== undefined;
+            const isGeneralFlow = !isSuggestion;
+            const commentBody = comment?.content?.raw || '';
+
+            if (isSuggestion) {
+                return CommandType.CONVERSATION;
+            }
+
+            if (isGeneralFlow) {
+                return this.commandManager.getCommandType(commentBody);
+            }
+
+            return CommandType.CONVERSATION;
         }
 
         if (params.platformType === PlatformType.AZURE_REPOS) {
-            commentBody = params.payload?.resource?.comment?.content || '';
+            const comment = params.payload?.resource?.comment;
+            const isSuggestion = comment?.parentCommentId > 0;
+            const isGeneralFlow = comment?.parentCommentId === 0;
+            const commentBody = comment?.content || '';
+
+            if (isSuggestion) {
+                return CommandType.CONVERSATION;
+            }
+
+            if (isGeneralFlow) {
+                return this.commandManager.getCommandType(commentBody);
+            }
+
+            return CommandType.CONVERSATION;
         }
-        return this.commandManager.getCommandType(commentBody);
+
+        return CommandType.CONVERSATION;
     }
 
     private async handleBusinessLogicFlow(
@@ -859,6 +638,13 @@ export class ChatWithKodyFromGitUseCase {
                 organizationAndTeamData,
                 thread,
             });
+        } else {
+            response = await this.agentService.conversationWithKody(
+                organizationAndTeamData,
+                sender.id,
+                message,
+                sender.login,
+            );
         }
 
         if (!response) {
@@ -963,7 +749,6 @@ export class ChatWithKodyFromGitUseCase {
                 return {
                     name: params.payload?.repository?.name,
                     id: params.payload?.repository?.id,
-                    full_name: params.payload?.repository?.full_name,
                 };
             case PlatformType.GITLAB:
                 return {
