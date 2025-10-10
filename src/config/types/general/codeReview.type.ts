@@ -344,6 +344,9 @@ export type CodeReviewConfig = {
                 low?: string;
             };
         };
+        generation?: {
+            main?: string;
+        };
     };
     // This is the default branch of the repository, used only during the review process
     // This field is populated dynamically from the API (GitHub/GitLab) and should NOT be saved to the database

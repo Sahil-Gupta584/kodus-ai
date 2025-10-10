@@ -223,7 +223,7 @@ Let's think through this step-by-step:
 Your output must strictly be a valid JSON in the format specified below.`;
 };
 
-export const prompt_kodyrules_suggestiongeneration_user = (payload: any) => {
+export const prompt_kodyrules_suggestiongeneration_user = (payload) => {
     const languageNote = payload?.languageResultPrompt || 'en-US';
     const { patchWithLinesStr, filteredKodyRules, updatedSuggestions } =
         payload;

@@ -504,9 +504,8 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                         callbacks,
                     );
 
-                    const generatedKodyRulesSuggestionsResult = await generator
-                        .addCallbacks(callbacks)
-                        .execute();
+                    const generatedKodyRulesSuggestionsResult =
+                        await generator.execute();
 
                     return {
                         shortCircuit: false,

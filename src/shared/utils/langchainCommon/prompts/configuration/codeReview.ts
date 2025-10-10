@@ -3,6 +3,7 @@ import {
     V2_DEFAULT_CATEGORY_DESCRIPTIONS_TEXT,
     V2_DEFAULT_SEVERITY_FLAGS_TEXT,
 } from '@/shared/utils/codeReview/v2Defaults';
+import { getDefaultKodusConfigFile } from '@/shared/utils/validateCodeReviewConfigFile';
 
 export interface CodeReviewPayload {
     limitationType?: LimitationType;
@@ -28,6 +29,9 @@ export interface CodeReviewPayload {
                 medium?: string;
                 low?: string;
             };
+        };
+        generation?: {
+            main?: string;
         };
     };
 }
@@ -491,6 +495,7 @@ export const prompt_codereview_system_gemini_v2 = (
 ) => {
     const languageNote = payload?.languageResultPrompt || 'en-US';
     const overrides = payload?.v2PromptOverrides || {};
+    const defaults = getDefaultKodusConfigFile().v2PromptOverrides;
 
     // Build dynamic bullet lists with safe fallbacks
     const limitText = (text: string, max = 2000): string =>
@@ -503,9 +508,11 @@ export const prompt_codereview_system_gemini_v2 = (
             ? limitText(text.trim())
             : fallbackText;
 
-    const defaultBug = V2_DEFAULT_CATEGORY_DESCRIPTIONS_TEXT.bug;
-    const defaultPerf = V2_DEFAULT_CATEGORY_DESCRIPTIONS_TEXT.performance;
-    const defaultSec = V2_DEFAULT_CATEGORY_DESCRIPTIONS_TEXT.security;
+    const defaultCategories = defaults.categories.descriptions;
+
+    const defaultBug = defaultCategories.bug;
+    const defaultPerf = defaultCategories.performance;
+    const defaultSec = defaultCategories.security;
 
     const bugText = getTextOrDefault(
         overrides?.categories?.descriptions?.bug,
@@ -520,16 +527,25 @@ export const prompt_codereview_system_gemini_v2 = (
         defaultSec,
     );
 
-    const defaultCritical = V2_DEFAULT_SEVERITY_FLAGS_TEXT.critical;
-    const defaultHigh = V2_DEFAULT_SEVERITY_FLAGS_TEXT.high;
-    const defaultMedium = V2_DEFAULT_SEVERITY_FLAGS_TEXT.medium;
-    const defaultLow = V2_DEFAULT_SEVERITY_FLAGS_TEXT.low;
+    const defaultSeverity = defaults.severity.flags;
+
+    const defaultCritical = defaultSeverity.critical;
+    const defaultHigh = defaultSeverity.high;
+    const defaultMedium = defaultSeverity.medium;
+    const defaultLow = defaultSeverity.low;
 
     const sev = overrides?.severity?.flags || {};
     const criticalText = getTextOrDefault(sev.critical, defaultCritical);
     const highText = getTextOrDefault(sev.high, defaultHigh);
     const mediumText = getTextOrDefault(sev.medium, defaultMedium);
     const lowText = getTextOrDefault(sev.low, defaultLow);
+
+    const defaultGeneration = defaults.generation;
+
+    const mainGenText = getTextOrDefault(
+        overrides?.generation?.main,
+        defaultGeneration.main,
+    );
 
     return `You are Kody Bug-Hunter, a senior engineer specialized in identifying verifiable issues through mental code execution. Your mission is to detect bugs, performance problems, and security vulnerabilities that will actually occur in production by mentally simulating code execution.
 
@@ -656,7 +672,16 @@ ${lowText}
 - Always respond in ${languageNote} language
 - Return ONLY the JSON object, no additional text
 
-Return only valid JSON, nothing more:
+### Issue description
+
+Custom instructions for 'suggestionContent'
+IMPORTANT none of these instructions should be taken into consideration for any other fields such as 'improvedCode'
+
+${mainGenText}
+
+### Response format
+
+Return only valid JSON, nothing more. Under no circumstances should there be any text of any kind before the \`\`\`json or after the final \`\`\`, use the following JSON format:
 
 \`\`\`json
 {
@@ -664,7 +689,7 @@ Return only valid JSON, nothing more:
         {
             "relevantFile": "path/to/file",
             "language": "programming_language",
-            "suggestionContent": "Detailed and verifiable issue description",
+            "suggestionContent": "The full issue description",
             "existingCode": "Problematic code from PR",
             "improvedCode": "Fixed code proposal",
             "oneSentenceSummary": "Concise issue description",

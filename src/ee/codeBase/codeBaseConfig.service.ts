@@ -208,9 +208,16 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
               }
             : undefined;
 
+        const generation = overrides.generation
+            ? {
+                  main: sanitizeString(overrides.generation.main),
+              }
+            : undefined;
+
         return {
             categories,
             severity,
+            generation,
         };
     }
 
