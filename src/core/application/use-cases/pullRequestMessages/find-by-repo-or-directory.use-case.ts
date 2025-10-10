@@ -133,9 +133,17 @@ export class FindByRepositoryOrDirectoryIdPullRequestMessagesUseCase {
     private getConfigs(entity: PullRequestMessagesEntity | undefined) {
         const json = entity?.toJson();
         return {
-            globalSettings: json?.globalSettings,
-            endReviewMessage: json?.endReviewMessage,
-            startReviewMessage: json?.startReviewMessage,
+            globalSettings: {
+                hideComments: json?.globalSettings?.hideComments,
+            },
+            endReviewMessage: {
+                content: json?.endReviewMessage?.content,
+                status: json?.endReviewMessage?.status,
+            },
+            startReviewMessage: {
+                content: json?.startReviewMessage?.content,
+                status: json?.startReviewMessage?.status,
+            },
         } as CustomMessagesConfig;
     }
 

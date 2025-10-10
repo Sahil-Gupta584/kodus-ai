@@ -31,28 +31,19 @@ export class PullRequestMessagesEntity implements Entity<IPullRequestMessages> {
 
     toJson(): IPullRequestMessages {
         return {
-            uuid: this._uuid,
-            organizationId: this._organizationId,
-            configLevel: this._configLevel,
-            repositoryId: this._repositoryId,
-            startReviewMessage: this._startReviewMessage,
-            endReviewMessage: this._endReviewMessage,
-            directoryId: this._directoryId,
-            globalSettings: this._globalSettings,
+            uuid: this.uuid,
+            organizationId: this.organizationId,
+            configLevel: this.configLevel,
+            repositoryId: this.repositoryId,
+            startReviewMessage: this.startReviewMessage,
+            endReviewMessage: this.endReviewMessage,
+            directoryId: this.directoryId,
+            globalSettings: this.globalSettings,
         };
     }
 
     toObject(): IPullRequestMessages {
-        return {
-            uuid: this._uuid,
-            organizationId: this._organizationId,
-            configLevel: this._configLevel,
-            repositoryId: this._repositoryId,
-            startReviewMessage: this._startReviewMessage,
-            endReviewMessage: this._endReviewMessage,
-            directoryId: this._directoryId,
-            globalSettings: this._globalSettings,
-        };
+        return this.toJson();
     }
 
     get uuid(): string {
