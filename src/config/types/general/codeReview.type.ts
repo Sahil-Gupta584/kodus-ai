@@ -13,6 +13,9 @@ import z from 'zod';
 import { CodeReviewPipelineContext } from '@/core/infrastructure/adapters/services/codeBase/codeReviewPipeline/context/code-review-pipeline.context';
 import { BYOKConfig } from '@kodus/kodus-common/llm';
 import { IClusterizedSuggestion } from '@/core/domain/kodyFineTuning/interfaces/kodyFineTuning.interface';
+import { DeepPartial } from 'typeorm';
+import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
+
 export interface IFinalAnalysisResult {
     validSuggestionsToAnalyze: Partial<CodeSuggestion>[];
     discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[];
@@ -307,7 +310,6 @@ export type CodeReviewConfig = {
     reviewModeConfig?: ReviewModeConfig;
     ideRulesSyncEnabled?: boolean;
     kodyFineTuningConfig?: KodyFineTuningConfig;
-    isCommitMode?: boolean;
     configLevel?: ConfigLevel;
     directoryId?: string;
     directoryPath?: string;
@@ -369,15 +371,14 @@ export type CodeReviewConfigWithRepositoryInfo = Omit<
 };
 
 // Omit every configuration that isn't present on the kodus configuration file.
-export type KodusConfigFile = Omit<
-    CodeReviewConfig,
-    | 'llmProvider'
-    | 'languageResultPrompt'
-    | 'kodyRules'
-    | 'kodusConfigFileOverridesWebPreferences'
-    | 'kodyRulesGeneratorEnabled'
+export type KodusConfigFile = DeepPartial<
+    Omit<CodeReviewConfig, 'llmProvider' | 'languageResultPrompt' | 'kodyRules'>
 > & {
     version: string;
+    customMessages?: Pick<
+        IPullRequestMessages,
+        'startReviewMessage' | 'endReviewMessage' | 'globalSettings'
+    >;
 };
 
 export enum ReviewModeResponse {

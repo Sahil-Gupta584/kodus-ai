@@ -58,7 +58,7 @@ export class GenerateKodyRulesUseCase {
     ) {}
 
     async execute(body: GenerateKodyRulesDTO, organizationId: string) {
-        let platformConfig: ParametersEntity;
+        let platformConfig: ParametersEntity<ParametersKey.PLATFORM_CONFIGS>;
         let organizationAndTeamData: OrganizationAndTeamData;
 
         try {
@@ -128,7 +128,7 @@ export class GenerateKodyRulesUseCase {
 
             const allRules = [];
             const createdRules = []; // Para rastrear regras criadas para notificação
-            
+
             for (const repository of filteredRepositories) {
                 const pullRequests =
                     await this.codeManagementService.getPullRequestsByRepository(
@@ -324,7 +324,8 @@ export class GenerateKodyRulesUseCase {
                     .execute(organizationId, createdRules)
                     .catch((error) => {
                         this.logger.error({
-                            message: 'Error sending email notification for Kody rules',
+                            message:
+                                'Error sending email notification for Kody rules',
                             context: GenerateKodyRulesUseCase.name,
                             error,
                             metadata: {
@@ -372,7 +373,7 @@ export class GenerateKodyRulesUseCase {
 
         return codeReviewConfig.configValue.repositories.filter(
             (repo) => repo.isSelected === true,
-        ) as Repositories[];
+        );
     }
 
     private async getRepositoriesIntegration(

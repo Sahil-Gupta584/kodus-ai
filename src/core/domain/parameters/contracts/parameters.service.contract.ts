@@ -6,9 +6,9 @@ import { ParametersEntity } from '../entities/parameters.entity';
 export const PARAMETERS_SERVICE_TOKEN = Symbol('ParametersService');
 
 export interface IParametersService extends IParametersRepository {
-    createOrUpdateConfig(
-        parametersKey: ParametersKey,
-        configValue: any,
+    createOrUpdateConfig<K extends ParametersKey>(
+        parametersKey: K,
+        configValue: ParametersEntity<K>['configValue'],
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<ParametersEntity | boolean>;
+    ): Promise<ParametersEntity<K> | boolean>;
 }

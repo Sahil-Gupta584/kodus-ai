@@ -17,33 +17,41 @@ export class ParametersService implements IParametersService {
         private readonly parametersRepository: IParametersRepository,
     ) {}
 
-    find(filter?: Partial<IParameters>): Promise<ParametersEntity[]> {
+    find<K extends ParametersKey>(
+        filter?: Partial<IParameters<K>>,
+    ): Promise<ParametersEntity<K>[]> {
         return this.parametersRepository.find(filter);
     }
 
-    findOne(filter?: Partial<IParameters>): Promise<ParametersEntity> {
+    findOne<K extends ParametersKey>(
+        filter?: Partial<IParameters<K>>,
+    ): Promise<ParametersEntity<K>> {
         return this.parametersRepository.findOne(filter);
     }
 
-    findByOrganizationName(
+    findByOrganizationName<K extends ParametersKey>(
         organizationName: string,
-    ): Promise<ParametersEntity> {
+    ): Promise<ParametersEntity<K>> {
         return this.parametersRepository.findByOrganizationName(
             organizationName,
         );
     }
-    findById(uuid: string): Promise<ParametersEntity> {
+    findById<K extends ParametersKey>(
+        uuid: string,
+    ): Promise<ParametersEntity<K>> {
         return this.parametersRepository.findById(uuid);
     }
 
-    create(parameters: IParameters): Promise<ParametersEntity> {
+    create<K extends ParametersKey>(
+        parameters: IParameters<K>,
+    ): Promise<ParametersEntity<K>> {
         return this.parametersRepository.create(parameters);
     }
 
-    update(
-        filter: Partial<IParameters>,
-        data: Partial<IParameters>,
-    ): Promise<ParametersEntity> {
+    update<K extends ParametersKey>(
+        filter: Partial<IParameters<K>>,
+        data: Partial<IParameters<K>>,
+    ): Promise<ParametersEntity<K>> {
         return this.parametersRepository.update(filter, data);
     }
 
@@ -51,25 +59,26 @@ export class ParametersService implements IParametersService {
         return this.parametersRepository.delete(uuid);
     }
 
-    async findByKey(
-        configKey: ParametersKey,
+    async findByKey<K extends ParametersKey>(
+        configKey: K,
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<ParametersEntity> {
+    ): Promise<ParametersEntity<K>> {
         return this.parametersRepository.findByKey(
             configKey,
             organizationAndTeamData,
         );
     }
 
-    async createOrUpdateConfig(
-        parametersKey: ParametersKey,
-        configValue: any,
+    async createOrUpdateConfig<K extends ParametersKey>(
+        parametersKey: K,
+        configValue: ParametersEntity<K>['configValue'],
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<ParametersEntity | boolean> {
+    ): Promise<ParametersEntity<K> | boolean> {
         try {
             const parameters = await this.findOne({
                 team: { uuid: organizationAndTeamData.teamId },
                 configKey: parametersKey,
+                active: true,
             });
 
             if (!parameters) {
@@ -80,6 +89,7 @@ export class ParametersService implements IParametersService {
                     configKey: parametersKey,
                     configValue: configValue,
                     team: { uuid: organizationAndTeamData.teamId },
+                    active: true,
                 });
             } else {
                 await this.update(

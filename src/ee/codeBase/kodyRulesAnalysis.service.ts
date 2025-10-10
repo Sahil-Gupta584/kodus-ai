@@ -49,6 +49,7 @@ import {
 } from '@/core/domain/codeBase/contracts/CodeBaseConfigService.contract';
 import { ObservabilityService } from '@/core/infrastructure/adapters/services/logger/observability.service';
 import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
+import { ConfigLevel } from '@/config/types/general/pullRequestMessages.type';
 
 // Interface for extended context used in Kody Rules analysis
 interface KodyRulesExtendedContext {
@@ -829,29 +830,15 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
     ) {
         let directoryId = context?.codeReviewConfig?.directoryId;
         if (!directoryId) {
-            const configs =
-                await this.codeBaseConfigService.getDirectoryConfigs(
+            directoryId =
+                await this.codeBaseConfigService.getDirectoryIdForPath(
                     context?.organizationAndTeamData,
                     {
                         id: context?.repository?.id || '',
                         name: context?.repository?.name || '',
                     },
+                    fileContext?.file?.filename || '',
                 );
-
-            if (configs.hasConfigs) {
-                const config =
-                    await this.codeBaseConfigService.resolveMostSpecificConfigForPath(
-                        context?.organizationAndTeamData,
-                        {
-                            id: context?.repository?.id || '',
-                            name: context?.repository?.name || '',
-                        },
-                        fileContext?.file?.filename || '',
-                        configs.repoConfig,
-                    );
-
-                directoryId = config?.directoryId;
-            }
         }
 
         const kodyRulesFiltered = this.kodyRulesValidationService
@@ -859,7 +846,9 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 fileContext.file.filename,
                 context?.codeReviewConfig?.kodyRules || [],
                 {
-                    directoryId,
+                    ...(directoryId
+                        ? { directoryId }
+                        : { repositoryId: context?.repository?.id }),
                 },
             )
             ?.filter(

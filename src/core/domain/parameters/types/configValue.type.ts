@@ -1,3 +1,7 @@
+import { CodeReviewParameter } from '@/config/types/general/codeReviewConfig.type';
+import { LanguageValue } from '@/shared/domain/enums/language-parameter.enum';
+import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
+
 type DayOfWeek = 'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat';
 
 type BooleanMap<T extends string> = {
@@ -49,3 +53,16 @@ export enum KodyLearningStatus {
     GENERATING_RULES = 'generating_rules',
     GENERATING_CONFIG = 'generating_config',
 }
+
+export type ConfigValueMap = {
+    [ParametersKey.CODE_REVIEW_CONFIG]: CodeReviewParameter;
+    [ParametersKey.LANGUAGE_CONFIG]: LanguageValue;
+    [ParametersKey.PLATFORM_CONFIGS]: PlatformConfigValue;
+} & {
+    [K in Exclude<
+        ParametersKey,
+        | ParametersKey.CODE_REVIEW_CONFIG
+        | ParametersKey.LANGUAGE_CONFIG
+        | ParametersKey.PLATFORM_CONFIGS
+    >]?: any;
+};

@@ -58,6 +58,7 @@ export class GitlabMappedPlatform implements IMappedPlatform {
             user: payload?.user,
             body: mergeRequest?.description,
             title: mergeRequest?.title,
+            url: (mergeRequest as any)?.url,
             head: {
                 repo: {
                     fullName: mergeRequest?.source?.path_with_namespace,

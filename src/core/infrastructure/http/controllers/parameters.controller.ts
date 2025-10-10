@@ -10,6 +10,7 @@ import {
     Body,
     Controller,
     Get,
+    Inject,
     Post,
     Query,
     Res,
@@ -22,8 +23,6 @@ import { CreateOrUpdateCodeReviewParameterDto } from '../dtos/create-or-update-c
 import { GenerateKodusConfigFileUseCase } from '@/core/application/use-cases/parameters/generate-kodus-config-file.use-case';
 import { CopyCodeReviewParameterDTO } from '../dtos/copy-code-review-parameter.dto';
 import { CopyCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/copy-code-review-parameter.use-case';
-import { GenerateCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/generate-code-review-paremeter.use-case';
-import { GenerateCodeReviewParameterDTO } from '../dtos/generate-code-review-parameter.dto';
 import { DeleteRepositoryCodeReviewParameterDto } from '../dtos/delete-repository-code-review-parameter.dto';
 import { DeleteRepositoryCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/delete-repository-code-review-parameter.use-case';
 import { PreviewPrSummaryDto } from '../dtos/preview-pr-summary.dto';
@@ -41,21 +40,30 @@ import {
     Action,
     ResourceType,
 } from '@/core/domain/permissions/enums/permissions.enum';
+import { MigrateCodeReviewParametersUseCase } from '@/core/application/use-cases/parameters/migrate-code-review-parameters.use-case'; // TODO: Remove once all orgs have migrated
+import { GetDefaultConfigUseCase } from '@/core/application/use-cases/parameters/get-default-config.use-case';
+import { GetCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/get-code-review-parameter.use-case';
+import { REQUEST } from '@nestjs/core';
+import { UserRequest } from '@/config/types/http/user-request.type';
 @Controller('parameters')
 export class ParametersController {
     constructor(
+        @Inject(REQUEST)
+        private readonly request: UserRequest,
+
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
         private readonly findByKeyParametersUseCase: FindByKeyParametersUseCase,
-        private readonly listCodeReviewAutomationLabelsUseCase: ListCodeReviewAutomationLabelsUseCase,
         private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
         private readonly updateCodeReviewParameterRepositoriesUseCase: UpdateCodeReviewParameterRepositoriesUseCase,
         private readonly generateKodusConfigFileUseCase: GenerateKodusConfigFileUseCase,
         private readonly copyCodeReviewParameterUseCase: CopyCodeReviewParameterUseCase,
-        private readonly generateCodeReviewParameterUseCase: GenerateCodeReviewParameterUseCase,
         private readonly deleteRepositoryCodeReviewParameterUseCase: DeleteRepositoryCodeReviewParameterUseCase,
         private readonly previewPrSummaryUseCase: PreviewPrSummaryUseCase,
         private readonly listCodeReviewV2DefaultsUseCase: ListCodeReviewV2DefaultsUseCase,
         private readonly listCodeReviewAutomationLabelsWithStatusUseCase: ListCodeReviewAutomationLabelsWithStatusUseCase,
+        private readonly getDefaultConfigUseCase: GetDefaultConfigUseCase,
+        private readonly getCodeReviewParameterUseCase: GetCodeReviewParameterUseCase,
+        private readonly migrateCodeReviewParametersUseCase: MigrateCodeReviewParametersUseCase, // TODO: Remove once all orgs have migrated
     ) {}
 
     //#region Parameters
@@ -157,6 +165,27 @@ export class ParametersController {
         );
     }
 
+    @Get('/code-review-parameter')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Read, ResourceType.CodeReviewSettings),
+    )
+    public async getCodeReviewParameter(@Query('teamId') teamId: string) {
+        return await this.getCodeReviewParameterUseCase.execute(
+            this.request.user,
+            teamId,
+        );
+    }
+
+    @Get('/default-code-review-parameter')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Read, ResourceType.CodeReviewSettings),
+    )
+    public async getDefaultConfig() {
+        return await this.getDefaultConfigUseCase.execute();
+    }
+
     @Get('/generate-kodus-config-file')
     @UseGuards(PolicyGuard)
     @CheckPolicies(
@@ -166,11 +195,13 @@ export class ParametersController {
         @Res() response: Response,
         @Query('teamId') teamId: string,
         @Query('repositoryId') repositoryId?: string,
+        @Query('directoryId') directoryId?: string,
     ) {
         const { yamlString } =
             await this.generateKodusConfigFileUseCase.execute(
                 teamId,
                 repositoryId,
+                directoryId,
             );
 
         response.set({
@@ -202,18 +233,6 @@ export class ParametersController {
         return this.copyCodeReviewParameterUseCase.execute(body);
     }
 
-    @Post('/generate-code-review-parameter')
-    @UseGuards(PolicyGuard)
-    @CheckPolicies(
-        checkPermissions(Action.Create, ResourceType.CodeReviewSettings),
-    )
-    public async generateCodeReviewParameter(
-        @Body()
-        body: GenerateCodeReviewParameterDTO,
-    ) {
-        return this.generateCodeReviewParameterUseCase.execute(body);
-    }
-
     @Post('/delete-repository-code-review-parameter')
     @UseGuards(PolicyGuard)
     @CheckPolicies(
@@ -241,5 +260,15 @@ export class ParametersController {
         body: PreviewPrSummaryDto,
     ) {
         return this.previewPrSummaryUseCase.execute(body);
+    }
+
+    // TODO: Remove once all orgs have migrated
+    @Post('/migrate-code-review-parameters')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(
+        checkPermissions(Action.Manage, ResourceType.CodeReviewSettings),
+    )
+    public async migrateCodeReviewParameters() {
+        return this.migrateCodeReviewParametersUseCase.execute();
     }
 }
