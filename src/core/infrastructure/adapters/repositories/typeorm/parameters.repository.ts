@@ -22,7 +22,7 @@ import { OrganizationAndTeamData } from '@/config/types/general/organizationAndT
 export class ParametersRepository implements IParametersRepository {
     constructor(
         @InjectRepository(ParametersModel)
-        private readonly integrationConfigRepository: Repository<ParametersModel>,
+        private readonly parametersRepository: Repository<ParametersModel>,
     ) {}
 
     async find<K extends ParametersKey>(
@@ -38,10 +38,11 @@ export class ParametersRepository implements IParametersRepository {
                     ...otherFilterAttributes,
                     ...teamCondition,
                 },
+                relations: ['team'],
             };
 
             const integrationConfigModel =
-                await this.integrationConfigRepository.find(findOptions);
+                await this.parametersRepository.find(findOptions);
 
             return mapSimpleModelsToEntities(
                 integrationConfigModel,
@@ -65,10 +66,11 @@ export class ParametersRepository implements IParametersRepository {
                     ...otherFilterAttributes,
                     ...teamCondition,
                 },
+                relations: ['team'],
             };
 
             const integrationConfigModel =
-                await this.integrationConfigRepository.findOne(findOptions);
+                await this.parametersRepository.findOne(findOptions);
 
             return mapSimpleModelToEntity(
                 integrationConfigModel,
@@ -83,7 +85,7 @@ export class ParametersRepository implements IParametersRepository {
         organizationName: string,
     ): Promise<ParametersEntity<K> | undefined> {
         try {
-            const response = await this.integrationConfigRepository
+            const response = await this.parametersRepository
                 .createQueryBuilder('parameters')
                 .leftJoinAndSelect('parameters.integration', 'integration')
                 .where('parameters.configValue @> :item::jsonb', {
@@ -109,9 +111,7 @@ export class ParametersRepository implements IParametersRepository {
     ): Promise<ParametersEntity<K>> {
         try {
             const queryBuilder =
-                this.integrationConfigRepository.createQueryBuilder(
-                    'parameters',
-                );
+                this.parametersRepository.createQueryBuilder('parameters');
 
             const integrationConfigSelected = await queryBuilder
                 .where('parameters.uuid = :uuid', { uuid })
@@ -131,12 +131,10 @@ export class ParametersRepository implements IParametersRepository {
     ): Promise<ParametersEntity<K>> {
         try {
             const queryBuilder =
-                this.integrationConfigRepository.createQueryBuilder(
-                    'parameters',
-                );
+                this.parametersRepository.createQueryBuilder('parameters');
 
             const integrationConfigModel =
-                this.integrationConfigRepository.create(integrationConfig);
+                this.parametersRepository.create(integrationConfig);
 
             const integrationConfigCreated = await queryBuilder
                 .insert()
@@ -151,9 +149,7 @@ export class ParametersRepository implements IParametersRepository {
                 };
 
                 const integrationConfig =
-                    await this.integrationConfigRepository.findOne(
-                        findOneOptions,
-                    );
+                    await this.parametersRepository.findOne(findOneOptions);
 
                 if (!integrationConfig) return undefined;
 
@@ -173,7 +169,7 @@ export class ParametersRepository implements IParametersRepository {
     ): Promise<ParametersEntity<K>> {
         try {
             const queryBuilder: UpdateQueryBuilder<ParametersModel> =
-                this.integrationConfigRepository
+                this.parametersRepository
                     .createQueryBuilder('parameters')
                     .update(ParametersModel)
                     .where(filter)
@@ -194,7 +190,7 @@ export class ParametersRepository implements IParametersRepository {
                 };
 
                 const integrationConfig =
-                    await this.integrationConfigRepository.findOne(findOptions);
+                    await this.parametersRepository.findOne(findOptions);
 
                 if (integrationConfig) {
                     return mapSimpleModelToEntity(
@@ -211,7 +207,7 @@ export class ParametersRepository implements IParametersRepository {
     }
     async delete(uuid: string): Promise<void> {
         try {
-            await this.integrationConfigRepository.delete(uuid);
+            await this.parametersRepository.delete(uuid);
         } catch (error) {
             throw error;
         }
@@ -222,9 +218,9 @@ export class ParametersRepository implements IParametersRepository {
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<ParametersEntity<K>> {
         const queryBuilder =
-            this.integrationConfigRepository.createQueryBuilder('parameters');
+            this.parametersRepository.createQueryBuilder('parameters');
 
-        const integrationConfigSelected = await queryBuilder
+        const parametersSelected = await queryBuilder
             .where('parameters.configKey = :configKey', { configKey })
             .andWhere('parameters.team_id = :teamId', {
                 teamId: organizationAndTeamData.teamId,
@@ -232,9 +228,6 @@ export class ParametersRepository implements IParametersRepository {
             .andWhere('parameters.active = :active', { active: true })
             .getOne();
 
-        return mapSimpleModelToEntity(
-            integrationConfigSelected,
-            ParametersEntity,
-        );
+        return mapSimpleModelToEntity(parametersSelected, ParametersEntity);
     }
 }

@@ -40,16 +40,19 @@ export class MigrateCodeReviewParametersUseCase {
         try {
             const codeReviewConfigs = await this.parametersService.find({
                 configKey: ParametersKey.CODE_REVIEW_CONFIG,
+                active: true,
             });
 
             for (const config of codeReviewConfigs) {
                 try {
-                    if (!config.configValue) continue;
+                    if (!config.configValue) {
+                        continue;
+                    }
 
                     const oldConfig =
                         config.configValue as unknown as OldReviewConfig;
 
-                    const newConfig = this.convertOldToNewFormat(oldConfig);
+                    const newConfig = this.convertOldToNewFormatV2(oldConfig);
 
                     await this.parametersService.update(
                         { uuid: config.uuid },
@@ -92,6 +95,68 @@ export class MigrateCodeReviewParametersUseCase {
 
             throw error;
         }
+    }
+
+    private convertOldToNewFormatV2(oldConfig: OldReviewConfig) {
+        // Extrai o objeto global e repositories do formato antigo
+        const { global, repositories } = oldConfig as any;
+
+        // Agora extrai as configs do global (removendo id, name, isSelected)
+        const { id, name, isSelected, ...globalConfig } = global || oldConfig;
+
+        const defaultConfig = getDefaultKodusConfigFile();
+
+        // Calcula apenas as diferenças do global em relação ao default
+        const globalDelta = deepDifference(defaultConfig, globalConfig);
+
+        // Resolve o global config completo (default + delta)
+        const resolvedGlobalConfig = deepMerge(defaultConfig, globalDelta);
+
+        const newRepos = repositories.map((repo) => {
+            const { directories, id, name, isSelected, ...repoConfig } = repo;
+
+            // Calcula apenas as diferenças do repo em relação ao global resolvido
+            const repoDelta = deepDifference(resolvedGlobalConfig, repoConfig);
+
+            // Resolve o repo config completo (global + repo delta)
+            const resolvedRepoConfig = deepMerge(
+                resolvedGlobalConfig,
+                repoDelta,
+            );
+
+            const newDirectories = (directories || []).map((dir) => {
+                const { id, name, isSelected, path, ...dirConfig } = dir;
+
+                // Calcula apenas as diferenças do dir em relação ao repo resolvido
+                const dirDelta = deepDifference(resolvedRepoConfig, dirConfig);
+
+                return {
+                    id: dir.id,
+                    name: dir.name,
+                    isSelected: dir.isSelected === 'true',
+                    configs: dirDelta,
+                    path: dir.path,
+                };
+            });
+
+            return {
+                id: repo.id,
+                name: repo.name,
+                isSelected: repo.isSelected === 'true',
+                configs: repoDelta,
+                directories: newDirectories,
+            };
+        });
+
+        const newConfig = {
+            configs: globalDelta,
+            id: 'global',
+            name: 'Global',
+            repositories: newRepos,
+            isSelected: true,
+        };
+
+        return newConfig as unknown as CodeReviewParameter;
     }
 
     private convertOldToNewFormat(oldConfig: OldReviewConfig) {

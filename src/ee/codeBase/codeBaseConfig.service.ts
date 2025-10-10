@@ -109,6 +109,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 this.parametersService.findOne({
                     configKey: ParametersKey.CODE_REVIEW_CONFIG,
                     team: { uuid: organizationAndTeamData.teamId },
+                    active: true,
                 }),
                 this.parametersService.findByKey(
                     ParametersKey.LANGUAGE_CONFIG,
