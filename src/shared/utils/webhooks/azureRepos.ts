@@ -51,6 +51,7 @@ export class AzureReposMappedPlatform implements IMappedPlatform {
             body: pullRequest.description ?? '',
             number: Number(pullRequest.pullRequestId),
             user: pullRequest.createdBy,
+            url: pullRequest.url,
             head: {
                 ref: pullRequest.sourceRefName ?? '',
                 repo: {

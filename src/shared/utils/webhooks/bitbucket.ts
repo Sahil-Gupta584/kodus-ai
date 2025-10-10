@@ -42,6 +42,7 @@ export class BitbucketMappedPlatform implements IMappedPlatform {
             user: payload?.actor,
             title: payload?.pullrequest?.title,
             body: payload?.pullrequest?.description,
+            url: payload?.pullrequest?.links?.html?.href,
             head: {
                 repo: {
                     fullName:
