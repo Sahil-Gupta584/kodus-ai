@@ -63,7 +63,7 @@ export class PullRequestMessagesController {
             },
         }),
     )
-    public async findByRepositoryIdAndOrganizationId(
+    public async findByRepoOrDirectoryId(
         @Query('organizationId') organizationId: string,
         @Query('repositoryId') repositoryId: string,
         @Query('directoryId') directoryId?: string,
