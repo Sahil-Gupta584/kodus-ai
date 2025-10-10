@@ -7,6 +7,7 @@ import {
     ReviewModeResponse,
     ReviewOptions,
     SuggestionControlConfig,
+    CodeReviewConfig,
 } from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { tryParseJSONObject } from '@/shared/utils/transforms/json';
@@ -66,6 +67,7 @@ interface KodyRulesExtendedContext {
     severityLevelFilter?: SeverityLevel;
     organizationAndTeamData: OrganizationAndTeamData;
     kodyRules: Array<Partial<IKodyRule>>;
+    v2PromptOverrides?: CodeReviewConfig['v2PromptOverrides'];
 
     // Extended properties added during analysis
     standardSuggestions?: AIAnalysisResult;
@@ -882,6 +884,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 : undefined,
             organizationAndTeamData: context?.organizationAndTeamData,
             kodyRules: kodyRulesFiltered,
+            v2PromptOverrides: context?.codeReviewConfig?.v2PromptOverrides,
         };
 
         return baseContext;
