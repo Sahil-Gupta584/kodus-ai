@@ -53,7 +53,6 @@ export class ParametersController {
 
         private readonly createOrUpdateParametersUseCase: CreateOrUpdateParametersUseCase,
         private readonly findByKeyParametersUseCase: FindByKeyParametersUseCase,
-        private readonly listCodeReviewAutomationLabelsUseCase: ListCodeReviewAutomationLabelsUseCase,
         private readonly updateOrCreateCodeReviewParameterUseCase: UpdateOrCreateCodeReviewParameterUseCase,
         private readonly updateCodeReviewParameterRepositoriesUseCase: UpdateCodeReviewParameterRepositoriesUseCase,
         private readonly generateKodusConfigFileUseCase: GenerateKodusConfigFileUseCase,

@@ -10,10 +10,12 @@ import { deepDifference, deepMerge } from '@/shared/utils/deep';
 import { getDefaultKodusConfigFile } from '@/shared/utils/validateCodeReviewConfigFile';
 import { Inject, Injectable } from '@nestjs/common';
 
-type OldReviewConfig = CodeReviewConfigWithoutLLMProvider & {
-    id?: string;
-    name?: string;
-    isSelected?: string;
+type OldReviewConfig = {
+    global: CodeReviewConfigWithoutLLMProvider & {
+        id?: string;
+        name?: string;
+        isSelected?: string;
+    };
     repositories: (CodeReviewConfigWithoutLLMProvider & {
         id: string;
         name: string;
@@ -52,7 +54,7 @@ export class MigrateCodeReviewParametersUseCase {
                     const oldConfig =
                         config.configValue as unknown as OldReviewConfig;
 
-                    const newConfig = this.convertOldToNewFormatV2(oldConfig);
+                    const newConfig = this.convertOldToNewFormat(oldConfig);
 
                     await this.parametersService.update(
                         { uuid: config.uuid },
@@ -97,71 +99,9 @@ export class MigrateCodeReviewParametersUseCase {
         }
     }
 
-    private convertOldToNewFormatV2(oldConfig: OldReviewConfig) {
-        // Extrai o objeto global e repositories do formato antigo
-        const { global, repositories } = oldConfig as any;
-
-        // Agora extrai as configs do global (removendo id, name, isSelected)
-        const { id, name, isSelected, ...globalConfig } = global || oldConfig;
-
-        const defaultConfig = getDefaultKodusConfigFile();
-
-        // Calcula apenas as diferenças do global em relação ao default
-        const globalDelta = deepDifference(defaultConfig, globalConfig);
-
-        // Resolve o global config completo (default + delta)
-        const resolvedGlobalConfig = deepMerge(defaultConfig, globalDelta);
-
-        const newRepos = repositories.map((repo) => {
-            const { directories, id, name, isSelected, ...repoConfig } = repo;
-
-            // Calcula apenas as diferenças do repo em relação ao global resolvido
-            const repoDelta = deepDifference(resolvedGlobalConfig, repoConfig);
-
-            // Resolve o repo config completo (global + repo delta)
-            const resolvedRepoConfig = deepMerge(
-                resolvedGlobalConfig,
-                repoDelta,
-            );
-
-            const newDirectories = (directories || []).map((dir) => {
-                const { id, name, isSelected, path, ...dirConfig } = dir;
-
-                // Calcula apenas as diferenças do dir em relação ao repo resolvido
-                const dirDelta = deepDifference(resolvedRepoConfig, dirConfig);
-
-                return {
-                    id: dir.id,
-                    name: dir.name,
-                    isSelected: dir.isSelected === 'true',
-                    configs: dirDelta,
-                    path: dir.path,
-                };
-            });
-
-            return {
-                id: repo.id,
-                name: repo.name,
-                isSelected: repo.isSelected === 'true',
-                configs: repoDelta,
-                directories: newDirectories,
-            };
-        });
-
-        const newConfig = {
-            configs: globalDelta,
-            id: 'global',
-            name: 'Global',
-            repositories: newRepos,
-            isSelected: true,
-        };
-
-        return newConfig as unknown as CodeReviewParameter;
-    }
-
     private convertOldToNewFormat(oldConfig: OldReviewConfig) {
-        const { repositories, id, name, isSelected, ...globalConfig } =
-            oldConfig;
+        const { repositories, global } = oldConfig;
+        const { id, name, isSelected, ...globalConfig } = global;
 
         const defaultConfig = getDefaultKodusConfigFile();
 
@@ -185,7 +125,7 @@ export class MigrateCodeReviewParametersUseCase {
                 return {
                     id: dir.id,
                     name: dir.name,
-                    isSelected: dir.isSelected === 'true',
+                    isSelected: dir.isSelected,
                     configs: dirDelta,
                     path: dir.path,
                 };
@@ -194,7 +134,7 @@ export class MigrateCodeReviewParametersUseCase {
             return {
                 id: repo.id,
                 name: repo.name,
-                isSelected: repo.isSelected === 'true',
+                isSelected: repo.isSelected,
                 configs: repoDelta,
                 directories: newDirectories,
             };
