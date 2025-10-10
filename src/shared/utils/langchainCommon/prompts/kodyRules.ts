@@ -1,4 +1,5 @@
 import z from 'zod';
+import { getDefaultKodusConfigFile } from '../../validateCodeReviewConfigFile';
 
 //#region classifier
 export const kodyRulesClassifierSchema = z.object({
@@ -223,10 +224,28 @@ Let's think through this step-by-step:
 Your output must strictly be a valid JSON in the format specified below.`;
 };
 
-export const prompt_kodyrules_suggestiongeneration_user = (payload) => {
+export const prompt_kodyrules_suggestiongeneration_user = (payload: any) => {
     const languageNote = payload?.languageResultPrompt || 'en-US';
     const { patchWithLinesStr, filteredKodyRules, updatedSuggestions } =
         payload;
+    const overrides = payload?.v2PromptOverrides || {};
+
+    const defaults = getDefaultKodusConfigFile().v2PromptOverrides;
+
+    const limitText = (text: string, max = 2000): string =>
+        text.length > max ? text.slice(0, max) : text;
+    const getTextOrDefault = (
+        text: string | undefined,
+        fallbackText: string,
+    ): string =>
+        text && typeof text === 'string' && text.trim().length
+            ? limitText(text.trim())
+            : fallbackText;
+
+    const mainGenText = getTextOrDefault(
+        overrides?.generation?.main,
+        defaults.generation.main,
+    );
 
     return `
 Task: Review the code changes in the pull request (PR) for compliance with the established code rules (kodyRules).
@@ -295,6 +314,15 @@ labeled "kodyRules". Any violation of kody rules need to be reported.
 Your output must always be a valid JSON. Under no circumstances should you output anything other than a JSON. Follow the exact format below without any additional text or explanation:
 
 Output if kodyRules array is not empty:
+
+## Output Requirements
+
+### Issue description
+
+Custom instructions for 'suggestionContent'
+IMPORTANT none of these instructions should be taken into consideration for any other fields such as 'improvedCode'
+
+${mainGenText}
 
 <OUTPUT_FORMAT>
 DISCUSSION HERE
