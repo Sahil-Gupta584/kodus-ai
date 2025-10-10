@@ -123,7 +123,7 @@ export class PromptBuilder {
  * This class allows you to set up prompts with different roles, payloads, and configurations,
  * and execute them using the `PromptRunnerService`.
  */
-class PromptBuilderWithProviders {
+export class PromptBuilderWithProviders {
     private byokConfig?: BYOKProviderConfig;
     private byokFallbackConfig?: BYOKProviderConfig | null;
 
@@ -312,7 +312,7 @@ class PromptBuilderWithProviders {
  * @template OutputMode The type of the output parser to be used. Defaults to `ParserType.STRING`.
  * Can be `ParserType.STRING`, `ParserType.JSON`, or `ParserType.CUSTOM`.
  */
-class ConfigurablePromptBuilder<
+export class ConfigurablePromptBuilder<
     OutputType,
     Payload,
     OutputMode extends ParserType,
@@ -600,7 +600,7 @@ class ConfigurablePromptBuilder<
  * @template OutputMode The type of the output parser to be used. Defaults to `ParserType.STRING`.
  * Can be `ParserType.STRING`, `ParserType.JSON`, or `ParserType.CUSTOM`.
  */
-class ConfigurablePromptBuilderWithoutPayload<
+export class ConfigurablePromptBuilderWithoutPayload<
     OutputType,
     OutputMode extends ParserType,
 > extends ConfigurablePromptBuilder<OutputType, void, OutputMode> {

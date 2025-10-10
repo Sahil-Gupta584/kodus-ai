@@ -168,3 +168,6 @@ v2PromptOverrides:
                 Incorrect metrics/logs
                 Rarely affecting few users
                 Edge-case issues
+
+    generation:
+        main: 'Detailed and verifiable issue description'

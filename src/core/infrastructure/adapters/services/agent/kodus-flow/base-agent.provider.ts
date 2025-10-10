@@ -82,7 +82,8 @@ export abstract class BaseAgentProvider {
 
                 let builder = promptRunner
                     .builder()
-                    .setParser(ParserType.STRING);
+                    .setParser(ParserType.STRING)
+                    .setPayload({});
 
                 for (const msg of lcMessages) {
                     const role =

@@ -282,7 +282,7 @@ ${JSON.stringify(context?.suggestions, null, 2) || 'No suggestions provided'}
 
                         return await promptRunner
                             .builder()
-                            .setParser(ParserType.ZOD, schema as any, {
+                            .setParser(ParserType.ZOD, schema, {
                                 provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
                                 fallbackProvider:
                                     LLMModelProvider.OPENAI_GPT_4O,
