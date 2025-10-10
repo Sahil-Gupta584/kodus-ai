@@ -5,10 +5,6 @@ import {
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import {
-    IIntegrationConfigService,
-    INTEGRATION_CONFIG_SERVICE_TOKEN,
-} from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { REQUEST } from '@nestjs/core';
 import { KodusConfigFile } from '@/config/types/general/codeReview.type';
 
@@ -24,19 +20,11 @@ import {
     ResourceType,
 } from '@/core/domain/permissions/enums/permissions.enum';
 
-interface ICodeRepository extends Partial<KodusConfigFile> {
-    id: string;
-    name: string;
-}
-
 @Injectable()
 export class GenerateKodusConfigFileUseCase {
     constructor(
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
-
-        @Inject(INTEGRATION_CONFIG_SERVICE_TOKEN)
-        private readonly integrationConfigService: IIntegrationConfigService,
 
         @Inject(CODE_BASE_CONFIG_SERVICE_TOKEN)
         private readonly codeBaseConfigService: ICodeBaseConfigService,
@@ -54,6 +42,7 @@ export class GenerateKodusConfigFileUseCase {
     async execute(
         teamId: string,
         repositoryId?: string,
+        directoryId?: string,
     ): Promise<{ yamlString?: string }> {
         try {
             const organizationId = this.request.user?.organization.uuid;
@@ -80,38 +69,22 @@ export class GenerateKodusConfigFileUseCase {
                 organizationAndTeamData,
             );
 
-            const codeReviewRepositories = codeReviewConfigs.configValue
-                .repositories as ICodeRepository[];
+            const codeReviewRepositories =
+                codeReviewConfigs.configValue.repositories;
 
             const repository = codeReviewRepositories.find(
                 (repository) => repository.id === repositoryId,
             );
 
-            if (!repository) {
-                return this.getKodyConfigFile();
-            }
+            const directory = directoryId
+                ? repository?.directories?.find(
+                      (directory) => directory.id === directoryId,
+                  )
+                : undefined;
 
-            const codeReviewConfig = await this.codeBaseConfigService.getConfig(
-                organizationAndTeamData,
-                { name: repository.name, id: repository.id },
-                true,
+            return this.getKodyConfigFile(
+                (directory?.configs || repository?.configs) as KodusConfigFile,
             );
-
-            const {
-                languageResultPrompt,
-                llmProvider,
-                kodyRules,
-                kodusConfigFileOverridesWebPreferences,
-                ...codeReviewConfigsFile
-            } = codeReviewConfig;
-
-            const codeReviewConfigWithValidIgnorePaths: KodusConfigFile = {
-                version: '1.2',
-                ...codeReviewConfigsFile,
-                ignorePaths: repository.ignorePaths,
-            };
-
-            return this.getKodyConfigFile(codeReviewConfigWithValidIgnorePaths);
         } catch (error) {
             this.logger.error({
                 message: 'Failed to generate Kodus config file!',

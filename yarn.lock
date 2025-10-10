@@ -2553,14 +2553,7 @@
   dependencies:
     "@opentelemetry/api" "^1.3.0"
 
-"@opentelemetry/api-logs@0.205.0", "@opentelemetry/api-logs@^0.205.0":
-  version "0.205.0"
-  resolved "https://registry.npmjs.org/@opentelemetry/api-logs/-/api-logs-0.205.0.tgz#7d334958c0eaa0725a1fe51aadc9b39ed7d4b6f2"
-  integrity sha512-wBlPk1nFB37Hsm+3Qy73yQSobVn28F4isnWIBvKpd5IUH/eat8bwcL02H9yzmHyyPmukeccSl2mbN5sDQZYnPg==
-  dependencies:
-    "@opentelemetry/api" "^1.3.0"
-
-"@opentelemetry/api-logs@0.206.0":
+"@opentelemetry/api-logs@0.206.0", "@opentelemetry/api-logs@^0.206.0":
   version "0.206.0"
   resolved "https://registry.npmjs.org/@opentelemetry/api-logs/-/api-logs-0.206.0.tgz#4df1526fed55fe686e69100cbeea0311fa04565d"
   integrity sha512-yIVDu9jX//nV5wSMLZLdHdb1SKHIMj9k+wQVFtln5Flcgdldz9BkHtavvExQiJqBZg2OpEEJEZmzQazYztdz2A==
@@ -2878,12 +2871,12 @@
     "@opentelemetry/instrumentation" "^0.204.0"
     "@opentelemetry/semantic-conventions" "^1.30.0"
 
-"@opentelemetry/instrumentation-nestjs-core@^0.52.2":
-  version "0.52.2"
-  resolved "https://registry.npmjs.org/@opentelemetry/instrumentation-nestjs-core/-/instrumentation-nestjs-core-0.52.2.tgz#0bd04bbba455efca331c99682ba14b4731433ffc"
-  integrity sha512-kL91hPGEjUI08VcDJeNwYKP2EpynAnymF0wr4Irqp5uHeyvE/hTX4R3DmpDP80IZ/aQ5WVxuWiaBlVP7cERu/w==
+"@opentelemetry/instrumentation-nestjs-core@^0.53.0":
+  version "0.53.0"
+  resolved "https://registry.npmjs.org/@opentelemetry/instrumentation-nestjs-core/-/instrumentation-nestjs-core-0.53.0.tgz#3e2ef55651c1a617c0a03430791812f9f89b18c3"
+  integrity sha512-8sDcdwPb6fJ2ayD7Q7H2Vxwj21ao8Atuvm+RtPzAdrOvqEWTigpO99LJaEsZRRphJTdRBejg07/oYQzJusPODQ==
   dependencies:
-    "@opentelemetry/instrumentation" "^0.205.0"
+    "@opentelemetry/instrumentation" "^0.206.0"
     "@opentelemetry/semantic-conventions" "^1.30.0"
 
 "@opentelemetry/instrumentation-pg@0.57.0":
@@ -2898,14 +2891,14 @@
     "@types/pg" "8.15.5"
     "@types/pg-pool" "2.0.6"
 
-"@opentelemetry/instrumentation-pino@^0.52.3":
-  version "0.52.3"
-  resolved "https://registry.npmjs.org/@opentelemetry/instrumentation-pino/-/instrumentation-pino-0.52.3.tgz#298b3c665f98ae262dd1acfe15d232a85b7ff31a"
-  integrity sha512-GPFxhqgmW7wNdwq5rGu8vA/YswUdF84m3p00cH12S8rb9MVKUdNdPlUROO85xE0O0yI1yfNkRzZ+l0R4iZIOrg==
+"@opentelemetry/instrumentation-pino@^0.53.0":
+  version "0.53.0"
+  resolved "https://registry.npmjs.org/@opentelemetry/instrumentation-pino/-/instrumentation-pino-0.53.0.tgz#4b6dcb15309aa90d89da8f54faa08feb3493d36b"
+  integrity sha512-0voOkY2o2rXx5g15uBMDd7T+v09pa1g1OOS/G2pqNCf49+WGiKgdljgf8Ph4Gr2Cjxs8Vs9bH9xefmK2jUFCBA==
   dependencies:
-    "@opentelemetry/api-logs" "^0.205.0"
+    "@opentelemetry/api-logs" "^0.206.0"
     "@opentelemetry/core" "^2.0.0"
-    "@opentelemetry/instrumentation" "^0.205.0"
+    "@opentelemetry/instrumentation" "^0.206.0"
 
 "@opentelemetry/instrumentation-redis@0.53.0":
   version "0.53.0"
@@ -2942,7 +2935,7 @@
     import-in-the-middle "^1.8.1"
     require-in-the-middle "^7.1.1"
 
-"@opentelemetry/instrumentation@0.206.0":
+"@opentelemetry/instrumentation@0.206.0", "@opentelemetry/instrumentation@^0.206.0":
   version "0.206.0"
   resolved "https://registry.npmjs.org/@opentelemetry/instrumentation/-/instrumentation-0.206.0.tgz#d65ae4327365c3a2c1c11750e7e8bd737873f8b4"
   integrity sha512-anPU9GAn3vSH/0JFQZ4e626xRw8p8R21kxM7xammFk9BRhfDw1IpgqvFMllbb+1MSHHEX9EiUqYHJyWo/B6KGA==
@@ -2950,15 +2943,6 @@
     "@opentelemetry/api-logs" "0.206.0"
     import-in-the-middle "^1.8.1"
     require-in-the-middle "^8.0.0"
-
-"@opentelemetry/instrumentation@^0.205.0":
-  version "0.205.0"
-  resolved "https://registry.npmjs.org/@opentelemetry/instrumentation/-/instrumentation-0.205.0.tgz#cf936288b14311212619ba80df96b2404d1acf14"
-  integrity sha512-cgvm7tvQdu9Qo7VurJP84wJ7ZV9F6WqDDGZpUc6rUEXwjV7/bXWs0kaYp9v+1Vh1+3TZCD3i6j/lUBcPhu8NhA==
-  dependencies:
-    "@opentelemetry/api-logs" "0.205.0"
-    import-in-the-middle "^1.8.1"
-    require-in-the-middle "^7.1.1"
 
 "@opentelemetry/instrumentation@^0.52.0 || ^0.53.0 || ^0.54.0 || ^0.55.0 || ^0.56.0 || ^0.57.0":
   version "0.57.2"
@@ -3387,36 +3371,6 @@
   integrity sha512-36/hTbH2uaWuGVERyC6da9YwGWnzUZXuPro/F2LfsdOsLnCojz/iSH8MxUt/FD2S5XBSVPhmArFUXcpCQ2Hkiw==
   dependencies:
     "@sinonjs/commons" "^3.0.1"
-
-"@slack/logger@^4.0.0":
-  version "4.0.0"
-  resolved "https://registry.npmjs.org/@slack/logger/-/logger-4.0.0.tgz#788303ff1840be91bdad7711ef66ca0cbc7073d2"
-  integrity sha512-Wz7QYfPAlG/DR+DfABddUZeNgoeY7d1J39OCR2jR+v7VBsB8ezulDK5szTnDDPDwLH5IWhLvXIHlCFZV7MSKgA==
-  dependencies:
-    "@types/node" ">=18.0.0"
-
-"@slack/types@^2.9.0":
-  version "2.16.0"
-  resolved "https://registry.npmjs.org/@slack/types/-/types-2.16.0.tgz#92ba59f9e970440b524423ad694eba4fa4995a86"
-  integrity sha512-bICnyukvdklXhwxprR3uF1+ZFkTvWTZge4evlCS4G1H1HU6QLY68AcjqzQRymf7/5gNt6Y4OBb4NdviheyZcAg==
-
-"@slack/web-api@^7.10.0":
-  version "7.10.0"
-  resolved "https://registry.npmjs.org/@slack/web-api/-/web-api-7.10.0.tgz#e64eaa01eb0e2e7d60fc19d8789698c79afa2a90"
-  integrity sha512-kT+07JvOqpYH3b/ttVo3iqKIFiHV2NKmD6QUc/F7HrjCgSdSA10zxqi0euXEF2prB49OU7SfjadzQ0WhNc7tiw==
-  dependencies:
-    "@slack/logger" "^4.0.0"
-    "@slack/types" "^2.9.0"
-    "@types/node" ">=18.0.0"
-    "@types/retry" "0.12.0"
-    axios "^1.11.0"
-    eventemitter3 "^5.0.1"
-    form-data "^4.0.4"
-    is-electron "2.2.2"
-    is-stream "^2"
-    p-queue "^6"
-    p-retry "^4"
-    retry "^0.13.1"
 
 "@smithy/abort-controller@^4.2.0":
   version "4.2.0"
@@ -4188,7 +4142,7 @@
   dependencies:
     "@types/node" "*"
 
-"@types/node@*", "@types/node@>=13.7.0", "@types/node@>=18.0.0", "@types/node@^24.7.0":
+"@types/node@*", "@types/node@>=13.7.0", "@types/node@^24.7.0":
   version "24.7.0"
   resolved "https://registry.npmjs.org/@types/node/-/node-24.7.0.tgz#a34c9f0d3401db396782e440317dd5d8373c286f"
   integrity sha512-IbKooQVqUBrlzWTi79E8Fw78l8k1RNtlDDNWsFZs7XonuQSJ8oNYfEeclhprUldXISRMLzBpILuKgPlIxm+/Yw==
@@ -4349,7 +4303,7 @@
   dependencies:
     "@types/yargs-parser" "*"
 
-"@typescript-eslint/eslint-plugin@^8.45.0":
+"@typescript-eslint/eslint-plugin@^8.46.0":
   version "8.46.0"
   resolved "https://registry.npmjs.org/@typescript-eslint/eslint-plugin/-/eslint-plugin-8.46.0.tgz#fc90b35d8025b5eaa66b2f6c3859cd5381a1e751"
   integrity sha512-hA8gxBq4ukonVXPy0OKhiaUh/68D0E88GSmtC1iAEnGaieuDi38LhS7jdCHRLi6ErJBNDGCzvh5EnzdPwUc0DA==
@@ -4364,7 +4318,7 @@
     natural-compare "^1.4.0"
     ts-api-utils "^2.1.0"
 
-"@typescript-eslint/parser@^8.45.0":
+"@typescript-eslint/parser@^8.46.0":
   version "8.46.0"
   resolved "https://registry.npmjs.org/@typescript-eslint/parser/-/parser-8.46.0.tgz#9186f28c59f6e477ab8919312d2654f4f27d45c1"
   integrity sha512-n1H6IcDhmmUEG7TNVSspGmiHHutt7iVKtZwRppD7e04wha5MrkV1h3pti9xQLcCMt6YWsncpoT0HMjkH1FNwWQ==
@@ -4977,7 +4931,7 @@ axios@0.21.4:
   dependencies:
     follow-redirects "^1.14.0"
 
-axios@^1.11.0, axios@^1.12.2, axios@^1.7.7:
+axios@^1.12.2, axios@^1.7.7:
   version "1.12.2"
   resolved "https://registry.npmjs.org/axios/-/axios-1.12.2.tgz#6c307390136cf7a2278d09cec63b136dfc6e6da7"
   integrity sha512-vMJzPewAlRyOgxV2dU0Cuz2O8zzzx9VYtbJOaBgXFeLc4IV/Eg50n4LowmehOOR61S8ZMpc2K5Sa7g6A4jfkUw==
@@ -6161,11 +6115,6 @@ eventemitter3@^4.0.4:
   resolved "https://registry.npmjs.org/eventemitter3/-/eventemitter3-4.0.7.tgz#2de9b68f6528d5644ef5c59526a1b4a07306169f"
   integrity sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==
 
-eventemitter3@^5.0.1:
-  version "5.0.1"
-  resolved "https://registry.npmjs.org/eventemitter3/-/eventemitter3-5.0.1.tgz#53f5ffd0a492ac800721bb42c66b841de96423c4"
-  integrity sha512-GWkBvjiSZK87ELrYOSESUYeVIc9mvLLf/nXalMOS5dYrgZq9o5OVkbZAVM06CVxYsCwH9BDZFPlQTlPA1j4ahA==
-
 events@^3.2.0, events@^3.3.0:
   version "3.3.0"
   resolved "https://registry.npmjs.org/events/-/events-3.3.0.tgz#31a95ad0a924e2d2c419a813aeb2c4e878ea7400"
@@ -6996,11 +6945,6 @@ is-core-module@^2.16.0:
   dependencies:
     hasown "^2.0.2"
 
-is-electron@2.2.2:
-  version "2.2.2"
-  resolved "https://registry.npmjs.org/is-electron/-/is-electron-2.2.2.tgz#3778902a2044d76de98036f5dc58089ac4d80bb9"
-  integrity sha512-FO/Rhvz5tuw4MCWkpMzHFKWD2LsfHzIb7i6MdPYZ/KW7AlxawyLkqdy+jPZP1WubqEADE3O4FUENlJHDfQASRg==
-
 is-extglob@^2.1.1:
   version "2.1.1"
   resolved "https://registry.npmjs.org/is-extglob/-/is-extglob-2.1.1.tgz#a88c02535791f02ed37c76a1b9ea9773c833f8c2"
@@ -7043,7 +6987,7 @@ is-promise@^4.0.0:
   resolved "https://registry.npmjs.org/is-promise/-/is-promise-4.0.0.tgz#42ff9f84206c1991d26debf520dd5c01042dd2f3"
   integrity sha512-hvpoI6korhJMnej285dSg6nu1+e6uxs7zG3BYAm5byqDsgJNWwxzM6z6iZiAgQR4TJ30JmBTOwqZUw3WlyH3AQ==
 
-is-stream@^2, is-stream@^2.0.0:
+is-stream@^2.0.0:
   version "2.0.1"
   resolved "https://registry.npmjs.org/is-stream/-/is-stream-2.0.1.tgz#fac1e3d53b97ad5a9d0ae9cef2389f5810a5c077"
   integrity sha512-hFoiJiTl63nn+kstHGBtewWSKnQLpyb155KHheA1l39uvtO9nWIop1p3udqPcUd/xbF1VLMO4n7OI6p7RbngDg==
@@ -8183,7 +8127,7 @@ mongoose-paginate@^5.0.3:
   dependencies:
     bluebird "3.0.5"
 
-mongoose@^8.19.0:
+mongoose@^8.19.1:
   version "8.19.1"
   resolved "https://registry.npmjs.org/mongoose/-/mongoose-8.19.1.tgz#17f4e0b0e66bb963326f3030ba43d2086013b94d"
   integrity sha512-oB7hGQJn4f8aebqE7mhE54EReb5cxVgpCxQCQj0K/cK3q4J3Tg08nFP6sM52nJ4Hlm8jsDnhVYpqIITZUAhckQ==
@@ -8521,7 +8465,7 @@ p-locate@^5.0.0:
   dependencies:
     p-limit "^3.0.2"
 
-p-queue@^6, p-queue@^6.6.2:
+p-queue@^6.6.2:
   version "6.6.2"
   resolved "https://registry.npmjs.org/p-queue/-/p-queue-6.6.2.tgz#2068a9dcf8e67dd0ec3e7a2bcb76810faa85e426"
   integrity sha512-RwFpb72c/BhQLEXIZ5K2e+AhgNVmIejGlTgiB9MzZ0e93GRvqZ7uSi0dvRF7/XIXDeNkra2fNHBxTyPDGySpjQ==
@@ -8529,7 +8473,7 @@ p-queue@^6, p-queue@^6.6.2:
     eventemitter3 "^4.0.4"
     p-timeout "^3.2.0"
 
-p-retry@4, p-retry@^4:
+p-retry@4:
   version "4.6.2"
   resolved "https://registry.npmjs.org/p-retry/-/p-retry-4.6.2.tgz#9baae7184057edd4e17231cee04264106e092a16"
   integrity sha512-312Id396EbJdvRONlngUx0NydfrIQ5lsYu0znKVUzVvArzEIt08V1qhtyESbGVd1FGX7UKtiFp5uwKZdM8wIuQ==
@@ -8870,10 +8814,10 @@ postgres-interval@^1.1.0:
   dependencies:
     xtend "^4.0.0"
 
-posthog-node@^5.9.2:
-  version "5.9.2"
-  resolved "https://registry.npmjs.org/posthog-node/-/posthog-node-5.9.2.tgz#90888ee6850a7bb7aba3432a2c632ca142dd7822"
-  integrity sha512-oU7FbFcH5cn40nhP04cBeT67zE76EiGWjKKzDvm6IOm5P83sqM0Ij0wMJQSHp+QI6ZN7MLzb+4xfMPUEZ4q6CA==
+posthog-node@^5.9.3:
+  version "5.9.3"
+  resolved "https://registry.npmjs.org/posthog-node/-/posthog-node-5.9.3.tgz#d7b91232cc288fdab001ad02cc699ea93426e09f"
+  integrity sha512-YA32jx4MfL5uLiVU4ynNoSzRqAigG11pkbwEI3UlqyWJpWnp8Nvpzh59b8lpmm2+5Y+kJ99sKyWLGnNZ7K1ryA==
   dependencies:
     "@posthog/core" "1.2.2"
 

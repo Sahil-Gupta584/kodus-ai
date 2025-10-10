@@ -2,7 +2,6 @@ import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logge
 import { FinishOnboardingDTO } from '@/core/infrastructure/http/dtos/finish-onboarding.dto';
 import { Inject, Injectable } from '@nestjs/common';
 import { CreatePRCodeReviewUseCase } from './create-prs-code-review.use-case';
-import { GenerateCodeReviewParameterUseCase } from '../../parameters/generate-code-review-paremeter.use-case';
 import { GenerateKodyRulesUseCase } from '../../kodyRules/generate-kody-rules.use-case';
 import { REQUEST } from '@nestjs/core';
 import { FindRulesInOrganizationByRuleFilterKodyRulesUseCase } from '../../kodyRules/find-rules-in-organization-by-filter.use-case';
@@ -23,7 +22,6 @@ export class FinishOnboardingUseCase {
         private readonly parametersService: IParametersService,
 
         private readonly reviewPRUseCase: CreatePRCodeReviewUseCase,
-        private readonly generateCodeReviewParameterUseCase: GenerateCodeReviewParameterUseCase,
         private readonly generateKodyRulesUseCase: GenerateKodyRulesUseCase,
         private readonly findKodyRulesUseCase: FindRulesInOrganizationByRuleFilterKodyRulesUseCase,
         private readonly changeStatusKodyRulesUseCase: ChangeStatusKodyRulesUseCase,
@@ -76,10 +74,6 @@ export class FinishOnboardingUseCase {
                 { organizationId, teamId },
             );
 
-            await this.generateCodeReviewParameterUseCase.execute({
-                teamId,
-                months: 3,
-            });
             await this.generateKodyRulesUseCase.execute(
                 { teamId, months: 3 },
                 organizationId,

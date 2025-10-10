@@ -7,7 +7,9 @@ import {
 } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import {
     CodeReviewConfig,
+    CodeReviewConfigWithoutLLMProvider,
     CodeReviewVersion,
+    FileChange,
     KodusConfigFile,
     KodyFineTuningConfig,
     ReviewModeConfig,
@@ -51,12 +53,14 @@ import { ICodeBaseConfigService } from '@/core/domain/codeBase/contracts/CodeBas
 import { KodyRulesValidationService } from '../kodyRules/service/kody-rules-validation.service';
 import { ReviewCadenceType } from '@/config/types/general/codeReview.type';
 import { ConfigLevel } from '@/config/types/general/pullRequestMessages.type';
-
-interface GetKodusConfigFileResponse {
-    kodusConfigFile: Omit<KodusConfigFile, 'version'> | null;
-    validationErrors: ErrorObject<string, Record<string, any>, unknown>[];
-    isDeprecated?: boolean;
-}
+import {
+    CodeReviewParameter,
+    RepositoryCodeReviewConfig,
+    GetKodusConfigFileResponse,
+    CodeReviewParameterBaseConfig,
+    DirectoryCodeReviewConfig,
+} from '@/config/types/general/codeReviewConfig.type';
+import { deepMerge } from '@/shared/utils/deep';
 
 @Injectable()
 export default class CodeBaseConfigService implements ICodeBaseConfigService {
@@ -91,7 +95,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
     async getConfig(
         organizationAndTeamData: OrganizationAndTeamData,
         repository: { name: string; id: string },
-        ignoreKodusConfigFile = false,
+        preliminaryFiles?: FileChange[],
     ): Promise<CodeReviewConfig> {
         try {
             const [
@@ -105,6 +109,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 this.parametersService.findOne({
                     configKey: ParametersKey.CODE_REVIEW_CONFIG,
                     team: { uuid: organizationAndTeamData.teamId },
+                    active: true,
                 }),
                 this.parametersService.findByKey(
                     ParametersKey.LANGUAGE_CONFIG,
@@ -118,183 +123,39 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 this.getKodyFineTuningConfigParameter(organizationAndTeamData),
             ]);
 
+            const mergedConfigs = await this.getMergedCodeReviewConfigs(
+                organizationAndTeamData,
+                repository,
+                parameters?.configValue,
+                defaultBranch,
+                preliminaryFiles,
+            );
+
             const kodyRules = this.kodyRulesValidationService.filterKodyRules(
                 kodyRulesEntity?.toObject()?.rules,
                 repository.id,
+                mergedConfigs.directoryId,
             );
 
-            const globalConfig = parameters?.configValue?.global || {};
-
-            const repoConfig =
-                parameters?.configValue?.repositories?.find(
-                    (repo) => repo.id === repository.id.toString(),
-                ) || {};
-
-            let kodusConfigFile: Omit<KodusConfigFile, 'version'> | null;
-            let validationErrors = [];
-
-            const kodusConfigFileOverridesWebPreferences =
-                this.getKodusConfigFileOverrides(repoConfig, globalConfig);
-
-            if (
-                kodusConfigFileOverridesWebPreferences &&
-                ignoreKodusConfigFile !== true
-            ) {
-                const { isDeprecated, ...kodusConfigFileResponse } =
-                    await this.getKodusConfigFile(
-                        organizationAndTeamData,
-                        repository,
-                        defaultBranch,
-                    );
-
-                kodusConfigFile = kodusConfigFileResponse.kodusConfigFile;
-                validationErrors = kodusConfigFileResponse.validationErrors;
-
-                if (isDeprecated) {
-                    this.logger.error({
-                        message: 'Configuration file is deprecated',
-                        context: CodeBaseConfigService.name,
-                        error: new Error('Configuration file is deprecated.'),
-                        metadata: { kodusConfigFile },
-                    });
-                }
-            }
-
-            const codeReviewVersion =
-                (isParameterValidInConfigFile(
-                    'codeReviewVersion',
-                    validationErrors,
-                )
-                    ? kodusConfigFile?.codeReviewVersion
-                    : undefined) ??
-                repoConfig.codeReviewVersion ??
-                globalConfig.codeReviewVersion ??
-                this.DEFAULT_CONFIG.codeReviewVersion;
-
-            const config: CodeReviewConfig = {
-                ignorePaths: this.getIgnorePathsWithGlobal(
-                    isParameterValidInConfigFile(
-                        'ignorePaths',
-                        validationErrors,
-                    )
-                        ? kodusConfigFile?.ignorePaths
-                        : undefined,
-                    repoConfig.ignorePaths,
-                    globalConfig.ignorePaths,
-                ),
-                baseBranches: this.getBranchesConfig(
-                    isParameterValidInConfigFile(
-                        'baseBranches',
-                        validationErrors,
-                    )
-                        ? kodusConfigFile?.baseBranches
-                        : undefined,
-                    repoConfig.baseBranches,
-                    globalConfig.baseBranches,
-                    defaultBranch,
-                ),
-                baseBranchDefault: defaultBranch,
-                reviewOptions: this.mergeReviewOptions(
-                    {
-                        kodusConfig: kodusConfigFile?.reviewOptions,
-                        validationErrors: validationErrors,
-                    },
-                    repoConfig.reviewOptions,
-                    globalConfig.reviewOptions,
-                    codeReviewVersion,
-                ),
-                summary: this.mergeSummaryConfig(
-                    { kodusConfig: kodusConfigFile?.summary, validationErrors },
-                    repoConfig.summary,
-                    globalConfig.summary,
-                ),
-                suggestionControl: this.mergeSuggestionControlConfig(
-                    {
-                        kodusConfig: kodusConfigFile?.suggestionControl,
-                        validationErrors,
-                    },
-                    repoConfig.suggestionControl,
-                    globalConfig.suggestionControl,
-                ),
-                kodyRules: kodyRules,
-                ignoredTitleKeywords: this.mergeArrayConfig(
-                    isParameterValidInConfigFile(
-                        'ignoredTitleKeywords',
-                        validationErrors,
-                    )
-                        ? kodusConfigFile?.ignoredTitleKeywords
-                        : undefined,
-                    repoConfig.ignoredTitleKeywords,
-                    globalConfig.ignoredTitleKeywords,
-                    this.DEFAULT_CONFIG.ignoredTitleKeywords,
-                ),
-                automatedReviewActive:
-                    (isParameterValidInConfigFile(
-                        'automatedReviewActive',
-                        validationErrors,
-                    )
-                        ? kodusConfigFile?.automatedReviewActive
-                        : undefined) ??
-                    repoConfig.automatedReviewActive ??
-                    globalConfig.automatedReviewActive ??
-                    this.DEFAULT_CONFIG.automatedReviewActive,
-                reviewCadence:
-                    (isParameterValidInConfigFile(
-                        'reviewCadence',
-                        validationErrors,
-                    )
-                        ? kodusConfigFile?.reviewCadence
-                        : undefined) ??
-                    repoConfig.reviewCadence ??
-                    globalConfig.reviewCadence ??
-                    this.DEFAULT_CONFIG.reviewCadence,
+            const fullConfig = {
+                ...mergedConfigs,
                 languageResultPrompt:
-                    language?.configValue ||
+                    language?.configValue ??
                     this.DEFAULT_CONFIG.languageResultPrompt,
+                baseBranchDefault: defaultBranch,
+                kodyRules,
                 reviewModeConfig,
                 kodyFineTuningConfig,
-                pullRequestApprovalActive:
-                    (isParameterValidInConfigFile(
-                        'pullRequestApprovalActive',
-                        validationErrors,
-                    )
-                        ? kodusConfigFile?.pullRequestApprovalActive
-                        : undefined) ??
-                    repoConfig.pullRequestApprovalActive ??
-                    globalConfig.pullRequestApprovalActive ??
-                    this.DEFAULT_CONFIG.pullRequestApprovalActive,
-                kodusConfigFileOverridesWebPreferences:
-                    kodusConfigFileOverridesWebPreferences,
-                isRequestChangesActive:
-                    (isParameterValidInConfigFile(
-                        'isRequestChangesActive',
-                        validationErrors,
-                    )
-                        ? kodusConfigFile?.isRequestChangesActive
-                        : undefined) ??
-                    repoConfig.isRequestChangesActive ??
-                    globalConfig.isRequestChangesActive ??
-                    this.DEFAULT_CONFIG.isRequestChangesActive,
-                runOnDraft:
-                    (isParameterValidInConfigFile(
-                        'runOnDraft',
-                        validationErrors,
-                    )
-                        ? kodusConfigFile?.runOnDraft
-                        : undefined) ??
-                    repoConfig.runOnDraft ??
-                    globalConfig.runOnDraft ??
-                    this.DEFAULT_CONFIG.runOnDraft,
-                codeReviewVersion: codeReviewVersion,
+                ignorePaths: mergedConfigs.ignorePaths.concat(
+                    globalIgnorePathsJson?.paths ?? [],
+                ),
                 // v2-only prompt overrides (categories and severity guidance). Read from repo/global parameters.
                 v2PromptOverrides: this.sanitizeV2PromptOverrides(
-                    repoConfig?.v2PromptOverrides ??
-                        globalConfig?.v2PromptOverrides ??
-                        this.DEFAULT_CONFIG?.v2PromptOverrides,
+                    mergedConfigs.v2PromptOverrides,
                 ),
             };
 
-            return config;
+            return fullConfig;
         } catch (error) {
             this.logger.error({
                 message: 'Error getting code review config parameters',
@@ -353,25 +214,118 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         };
     }
 
-    getDefaultConfigs(): CodeReviewConfig {
+    async getMergedCodeReviewConfigs(
+        organizationAndTeamData: OrganizationAndTeamData,
+        repository: { name: string; id: string },
+        parameter: CodeReviewParameter,
+        defaultBranch: string,
+        preliminaryFiles?: FileChange[],
+    ): Promise<CodeReviewConfigWithoutLLMProvider> {
+        if (!parameter) {
+            return this.DEFAULT_CONFIG;
+        }
+
+        const globalDelta = parameter?.configs;
+
+        const repoConfig =
+            parameter?.repositories?.find(
+                (repo) => repo.id === repository.id,
+            ) || ({} as RepositoryCodeReviewConfig);
+
+        const repoDelta = repoConfig?.configs;
+
+        const affectedPaths =
+            this.extractUniqueDirectoryPaths(preliminaryFiles);
+
+        const directoryConfig = this.resolveConfigByDirectories(
+            organizationAndTeamData,
+            repoConfig,
+            affectedPaths,
+        );
+
+        const directoryDelta = directoryConfig?.configs;
+
+        const repositoryFileDelta = await this.getKodusConfigFile({
+            organizationAndTeamData,
+            repository,
+            defaultBranch,
+            overrideConfig: this.getFileOverridePreference(repoConfig),
+        });
+
+        const directoryFileDelta = await this.getKodusConfigFile({
+            organizationAndTeamData,
+            repository,
+            directoryPath: directoryConfig?.path,
+            defaultBranch,
+            overrideConfig: this.getFileOverridePreference(
+                repoConfig,
+                directoryConfig,
+            ),
+        });
+
+        const merged = deepMerge(
+            this.DEFAULT_CONFIG,
+            globalDelta || {},
+            repoDelta || {},
+            repositoryFileDelta || {},
+            directoryDelta || {},
+            directoryFileDelta || {},
+        );
+
+        let configLevel = ConfigLevel.GLOBAL;
+        let directoryId: string | undefined = undefined;
+        let directoryPath: string | undefined = undefined;
+        if (directoryDelta || directoryFileDelta) {
+            configLevel = ConfigLevel.DIRECTORY;
+            directoryId = directoryConfig?.id;
+            directoryPath = directoryConfig?.path;
+        } else if (repoDelta || repositoryFileDelta) {
+            configLevel = ConfigLevel.REPOSITORY;
+        }
+
+        return {
+            ...merged,
+            configLevel,
+            directoryId,
+            directoryPath,
+        } as CodeReviewConfigWithoutLLMProvider;
+    }
+
+    private getFileOverridePreference(
+        repoConfig: RepositoryCodeReviewConfig,
+        directoryConfig?: DirectoryCodeReviewConfig,
+    ): boolean {
+        if (
+            directoryConfig &&
+            directoryConfig?.configs?.kodusConfigFileOverridesWebPreferences !==
+                undefined
+        ) {
+            return directoryConfig.configs
+                .kodusConfigFileOverridesWebPreferences;
+        }
+
+        if (
+            repoConfig &&
+            repoConfig?.configs?.kodusConfigFileOverridesWebPreferences !==
+                undefined
+        ) {
+            return repoConfig.configs.kodusConfigFileOverridesWebPreferences;
+        }
+
+        return this.DEFAULT_CONFIG.kodusConfigFileOverridesWebPreferences;
+    }
+
+    private getDefaultConfigs(): CodeReviewConfig {
         try {
             const kodusConfigYMLfile = getDefaultKodusConfigFile();
 
-            // Complete CodeReviewConfig with missing values
-            const DEFAULT_CONFIG: CodeReviewConfig = {
+            const DEFAULT_CONFIG = {
                 ...kodusConfigYMLfile,
                 languageResultPrompt: LanguageValue.ENGLISH,
                 kodyRules: [],
-                kodusConfigFileOverridesWebPreferences: false,
-                reviewCadence: {
-                    type: ReviewCadenceType.AUTOMATIC,
-                    timeWindow: 0,
-                    pushesToTrigger: 0,
-                },
-                codeReviewVersion: CodeReviewVersion.v2,
             };
 
-            return DEFAULT_CONFIG;
+            return DEFAULT_CONFIG as CodeReviewConfig;
         } catch (error) {
             this.logger.error({
                 message: 'Error getting default config file!',
@@ -379,391 +333,6 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 error,
             });
         }
-    }
-
-    private getKodusConfigFileOverrides(
-        repoConfig?: CodeReviewConfig,
-        globalConfig?: CodeReviewConfig,
-    ) {
-        return (
-            repoConfig?.kodusConfigFileOverridesWebPreferences ??
-            globalConfig?.kodusConfigFileOverridesWebPreferences ??
-            this.DEFAULT_CONFIG.kodusConfigFileOverridesWebPreferences
-        );
-    }
-
-    private getIgnorePathsWithGlobal(
-        kodusConfigIgnorePath: string[] | undefined,
-        repoIgnorePaths: string[] | undefined,
-        globalIgnorePaths: string[] | undefined,
-    ): string[] {
-        // Generate ignore paths array with either the repository, global or default ignore paths
-        const ignorePaths = this.mergeArrayConfig(
-            kodusConfigIgnorePath,
-            repoIgnorePaths,
-            globalIgnorePaths,
-            this.DEFAULT_CONFIG.ignorePaths,
-        );
-
-        // Merge with global ignore paths
-        return ignorePaths.concat(globalIgnorePathsJson?.paths ?? []);
-    }
-
-    private mergeArrayConfig<T>(
-        kodusConfig: T[] | undefined,
-        repo: T[] | undefined,
-        global: T[] | undefined,
-        defaultValue: T[],
-    ): T[] {
-        if (kodusConfig?.length) {
-            return kodusConfig;
-        }
-
-        if (repo?.length) {
-            return repo;
-        }
-        if (global?.length) {
-            return global;
-        }
-
-        return defaultValue;
-    }
-
-    private getBranchesConfig(
-        kodusConfig: string[] | undefined,
-        repoBranches: string[] | undefined,
-        globalBranches: string[] | undefined,
-        defaultBranch: string,
-    ): string[] {
-        const baseBranches = this.mergeArrayConfig(
-            kodusConfig,
-            repoBranches,
-            globalBranches,
-            [],
-        );
-
-        return [...new Set([...baseBranches, defaultBranch])];
-    }
-
-    private mergeReviewOptions(
-        kodusOptions?: {
-            kodusConfig?: Partial<ReviewOptions>;
-            validationErrors: ErrorObject<
-                string,
-                Record<string, any>,
-                unknown
-            >[];
-        },
-        repo?: Partial<any>,
-        global?: Partial<any>,
-        codeReviewVersion?: CodeReviewVersion,
-    ): ReviewOptions {
-        const defaultOptions = this.DEFAULT_CONFIG.reviewOptions;
-        const { kodusConfig, validationErrors } = kodusOptions;
-
-        if (codeReviewVersion === CodeReviewVersion.LEGACY) {
-            return {
-                security:
-                    (isParameterValidInConfigFile('security', validationErrors)
-                        ? kodusConfig?.security
-                        : undefined) ??
-                    repo?.security ??
-                    global?.security ??
-                    defaultOptions.security,
-
-                code_style:
-                    (isParameterValidInConfigFile(
-                        'code_style',
-                        validationErrors,
-                    )
-                        ? kodusConfig?.code_style
-                        : undefined) ??
-                    repo?.code_style ??
-                    global?.code_style ??
-                    defaultOptions.code_style,
-
-                kody_rules:
-                    (isParameterValidInConfigFile(
-                        'kody_rules',
-                        validationErrors,
-                    )
-                        ? kodusConfig?.kody_rules
-                        : undefined) ??
-                    repo?.kody_rules ??
-                    global?.kody_rules ??
-                    defaultOptions.kody_rules,
-
-                refactoring:
-                    (isParameterValidInConfigFile(
-                        'refactoring',
-                        validationErrors,
-                    )
-                        ? kodusConfig?.refactoring
-                        : undefined) ??
-                    repo?.refactoring ??
-                    global?.refactoring ??
-                    defaultOptions.refactoring,
-
-                error_handling:
-                    (isParameterValidInConfigFile(
-                        'error_handling',
-                        validationErrors,
-                    )
-                        ? kodusConfig?.error_handling
-                        : undefined) ??
-                    repo?.error_handling ??
-                    global?.error_handling ??
-                    defaultOptions.error_handling,
-
-                maintainability:
-                    (isParameterValidInConfigFile(
-                        'maintainability',
-                        validationErrors,
-                    )
-                        ? kodusConfig?.maintainability
-                        : undefined) ??
-                    repo?.maintainability ??
-                    global?.maintainability ??
-                    defaultOptions.maintainability,
-
-                potential_issues:
-                    (isParameterValidInConfigFile(
-                        'potential_issues',
-                        validationErrors,
-                    )
-                        ? kodusConfig?.potential_issues
-                        : undefined) ??
-                    repo?.potential_issues ??
-                    global?.potential_issues ??
-                    defaultOptions.potential_issues,
-
-                documentation_and_comments:
-                    (isParameterValidInConfigFile(
-                        'documentation_and_comments',
-                        validationErrors,
-                    )
-                        ? kodusConfig?.documentation_and_comments
-                        : undefined) ??
-                    repo?.documentation_and_comments ??
-                    global?.documentation_and_comments ??
-                    defaultOptions.documentation_and_comments,
-
-                performance_and_optimization:
-                    (isParameterValidInConfigFile(
-                        'performance_and_optimization',
-                        validationErrors,
-                    )
-                        ? kodusConfig?.performance_and_optimization
-                        : undefined) ??
-                    repo?.performance_and_optimization ??
-                    global?.performance_and_optimization ??
-                    defaultOptions.performance_and_optimization,
-
-                breaking_changes:
-                    (isParameterValidInConfigFile(
-                        'breaking_changes',
-                        validationErrors,
-                    )
-                        ? kodusConfig?.breaking_changes
-                        : undefined) ??
-                    repo?.breaking_changes ??
-                    global?.breaking_changes ??
-                    defaultOptions.breaking_changes,
-
-                cross_file:
-                    (isParameterValidInConfigFile(
-                        'cross_file',
-                        validationErrors,
-                    )
-                        ? kodusConfig?.cross_file
-                        : undefined) ??
-                    repo?.cross_file ??
-                    global?.cross_file ??
-                    defaultOptions.cross_file,
-            };
-        } else {
-            return {
-                security:
-                    (isParameterValidInConfigFile('security', validationErrors)
-                        ? kodusConfig?.security
-                        : undefined) ??
-                    repo?.security ??
-                    global?.security ??
-                    defaultOptions.security,
-                bug:
-                    (isParameterValidInConfigFile('bug', validationErrors)
-                        ? kodusConfig?.bug
-                        : undefined) ??
-                    repo?.bug ??
-                    global?.bug ??
-                    defaultOptions.bug,
-                performance:
-                    (isParameterValidInConfigFile(
-                        'performance',
-                        validationErrors,
-                    )
-                        ? kodusConfig?.performance
-                        : undefined) ??
-                    repo?.performance ??
-                    global?.performance ??
-                    defaultOptions.performance,
-                breaking_changes:
-                    (isParameterValidInConfigFile(
-                        'breaking_changes',
-                        validationErrors,
-                    )
-                        ? kodusConfig?.breaking_changes
-                        : undefined) ??
-                    repo?.breaking_changes ??
-                    global?.breaking_changes ??
-                    defaultOptions.breaking_changes,
-                cross_file:
-                    (isParameterValidInConfigFile(
-                        'cross_file',
-                        validationErrors,
-                    )
-                        ? kodusConfig?.cross_file
-                        : undefined) ??
-                    repo?.cross_file ??
-                    global?.cross_file ??
-                    defaultOptions.cross_file,
-                kody_rules: true,
-            };
-        }
-    }
-
-    private mergeSummaryConfig(
-        kodusConfigOptions?: {
-            kodusConfig?: Partial<SummaryConfig>;
-            validationErrors: ErrorObject<
-                string,
-                Record<string, any>,
-                unknown
-            >[];
-        },
-        repo?: Partial<SummaryConfig>,
-        global?: Partial<SummaryConfig>,
-    ): SummaryConfig {
-        const defaultSummary = this.DEFAULT_CONFIG.summary;
-        const { kodusConfig, validationErrors } = kodusConfigOptions;
-
-        return {
-            generatePRSummary:
-                (isParameterValidInConfigFile(
-                    'generatePRSummary',
-                    validationErrors,
-                )
-                    ? kodusConfig?.generatePRSummary
-                    : undefined) ??
-                repo?.generatePRSummary ??
-                global?.generatePRSummary ??
-                defaultSummary.generatePRSummary,
-            customInstructions:
-                (isParameterValidInConfigFile(
-                    'customInstructions',
-                    validationErrors,
-                )
-                    ? kodusConfig?.customInstructions
-                    : undefined) ??
-                repo?.customInstructions ??
-                global?.customInstructions ??
-                defaultSummary.customInstructions,
-            behaviourForExistingDescription:
-                (isParameterValidInConfigFile(
-                    'behaviourForExistingDescription',
-                    validationErrors,
-                )
-                    ? kodusConfig?.behaviourForExistingDescription
-                    : undefined) ??
-                repo?.behaviourForExistingDescription ??
-                global?.behaviourForExistingDescription ??
-                defaultSummary.behaviourForExistingDescription,
-            behaviourForNewCommits:
-                (isParameterValidInConfigFile(
-                    'behaviourForNewCommits',
-                    validationErrors,
-                )
-                    ? kodusConfig?.behaviourForNewCommits
-                    : undefined) ??
-                repo?.behaviourForNewCommits ??
-                global?.behaviourForNewCommits ??
-                defaultSummary.behaviourForNewCommits,
-        };
-    }
-
-    private mergeSuggestionControlConfig(
-        kodusConfigOptions?: {
-            kodusConfig: Partial<SuggestionControlConfig>;
-            validationErrors: ErrorObject<
-                string,
-                Record<string, any>,
-                unknown
-            >[];
-        },
-        repo?: Partial<SuggestionControlConfig>,
-        global?: Partial<SuggestionControlConfig>,
-    ): SuggestionControlConfig {
-        const { kodusConfig, validationErrors } = kodusConfigOptions;
-
-        return {
-            groupingMode:
-                (isParameterValidInConfigFile('groupingMode', validationErrors)
-                    ? kodusConfig?.groupingMode
-                    : undefined) ??
-                repo?.groupingMode ??
-                global?.groupingMode ??
-                this.DEFAULT_CONFIG.suggestionControl.groupingMode,
-            limitationType:
-                (isParameterValidInConfigFile(
-                    'limitationType',
-                    validationErrors,
-                )
-                    ? kodusConfig?.limitationType
-                    : undefined) ??
-                repo?.limitationType ??
-                global?.limitationType ??
-                this.DEFAULT_CONFIG.suggestionControl.limitationType,
-            maxSuggestions:
-                (isParameterValidInConfigFile(
-                    'maxSuggestions',
-                    validationErrors,
-                )
-                    ? kodusConfig?.maxSuggestions
-                    : undefined) ??
-                repo?.maxSuggestions ??
-                global?.maxSuggestions ??
-                this.DEFAULT_CONFIG.suggestionControl.maxSuggestions,
-            severityLevelFilter:
-                (isParameterValidInConfigFile(
-                    'severityLevelFilter',
-                    validationErrors,
-                )
-                    ? kodusConfig?.severityLevelFilter
-                    : undefined) ??
-                repo?.severityLevelFilter ??
-                global?.severityLevelFilter ??
-                this.DEFAULT_CONFIG.suggestionControl.severityLevelFilter,
-            applyFiltersToKodyRules:
-                (isParameterValidInConfigFile(
-                    'applyFiltersToKodyRules',
-                    validationErrors,
-                )
-                    ? kodusConfig?.applyFiltersToKodyRules
-                    : undefined) ??
-                repo?.applyFiltersToKodyRules ??
-                global?.applyFiltersToKodyRules ??
-                this.DEFAULT_CONFIG.suggestionControl.applyFiltersToKodyRules,
-            severityLimits:
-                (isParameterValidInConfigFile(
-                    'severityLimits',
-                    validationErrors,
-                )
-                    ? kodusConfig?.severityLimits
-                    : undefined) ??
-                repo?.severityLimits ??
-                global?.severityLimits ??
-                this.DEFAULT_CONFIG.suggestionControl.severityLimits,
-        };
     }
 
     @ValidateCodeManagementIntegration()
@@ -948,93 +517,72 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         return defaultBranch;
     }
 
-    private async getKodusConfigFile(
-        organizationAndTeamData: OrganizationAndTeamData,
-        repository: { id: string; name: string },
-        defaultBranchName: string,
-    ): Promise<GetKodusConfigFileResponse> {
+    async getKodusConfigFile(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        overrideConfig?: boolean;
+        directoryPath?: string;
+        defaultBranch?: string;
+    }): Promise<KodusConfigFile | undefined> {
+        const {
+            organizationAndTeamData,
+            repository,
+            directoryPath,
+            defaultBranch,
+            overrideConfig = true,
+        } = params;
+
+        if (!overrideConfig) {
+            return;
+        }
+
+        const defaultBranchName =
+            defaultBranch ||
+            (await this.getDefaultBranch(organizationAndTeamData, repository));
+
         const kodusConfigFileContent = await this.getConfigurationFile(
             organizationAndTeamData,
             repository,
             defaultBranchName,
+            directoryPath,
         );
 
         if (!kodusConfigFileContent) {
-            return { kodusConfigFile: null, validationErrors: [] };
+            return;
         }
 
         const kodusConfigYMLfile = yaml.load(
             kodusConfigFileContent,
         ) as KodusConfigFile;
 
-        const {
-            isValidConfigFile: isKodusConfigFileValid,
-            errorMessages,
-            validationErrors,
-            isDeprecated,
-        } = validateKodusConfigFile(kodusConfigYMLfile);
-
-        if (!isKodusConfigFileValid) {
-            this.logger.error({
-                message: 'Configuration file is invalid',
-                context: CodeBaseConfigService.name,
-                error: new Error(errorMessages),
-                metadata: { kodusConfigYMLfile },
-            });
+        // strip properties not in default config
+        for (const key in kodusConfigYMLfile) {
+            if (!(key in this.DEFAULT_CONFIG)) {
+                delete kodusConfigYMLfile[key as keyof KodusConfigFile];
+            }
         }
 
-        const { version, ...kodusConfigYMLFileWithoutVersion } =
-            kodusConfigYMLfile;
+        delete kodusConfigYMLfile.version;
+        delete kodusConfigYMLfile.kodusConfigFileOverridesWebPreferences;
 
-        return {
-            kodusConfigFile: kodusConfigYMLFileWithoutVersion,
-            validationErrors: validationErrors ? validationErrors : [],
-            isDeprecated,
-        };
+        return kodusConfigYMLfile;
     }
 
     private async getConfigurationFile(
         organizationAndTeamData: OrganizationAndTeamData,
         repository: { id: string; name: string },
         defaultBranchName = 'main',
+        directoryPath?: string,
     ): Promise<string | null> {
         const configFileName = 'kodus-config.yml';
-        const response =
-            await this.codeManagementService.getRepositoryContentFile({
-                organizationAndTeamData,
-                repository: { id: repository.id, name: repository.name },
-                file: { filename: configFileName },
-                pullRequest: {
-                    head: { ref: defaultBranchName },
-                    base: { ref: defaultBranchName },
-                },
-            });
+        let fullPath = configFileName;
 
-        if (!response || !response.data || !response.data.content) {
-            return null;
+        if (directoryPath) {
+            const normalizedPath = directoryPath.endsWith('/')
+                ? directoryPath
+                : `${directoryPath}/`;
+            fullPath = `${normalizedPath}${configFileName}`;
         }
-
-        let content = response.data.content;
-
-        if (response.data.encoding === 'base64') {
-            content = Buffer.from(content, 'base64').toString('utf-8');
-        }
-
-        return content;
-    }
-
-    private async getDirectoryConfigurationFile(
-        organizationAndTeamData: OrganizationAndTeamData,
-        repository: { id: string; name: string },
-        directoryPath: string,
-        defaultBranchName = 'main',
-    ): Promise<string | null> {
-        const configFileName = 'kodus-config.yml';
-        // Garante que o diretório termine com / para construir o caminho correto
-        const normalizedPath = directoryPath.endsWith('/')
-            ? directoryPath
-            : `${directoryPath}/`;
-        const fullPath = `${normalizedPath}${configFileName}`;
 
         const response =
             await this.codeManagementService.getRepositoryContentFile({
@@ -1058,53 +606,6 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         }
 
         return content;
-    }
-
-    private async getDirectoryKodusConfigFile(
-        organizationAndTeamData: OrganizationAndTeamData,
-        repository: { id: string; name: string },
-        directoryPath: string,
-        defaultBranchName: string,
-    ): Promise<GetKodusConfigFileResponse> {
-        const kodusConfigFileContent = await this.getDirectoryConfigurationFile(
-            organizationAndTeamData,
-            repository,
-            directoryPath,
-            defaultBranchName,
-        );
-
-        if (!kodusConfigFileContent) {
-            return { kodusConfigFile: null, validationErrors: [] };
-        }
-
-        const kodusConfigYMLfile = yaml.load(
-            kodusConfigFileContent,
-        ) as KodusConfigFile;
-
-        const {
-            isValidConfigFile: isKodusConfigFileValid,
-            errorMessages,
-            validationErrors,
-            isDeprecated,
-        } = validateKodusConfigFile(kodusConfigYMLfile);
-
-        if (!isKodusConfigFileValid) {
-            this.logger.error({
-                message: 'Directory configuration file is invalid',
-                context: CodeBaseConfigService.name,
-                error: new Error(errorMessages),
-                metadata: { kodusConfigYMLfile, directoryPath },
-            });
-        }
-
-        const { version, ...kodusConfigYMLFileWithoutVersion } =
-            kodusConfigYMLfile;
-
-        return {
-            kodusConfigFile: kodusConfigYMLFileWithoutVersion,
-            validationErrors: validationErrors ? validationErrors : [],
-            isDeprecated,
-        };
     }
 
     private async getReviewModeConfigParameter(
@@ -1152,104 +653,87 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
         };
     }
 
-    // Adicionar estes métodos ao CodeBaseConfigService
-
-    /**
-     * Verifica se existem configurações por diretório para o repositório específico
-     * e retorna as configs encontradas para evitar nova busca no banco
-     */
-    async getDirectoryConfigs(
+    private resolveConfigByDirectories(
         organizationAndTeamData: OrganizationAndTeamData,
-        repository: { id: string; name: string },
-    ): Promise<{ hasConfigs: boolean; repoConfig?: any; parameters?: any }> {
-        try {
-            const parameters = await this.parametersService.findOne({
-                configKey: ParametersKey.CODE_REVIEW_CONFIG,
-                team: { uuid: organizationAndTeamData.teamId },
-            });
-
-            if (!parameters?.configValue?.repositories) {
-                return { hasConfigs: false };
-            }
-
-            const repoConfig = parameters.configValue.repositories.find(
-                (repo: any) => repo.id === repository.id.toString(),
-            );
-
-            const hasConfigs = !!(
-                repoConfig?.directories && repoConfig.directories.length > 0
-            );
-
-            return {
-                hasConfigs,
-                repoConfig: hasConfigs ? repoConfig : undefined,
-                parameters: hasConfigs ? parameters : undefined,
-            };
-        } catch (error) {
-            this.logger.error({
-                message: 'Error checking directory configs',
-                context: CodeBaseConfigService.name,
-                error,
-                metadata: {
-                    organizationAndTeamData,
-                    repositoryId: repository.id,
-                },
-            });
-            return { hasConfigs: false };
-        }
-    }
-
-    /**
-     * Resolve configuração baseada nos diretórios afetados pelos arquivos alterados
-     */
-    async resolveConfigByDirectories(
-        organizationAndTeamData: OrganizationAndTeamData,
-        repository: { name: string; id: string },
-        affectedPaths: string[],
-        repoConfig: any,
-    ): Promise<CodeReviewConfig> {
+        repoConfig: RepositoryCodeReviewConfig,
+        affectedPaths: string[] = [],
+    ): DirectoryCodeReviewConfig | undefined {
         try {
             if (!repoConfig?.directories) {
-                return this.getConfig(organizationAndTeamData, repository);
+                return;
             }
 
-            // Função para normalizar paths (remover barra inicial para comparação consistente)
             const normalizePath = (path: string): string => {
                 return path.startsWith('/') ? path.substring(1) : path;
             };
 
-            // Encontrar diretórios configurados que são afetados pelos arquivos alterados
-            const matchingDirectories = repoConfig.directories.filter(
-                (dir: any) => {
-                    const normalizedDirPath = normalizePath(dir.path);
-                    return affectedPaths.some((filePath: string) => {
-                        const normalizedFilePath = normalizePath(filePath);
-                        return (
-                            normalizedFilePath === normalizedDirPath ||
-                            normalizedFilePath.startsWith(
-                                normalizedDirPath + '/',
-                            )
+            const isPathCoveredByDirectory = (
+                normalizedDir: string,
+                normalizedFile: string,
+            ): boolean => {
+                if (normalizedDir === '') {
+                    return true;
+                }
+
+                return (
+                    normalizedFile === normalizedDir ||
+                    normalizedFile.startsWith(normalizedDir + '/')
+                );
+            };
+
+            const directoryMatchers = repoConfig.directories.map(
+                (dir: any) => ({
+                    dir,
+                    normalizedPath: normalizePath(dir.path),
+                }),
+            );
+
+            const matchingDirectories = directoryMatchers.filter(
+                ({ normalizedPath }) =>
+                    affectedPaths.some((filePath: string) => {
+                        const normalizedFile = normalizePath(filePath);
+
+                        return isPathCoveredByDirectory(
+                            normalizedPath,
+                            normalizedFile,
                         );
-                    });
+                    }),
+            );
+
+            const hasNotClassifiedPaths = affectedPaths.some(
+                (filePath: string) => {
+                    const normalizedFile = normalizePath(filePath);
+
+                    return !matchingDirectories.some(({ normalizedPath }) =>
+                        isPathCoveredByDirectory(
+                            normalizedPath,
+                            normalizedFile,
+                        ),
+                    );
                 },
             );
 
-            if (matchingDirectories.length === 0) {
-                // Nenhum diretório configurado afetado, usar config normal (repo ou global)
-                return this.getConfig(organizationAndTeamData, repository);
+            // Agrupar diretórios configurados atingidos e sinalizar paths fora de qualquer config
+            const groupedDirectories = matchingDirectories.map(
+                ({ dir }) => dir,
+            );
+
+            if (groupedDirectories.length > 0 && hasNotClassifiedPaths) {
+                groupedDirectories.push({ name: 'not classified', path: null });
             }
 
-            if (matchingDirectories.length === 1) {
-                // Apenas um diretório configurado afetado, usar sua config
-                return this.buildConfigFromDirectory(
-                    matchingDirectories[0],
-                    organizationAndTeamData,
-                    repository,
-                );
+            if (groupedDirectories.length !== 1) {
+                return;
             }
 
-            // Múltiplos diretórios configurados afetados, usar config do nível superior
-            return this.getConfig(organizationAndTeamData, repository);
+            if (
+                groupedDirectories.length === 1 &&
+                groupedDirectories[0]?.path !== null
+            ) {
+                return groupedDirectories[0];
+            }
+
+            return;
         } catch (error) {
             this.logger.error({
                 message: 'Error resolving config by directories',
@@ -1258,35 +742,27 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 metadata: { organizationAndTeamData, affectedPaths },
             });
 
-            // Fallback para config normal
-            return this.getConfig(organizationAndTeamData, repository);
+            return;
         }
     }
 
-    /**
-     * Resolves the most specific configuration for a single file path based on directory hierarchy.
-     * It finds all matching parent directories for the given path and selects the one with the longest,
-     * most specific path. Falls back to the repository-level config if no directory config matches.
-     *
-     * @param organizationAndTeamData - Data for the organization and team.
-     * @param repository - The repository details.
-     * @param affectedPath - The single file path to resolve the config for.
-     * @param repoConfig - The repository's configuration object, including directory configs.
-     * @returns A promise that resolves to the most specific CodeReviewConfig.
-     */
-    async resolveMostSpecificConfigForPath(
+    async getDirectoryIdForPath(
         organizationAndTeamData: OrganizationAndTeamData,
         repository: { name: string; id: string },
         affectedPath: string,
-        repoConfig: any,
-    ): Promise<CodeReviewConfig> {
+    ): Promise<string | undefined> {
         try {
-            // If no directories are configured, use the default repository config immediately.
-            if (
-                !repoConfig?.directories ||
-                repoConfig.directories.length === 0
-            ) {
-                return this.getConfig(organizationAndTeamData, repository);
+            const parameters = await this.parametersService.findByKey(
+                ParametersKey.CODE_REVIEW_CONFIG,
+                organizationAndTeamData,
+            );
+
+            const repoConfig = parameters?.configValue?.repositories?.find(
+                (repo) => repo.id === repository.id,
+            );
+
+            if (!repoConfig || !repoConfig.directories) {
+                return;
             }
 
             const normalizePath = (path: string): string => {
@@ -1295,33 +771,26 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
 
             const normalizedAffectedPath = normalizePath(affectedPath);
 
-            // 1. Find all configured directories that are a parent of (or match) the affected path.
-            const matchingDirectories = repoConfig.directories.filter(
-                (dir: any) => {
-                    const normalizedDirPath = normalizePath(dir.path);
+            const matchingDirectories = repoConfig.directories.filter((dir) => {
+                const normalizedDirPath = normalizePath(dir.path);
 
-                    // The root directory ('/' or '') is always a potential match.
-                    if (normalizedDirPath === '') {
-                        return true;
-                    }
+                // The root directory ('/' or '') is always a potential match.
+                if (normalizedDirPath === '') {
+                    return true;
+                }
 
-                    // A directory matches if it's identical to the path or is a prefix.
-                    // e.g., 'foo/bar' matches 'foo/bar' and 'foo/bar/baz.ts'.
-                    return (
-                        normalizedAffectedPath === normalizedDirPath ||
-                        normalizedAffectedPath.startsWith(
-                            normalizedDirPath + '/',
-                        )
-                    );
-                },
-            );
+                // A directory matches if it's identical to the path or is a prefix.
+                // e.g., 'foo/bar' matches 'foo/bar' and 'foo/bar/baz.ts'.
+                return (
+                    normalizedAffectedPath === normalizedDirPath ||
+                    normalizedAffectedPath.startsWith(normalizedDirPath + '/')
+                );
+            });
 
-            // 2. If no directories match, fall back to the repository-level config.
             if (matchingDirectories.length === 0) {
-                return this.getConfig(organizationAndTeamData, repository);
+                return;
             }
 
-            // 3. From the matches, find the most specific one (i.e., the one with the longest path).
             const mostSpecificDirectory = matchingDirectories.reduce(
                 (bestMatch, currentDir) => {
                     return currentDir.path.length > bestMatch.path.length
@@ -1330,12 +799,7 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 },
             );
 
-            // 4. Build and return the configuration from the most specific directory found.
-            return this.buildConfigFromDirectory(
-                mostSpecificDirectory,
-                organizationAndTeamData,
-                repository,
-            );
+            return mostSpecificDirectory.id;
         } catch (error) {
             this.logger.error({
                 message: 'Error resolving the most specific config for a path',
@@ -1344,203 +808,24 @@ export default class CodeBaseConfigService implements ICodeBaseConfigService {
                 metadata: { organizationAndTeamData, affectedPath, repository },
             });
 
-            // Fallback to the default repository config in case of any error.
-            return this.getConfig(organizationAndTeamData, repository);
+            return;
         }
     }
 
-    /**
-     * Constrói a configuração baseada na config de um diretório específico
-     * Hierarquia: 1º arquivo yml no diretório → 2º config do banco → 3º default
-     */
-    private async buildConfigFromDirectory(
-        directoryConfig: any,
-        organizationAndTeamData: OrganizationAndTeamData,
-        repository: { name: string; id: string },
-    ): Promise<CodeReviewConfig> {
-        try {
-            const [
-                language,
-                defaultBranch,
-                kodyRulesForDirectory,
-                reviewModeConfig,
-                kodyFineTuningConfig,
-                kodyRulesEntity,
-            ] = await Promise.all([
-                this.parametersService.findByKey(
-                    ParametersKey.LANGUAGE_CONFIG,
-                    organizationAndTeamData,
-                ),
-                this.getDefaultBranch(organizationAndTeamData, repository),
-                this.kodyRulesService.findRulesByDirectory(
-                    organizationAndTeamData.organizationId,
-                    repository.id,
-                    directoryConfig.id,
-                ),
-                this.getReviewModeConfigParameter(organizationAndTeamData),
-                this.getKodyFineTuningConfigParameter(organizationAndTeamData),
-                this.kodyRulesService.findByOrganizationId(
-                    organizationAndTeamData.organizationId,
-                ),
-            ]);
-
-            // 1º: Tentar buscar arquivo yml no diretório específico
-            let kodusConfigFile: Omit<KodusConfigFile, 'version'> | null = null;
-            let validationErrors = [];
-            let isDeprecated = false;
-
-            try {
-                const directoryConfigResult =
-                    await this.getDirectoryKodusConfigFile(
-                        organizationAndTeamData,
-                        repository,
-                        directoryConfig.path,
-                        defaultBranch,
-                    );
-                kodusConfigFile = directoryConfigResult.kodusConfigFile;
-                validationErrors = directoryConfigResult.validationErrors;
-                isDeprecated = directoryConfigResult.isDeprecated ?? false;
-
-                if (kodusConfigFile) {
-                    this.logger.log({
-                        message:
-                            'Using directory-specific kodus-config.yml file',
-                        context: CodeBaseConfigService.name,
-                        metadata: {
-                            directoryPath: directoryConfig.path,
-                            repository: repository.name,
-                            isDeprecated,
-                        },
-                    });
-                }
-            } catch (error) {
-                this.logger.warn({
-                    message:
-                        'Error loading directory configuration file, falling back to database config',
-                    context: CodeBaseConfigService.name,
-                    error,
-                    metadata: { directoryPath: directoryConfig.path },
-                });
-            }
-
-            const repositoryKodyRules = this.kodyRulesValidationService
-                .filterKodyRules(
-                    kodyRulesEntity?.toObject()?.rules,
-                    repository.id,
-                )
-                .filter((rule) => rule?.directoryId !== directoryConfig.id);
-
-            const kodyRules = [
-                ...repositoryKodyRules,
-                ...kodyRulesForDirectory,
-            ];
-
-            // Determinar a fonte da configuração e aplicar hierarquia
-            const configSource = kodusConfigFile || directoryConfig;
-            const codeReviewVersion =
-                configSource.codeReviewVersion ??
-                this.DEFAULT_CONFIG.codeReviewVersion;
-
-            const config: CodeReviewConfig = {
-                ignorePaths: this.getIgnorePathsWithGlobal(
-                    configSource.ignorePaths,
-                    undefined, // não há repo/global config específica no contexto de diretório
-                    undefined,
-                ),
-                baseBranches: configSource.baseBranches?.length
-                    ? configSource.baseBranches
-                    : [defaultBranch],
-                reviewOptions: kodusConfigFile
-                    ? this.mergeReviewOptions(
-                          {
-                              kodusConfig: kodusConfigFile.reviewOptions,
-                              validationErrors: validationErrors,
-                          },
-                          undefined, // repo
-                          undefined, // global
-                          codeReviewVersion,
-                      )
-                    : this.mergeReviewOptions(
-                          {
-                              kodusConfig: undefined,
-                              validationErrors: [],
-                          },
-                          directoryConfig.reviewOptions,
-                          undefined, // global
-                          codeReviewVersion,
-                      ),
-                summary: configSource.summary || this.DEFAULT_CONFIG.summary,
-                suggestionControl:
-                    configSource.suggestionControl ||
-                    this.DEFAULT_CONFIG.suggestionControl,
-                kodyRules: kodyRules,
-                ignoredTitleKeywords: configSource.ignoredTitleKeywords || [],
-                automatedReviewActive:
-                    configSource.automatedReviewActive ??
-                    this.DEFAULT_CONFIG.automatedReviewActive,
-                reviewCadence:
-                    configSource.reviewCadence ||
-                    this.DEFAULT_CONFIG.reviewCadence,
-                languageResultPrompt:
-                    language?.configValue ||
-                    this.DEFAULT_CONFIG.languageResultPrompt,
-                reviewModeConfig,
-                kodyFineTuningConfig,
-                pullRequestApprovalActive:
-                    configSource.pullRequestApprovalActive ??
-                    this.DEFAULT_CONFIG.pullRequestApprovalActive,
-                kodusConfigFileOverridesWebPreferences: kodusConfigFile
-                    ? true // Se veio do arquivo yml, sempre override
-                    : (directoryConfig.kodusConfigFileOverridesWebPreferences ??
-                      this.DEFAULT_CONFIG
-                          .kodusConfigFileOverridesWebPreferences),
-                isRequestChangesActive:
-                    configSource.isRequestChangesActive ??
-                    this.DEFAULT_CONFIG.isRequestChangesActive,
-                kodyRulesGeneratorEnabled:
-                    configSource.kodyRulesGeneratorEnabled ??
-                    this.DEFAULT_CONFIG.kodyRulesGeneratorEnabled,
-                isCommitMode:
-                    configSource.isCommitMode ??
-                    this.DEFAULT_CONFIG.isCommitMode,
-                configLevel: ConfigLevel.DIRECTORY,
-                directoryId: directoryConfig.id,
-                directoryPath: directoryConfig.path,
-                codeReviewVersion: codeReviewVersion,
-                v2PromptOverrides: this.sanitizeV2PromptOverrides(
-                    (kodusConfigFile as any)?.v2PromptOverrides ??
-                        (directoryConfig as any)?.v2PromptOverrides ??
-                        this.DEFAULT_CONFIG?.v2PromptOverrides,
-                ),
-            };
-
-            return config;
-        } catch (error) {
-            this.logger.error({
-                message: 'Error building config from directory',
-                context: CodeBaseConfigService.name,
-                error,
-                metadata: { directoryConfig, organizationAndTeamData },
-            });
-
-            // Fallback para config normal
-            return this.getConfig(organizationAndTeamData, repository);
-        }
-    }
-
-    /**
-     * Extrai caminhos únicos dos arquivos para identificar diretórios afetados
-     */
-    extractUniqueDirectoryPaths(files: { filename: string }[]): string[] {
+    private extractUniqueDirectoryPaths(
+        files: { filename: string }[],
+    ): string[] {
         const paths = new Set<string>();
 
         files.forEach((file) => {
-            const parts = file.filename.split('/');
+            const lastSlashIndex = file.filename.lastIndexOf('/');
 
-            // Gerar todos os caminhos possíveis (do mais específico ao mais geral)
-            for (let i = parts.length - 1; i > 0; i--) {
-                const path = parts.slice(0, i).join('/');
-                paths.add(path);
+            if (lastSlashIndex > 0) {
+                const directoryPath = file.filename.substring(
+                    0,
+                    lastSlashIndex,
+                );
+                paths.add(directoryPath);
             }
         });
 

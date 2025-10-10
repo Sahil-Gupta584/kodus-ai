@@ -12,7 +12,6 @@ import { IntegrationConfigModule } from './integrationConfig.module';
 import { CodebaseModule } from './codeBase.module';
 import { PlatformIntegrationModule } from './platformIntegration.module';
 import { IntegrationModule } from './integration.module';
-import { GenerateCodeReviewParameterUseCase } from '@/core/application/use-cases/parameters/generate-code-review-paremeter.use-case';
 import { CodeReviewSettingsLogModule } from './codeReviewSettingsLog.module';
 import { PullRequestMessagesModule } from './pullRequestMessages.module';
 import { KodyRulesModule } from './kodyRules.module';
@@ -40,14 +39,12 @@ import { UpdateOrCreateCodeReviewParameterUseCase } from '@/core/application/use
             provide: PARAMETERS_REPOSITORY_TOKEN,
             useClass: ParametersRepository,
         },
-
     ],
     controllers: [ParametersController],
     exports: [
         PARAMETERS_SERVICE_TOKEN,
         PARAMETERS_REPOSITORY_TOKEN,
         CreateOrUpdateParametersUseCase,
-        GenerateCodeReviewParameterUseCase,
         UpdateOrCreateCodeReviewParameterUseCase,
     ],
 })

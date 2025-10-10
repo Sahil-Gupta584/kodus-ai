@@ -58,6 +58,7 @@ export class GitlabMappedPlatform implements IMappedPlatform {
             user: payload?.user,
             body: mergeRequest?.description,
             title: mergeRequest?.title,
+            url: (mergeRequest as any)?.url,
             head: {
                 repo: {
                     fullName: mergeRequest?.source?.path_with_namespace,
@@ -110,7 +111,7 @@ export class GitlabMappedPlatform implements IMappedPlatform {
         }
 
         return {
-            id: params?.payload?.object_attributes?.noteable_id.toString(),
+            id: params?.payload?.object_attributes?.id.toString(),
             body: params?.payload?.object_attributes?.note,
         };
     }

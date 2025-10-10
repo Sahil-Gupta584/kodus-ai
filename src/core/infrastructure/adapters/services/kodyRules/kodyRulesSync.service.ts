@@ -808,7 +808,7 @@ export class KodyRulesSyncService {
                     repo.id === repositoryId.toString(),
             );
 
-            return repoConfig?.ideRulesSyncEnabled === true;
+            return repoConfig?.configs.ideRulesSyncEnabled === true;
         } catch {
             return false;
         }
@@ -871,6 +871,13 @@ export class KodyRulesSyncService {
             LLMModelProvider.NOVITA_QWEN3_235B_A22B_THINKING_2507;
         const mainRun = 'kodyRulesFileToRules';
 
+        const promptRunner = new BYOKPromptRunnerService(
+            this.promptRunnerService,
+            mainProvider,
+            mainFallback,
+            byokConfigValue,
+        );
+
         try {
             const { result } = await this.observabilityService.runLLMInSpan({
                 spanName: `${KodyRulesSyncService.name}::${mainRun}`,
@@ -878,17 +885,10 @@ export class KodyRulesSyncService {
                 attrs: {
                     repositoryId: params.repositoryId,
                     filePath: params.filePath,
-                    type: 'byok',
+                    type: promptRunner.executeMode,
                     fallback: false,
                 },
                 exec: async (callbacks) => {
-                    const promptRunner = new BYOKPromptRunnerService(
-                        this.promptRunnerService,
-                        mainProvider,
-                        mainFallback,
-                        byokConfigValue,
-                    );
-
                     return await promptRunner
                         .builder()
                         .setParser(ParserType.JSON)
@@ -953,6 +953,16 @@ export class KodyRulesSyncService {
         } catch (error) {
             const fbRun = 'kodyRulesFileToRulesRaw';
             try {
+                const fbProvider = LLMModelProvider.GEMINI_2_5_FLASH;
+                const fbFallback = LLMModelProvider.GEMINI_2_5_PRO;
+
+                const promptRunner = new BYOKPromptRunnerService(
+                    this.promptRunnerService,
+                    fbProvider,
+                    fbFallback,
+                    byokConfigValue,
+                );
+
                 const { result: raw } =
                     await this.observabilityService.runLLMInSpan({
                         spanName: `${KodyRulesSyncService.name}::${fbRun}`,
@@ -960,21 +970,10 @@ export class KodyRulesSyncService {
                         attrs: {
                             repositoryId: params.repositoryId,
                             filePath: params.filePath,
-                            type: 'byok',
+                            type: promptRunner.executeMode,
                             fallback: true,
                         },
                         exec: async (callbacks) => {
-                            const fbProvider =
-                                LLMModelProvider.GEMINI_2_5_FLASH;
-                            const fbFallback = LLMModelProvider.GEMINI_2_5_PRO;
-
-                            const promptRunner = new BYOKPromptRunnerService(
-                                this.promptRunnerService,
-                                fbProvider,
-                                fbFallback,
-                                byokConfigValue,
-                            );
-
                             return await promptRunner
                                 .builder()
                                 .setParser(ParserType.STRING)
@@ -1218,12 +1217,7 @@ export class KodyRulesSyncService {
                 return [];
             }
 
-            return repoConfig.directories
-                .filter(
-                    (d): d is { path: string } =>
-                        d && typeof d.path === 'string',
-                )
-                .map((d) => d.path);
+            return repoConfig.directories.map((d) => d.path);
         } catch {
             return [];
         }

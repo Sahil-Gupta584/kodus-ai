@@ -13,7 +13,11 @@ export class FindByDirectoryIdPullRequestMessagesUseCase implements IUseCase {
         private readonly pullRequestMessagesService: IPullRequestMessagesService,
     ) {}
 
-    async execute(directoryId: string, repositoryId: string, organizationId: string) {
+    async execute(
+        directoryId: string,
+        repositoryId: string,
+        organizationId: string,
+    ) {
         if (!directoryId || !repositoryId || !organizationId) {
             throw new Error('Directory ID and organization ID are required');
         }
@@ -32,5 +36,3 @@ export class FindByDirectoryIdPullRequestMessagesUseCase implements IUseCase {
         return result.toJson();
     }
 }
-
-

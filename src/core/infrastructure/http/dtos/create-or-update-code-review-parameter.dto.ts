@@ -19,49 +19,60 @@ import {
     ReviewCadenceType,
 } from '@/config/types/general/codeReview.type';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
+import { PullRequestMessageStatus } from '@/config/types/general/pullRequestMessages.type';
 
 class ReviewOptionsDto {
     @IsBoolean()
-    security: boolean;
+    @IsOptional()
+    security?: boolean;
 
     @IsBoolean()
-    code_style: boolean;
+    @IsOptional()
+    code_style?: boolean;
 
     @IsBoolean()
-    refactoring: boolean;
+    @IsOptional()
+    refactoring?: boolean;
 
     @IsBoolean()
-    error_handling: boolean;
+    @IsOptional()
+    error_handling?: boolean;
 
     @IsBoolean()
-    maintainability: boolean;
+    @IsOptional()
+    maintainability?: boolean;
 
     @IsBoolean()
-    potential_issues: boolean;
+    @IsOptional()
+    potential_issues?: boolean;
 
     @IsBoolean()
-    documentation_and_comments: boolean;
+    @IsOptional()
+    documentation_and_comments?: boolean;
 
     @IsBoolean()
-    performance_and_optimization: boolean;
+    @IsOptional()
+    performance_and_optimization?: boolean;
 
     @IsBoolean()
-    kody_rules: boolean;
+    @IsOptional()
+    kody_rules?: boolean;
 
     @IsBoolean()
-    breaking_changes: boolean;
+    @IsOptional()
+    breaking_changes?: boolean;
 
     @IsOptional()
     @IsBoolean()
-    bug: boolean;
+    bug?: boolean;
 
     @IsOptional()
     @IsBoolean()
-    performance: boolean;
+    performance?: boolean;
 
     @IsOptional()
     @IsBoolean()
-    cross_file: boolean;
+    cross_file?: boolean;
 }
 
 class SummaryConfigDto {
@@ -74,6 +85,7 @@ class SummaryConfigDto {
     customInstructions?: string;
 
     @IsOptional()
+    @IsEnum(BehaviourForExistingDescription)
     behaviourForExistingDescription?: BehaviourForExistingDescription;
 
     @IsOptional()
@@ -116,7 +128,6 @@ class SuggestionControlConfigDto {
     @IsEnum(SeverityLevel)
     severityLevelFilter?: SeverityLevel;
 
-    // ✨ NOVA CONFIGURAÇÃO SIMPLIFICADA para controle de filtros nas Kody Rules
     @IsOptional()
     @IsBoolean()
     applyFiltersToKodyRules?: boolean;
@@ -129,7 +140,8 @@ class SuggestionControlConfigDto {
 
 class ReviewCadenceDto {
     @IsEnum(ReviewCadenceType)
-    type: ReviewCadenceType;
+    @IsOptional()
+    type?: ReviewCadenceType;
 
     @IsOptional()
     @IsNumber()
@@ -209,6 +221,49 @@ class V2PromptOverridesDto {
     severity?: V2PromptOverridesSeverityDto;
 }
 
+class CustomMessagesGlobalSettingsDto {
+    @IsOptional()
+    @IsBoolean()
+    hideComments?: boolean;
+}
+
+class CustomMessagesStartReviewMessageDto {
+    @IsOptional()
+    @IsEnum(PullRequestMessageStatus)
+    status?: PullRequestMessageStatus;
+
+    @IsOptional()
+    @IsString()
+    content?: string;
+}
+
+class CustomMessagesEndReviewMessageDto {
+    @IsOptional()
+    @IsEnum(PullRequestMessageStatus)
+    status?: PullRequestMessageStatus;
+
+    @IsOptional()
+    @IsString()
+    content?: string;
+}
+
+class CustomMessagesDto {
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => CustomMessagesGlobalSettingsDto)
+    globalSettings?: CustomMessagesGlobalSettingsDto;
+
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => CustomMessagesStartReviewMessageDto)
+    startReviewMessage?: CustomMessagesStartReviewMessageDto;
+
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => CustomMessagesEndReviewMessageDto)
+    endReviewMessage?: CustomMessagesEndReviewMessageDto;
+}
+
 class CodeReviewConfigWithoutLLMProviderDto {
     @IsOptional()
     @IsString()
@@ -228,7 +283,7 @@ class CodeReviewConfigWithoutLLMProviderDto {
 
     @IsOptional()
     @IsArray()
-    ignorePaths?: string[] = [];
+    ignorePaths?: string[];
 
     @IsOptional()
     @ValidateNested()
@@ -237,11 +292,11 @@ class CodeReviewConfigWithoutLLMProviderDto {
 
     @IsOptional()
     @IsArray()
-    ignoredTitleKeywords?: string[] = [];
+    ignoredTitleKeywords?: string[];
 
     @IsOptional()
     @IsArray()
-    baseBranches?: string[] = [];
+    baseBranches?: string[];
 
     @IsOptional()
     @IsBoolean()
@@ -288,13 +343,17 @@ class CodeReviewConfigWithoutLLMProviderDto {
 
     @IsOptional()
     @IsEnum(CodeReviewVersion)
-    codeReviewVersion?: CodeReviewVersion = CodeReviewVersion.v2;
+    codeReviewVersion?: CodeReviewVersion;
 
-    // v2-only prompt overrides (categories and severity guidance)
     @IsOptional()
     @ValidateNested()
     @Type(() => V2PromptOverridesDto)
     v2PromptOverrides?: V2PromptOverridesDto;
+
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => CustomMessagesDto)
+    customMessages?: CustomMessagesDto;
 }
 
 export class CreateOrUpdateCodeReviewParameterDto {
@@ -307,9 +366,13 @@ export class CreateOrUpdateCodeReviewParameterDto {
 
     @IsString()
     @IsOptional()
-    repositoryId?: string;
+    repositoryId: string;
 
     @IsString()
     @IsOptional()
     directoryId?: string;
+
+    @IsString()
+    @IsOptional()
+    directoryPath?: string;
 }

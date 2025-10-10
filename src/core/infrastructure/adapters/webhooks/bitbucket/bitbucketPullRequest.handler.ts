@@ -276,6 +276,7 @@ export class BitbucketPullRequestHandler implements IWebhookEventHandler {
                         ...payload,
                         action: 'synchronize',
                         origin: 'command',
+                        triggerCommentId: comment?.id,
                     },
                 };
 

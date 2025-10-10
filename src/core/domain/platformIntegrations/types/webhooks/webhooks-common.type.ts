@@ -36,6 +36,7 @@ export interface IMappedPullRequest {
     };
     status?: string;
     isDraft: boolean;
+    url: string;
 }
 
 export interface IMappedRepository {

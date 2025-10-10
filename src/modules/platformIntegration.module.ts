@@ -7,7 +7,6 @@ import { PlatformIntegrationFactory } from '@/core/infrastructure/adapters/servi
 import { IntegrationModule } from './integration.module';
 import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { ProjectManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/projectManagement.service';
-import { CommunicationService } from '@/core/infrastructure/adapters/services/platformIntegration/communication.service';
 import { IntegrationConfigModule } from './integrationConfig.module';
 import { AuthIntegrationModule } from './authIntegration.module';
 import { CodeManagementController } from '@/core/infrastructure/http/controllers/platformIntegration/codeManagement.controller';
@@ -72,13 +71,11 @@ import { PullRequestMessagesModule } from './pullRequestMessages.module';
         PlatformIntegrationFactory,
         CodeManagementService,
         ProjectManagementService,
-        CommunicationService,
+        // CommunicationService,
 
         //Integrations tools
         MSTeamsService,
         GitlabService,
-        // DiscordService,
-        // AzureBoardsService,
 
         // Webhook handlers
         GitHubPullRequestHandler,
@@ -108,7 +105,7 @@ import { PullRequestMessagesModule } from './pullRequestMessages.module';
         PlatformIntegrationFactory,
         CodeManagementService,
         ProjectManagementService,
-        CommunicationService,
+        // CommunicationService,
         ReceiveWebhookUseCase,
         FinishProjectConfigUseCase,
     ],

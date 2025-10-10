@@ -84,34 +84,55 @@ export class KodyRulesValidationService {
 
     /**
      * Filters and orders Kody Rules.
-     * It selects repository-specific and global active rules, removes duplicates,
+     * It selects directory-specific, repository-specific and global active rules, removes duplicates,
      * orders them by createdAt (oldest first), and if not in cloud mode, limits the result to MAX_KODY_RULES.
      *
      * @param rules Array of KodyRules.
      * @param repositoryId Repository identifier.
+     * @param directoryId Optional directory identifier.
      * @returns Array of filtered, ordered, and possibly limited KodyRules.
      */
     filterKodyRules(
         rules: Partial<IKodyRule>[] = [],
         repositoryId: string,
+        directoryId?: string,
     ): Partial<IKodyRule>[] {
         if (!rules?.length) {
             return [];
         }
 
-        const repositoryRules = rules.filter(
-            (rule) =>
-                rule?.repositoryId === repositoryId &&
-                rule?.status === KodyRulesStatus.ACTIVE,
-        );
+        const repositoryRules: Partial<IKodyRule>[] = [];
+        const directoryRules: Partial<IKodyRule>[] = [];
+        const globalRules: Partial<IKodyRule>[] = [];
 
-        const globalRules = rules.filter(
-            (rule) =>
-                rule?.repositoryId === 'global' &&
-                rule?.status === KodyRulesStatus.ACTIVE,
-        );
+        for (const rule of rules) {
+            if (rule.status !== KodyRulesStatus.ACTIVE) {
+                continue;
+            }
 
-        const mergedRules = [...repositoryRules, ...globalRules];
+            if (rule.repositoryId === 'global') {
+                globalRules.push(rule);
+                continue;
+            }
+
+            if (rule.repositoryId !== repositoryId) {
+                continue;
+            }
+
+            if (directoryId && rule.directoryId) {
+                if (rule.directoryId === directoryId) {
+                    directoryRules.push(rule);
+                }
+            } else {
+                repositoryRules.push(rule);
+            }
+        }
+
+        const mergedRules = [
+            ...repositoryRules,
+            ...directoryRules,
+            ...globalRules,
+        ];
         const mergedRulesWithoutDuplicates =
             this.extractUniqueKodyRules(mergedRules);
 
@@ -249,16 +270,6 @@ export class KodyRulesValidationService {
 
             // If the rule is not inheritable, it doesn't match.
             if (!inheritable) {
-                return false;
-            }
-
-            // If we are querying at the repository level (no directoryId is provided)
-            // We only allow it if the repositoryId itself is in the 'include' list.
-            if (
-                !directoryId &&
-                include.length &&
-                !include.includes(repositoryId!)
-            ) {
                 return false;
             }
 

@@ -43,6 +43,7 @@ export interface CodeReviewPipelineContext extends PipelineContext {
     origin: string;
     action: string;
     platformType: PlatformType;
+    triggerCommentId?: number | string;
 
     codeReviewConfig?: CodeReviewConfig;
     automaticReviewStatus?: AutomaticReviewStatus;

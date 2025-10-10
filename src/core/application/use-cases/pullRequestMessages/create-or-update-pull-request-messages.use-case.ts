@@ -5,7 +5,6 @@ import {
     PULL_REQUEST_MESSAGES_SERVICE_TOKEN,
 } from '@/core/domain/pullRequestMessages/contracts/pullRequestMessages.service.contract';
 import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
-import { REQUEST } from '@nestjs/core';
 import { ConfigLevel } from '@/config/types/general/pullRequestMessages.type';
 import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
 import {
@@ -16,6 +15,12 @@ import {
 import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { PullRequestMessagesLogParams } from '@/ee/codeReviewSettingsLog/services/pullRequestMessageLog.handler';
+import { IUser } from '@/core/domain/user/interfaces/user.interface';
+import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
+import {
+    Action,
+    ResourceType,
+} from '@/core/domain/permissions/enums/permissions.enum';
 
 @Injectable()
 export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
@@ -30,23 +35,25 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
 
         private readonly logger: PinoLoggerService,
 
-        @Inject(REQUEST)
-        private readonly request: Request & {
-            user: {
-                id: string;
-                email: string;
-                organization: { uuid: string };
-            };
-        },
+        private readonly authorizationService: AuthorizationService,
     ) {}
 
-    async execute(pullRequestMessages: IPullRequestMessages): Promise<void> {
-        if (!this.request.user.organization.uuid) {
-            throw new Error('Organization ID not found');
+    async execute(
+        userInfo: Partial<IUser>,
+        pullRequestMessages: IPullRequestMessages,
+    ): Promise<void> {
+        if (!userInfo?.organization?.uuid) {
+            throw new Error('Organization ID is required in user info');
         }
 
-        pullRequestMessages.organizationId =
-            this.request.user.organization.uuid;
+        this.authorizationService.ensure({
+            user: userInfo,
+            action: Action.Create,
+            resource: ResourceType.CodeReviewSettings,
+            repoIds: [pullRequestMessages.repositoryId || 'global'],
+        });
+
+        pullRequestMessages.organizationId = userInfo?.organization?.uuid;
 
         if (pullRequestMessages?.configLevel === ConfigLevel.GLOBAL) {
             pullRequestMessages.repositoryId = 'global';
@@ -73,8 +80,8 @@ export class CreateOrUpdatePullRequestMessagesUseCase implements IUseCase {
                     organizationId: pullRequestMessages.organizationId,
                 },
                 userInfo: {
-                    userId: this.request.user.id,
-                    userEmail: this.request.user.email,
+                    userId: userInfo?.uuid,
+                    userEmail: userInfo?.email,
                 },
                 actionType: ActionType.EDIT,
                 configLevel: pullRequestMessages.configLevel,

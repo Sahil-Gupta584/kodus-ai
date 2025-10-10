@@ -131,16 +131,13 @@ export class CheckIfPRCanBeApprovedCronProvider {
                     continue;
                 }
 
-                const codeReviewConfig = codeReviewParameter?.configValue as {
-                    global: CodeReviewConfig;
-                    repositories: CodeReviewConfigWithRepositoryInfo[];
-                };
+                const codeReviewConfig = codeReviewParameter?.configValue;
 
                 if (
                     !codeReviewParameter ||
                     !codeReviewConfig ||
                     !Array.isArray(codeReviewConfig.repositories) ||
-                    codeReviewConfig.repositories.length < 1
+                    codeReviewConfig.repositories?.length < 1
                 ) {
                     this.logger.error({
                         message:
@@ -228,24 +225,25 @@ export class CheckIfPRCanBeApprovedCronProvider {
                 }
 
                 openPullRequests?.map(async (pr) => {
-                    const repository = pr.repository;
+                    const repository = pr?.repository;
 
                     const codeReviewConfigFromRepo =
                         codeReviewConfig?.repositories?.find(
                             (codeReviewConfigRepo) =>
-                                codeReviewConfigRepo.id === repository.id,
+                                codeReviewConfigRepo?.id === repository?.id,
                         );
 
                     if (
-                        !codeReviewConfig?.global?.pullRequestApprovalActive &&
-                        !codeReviewConfigFromRepo?.pullRequestApprovalActive
+                        !codeReviewConfig?.configs?.pullRequestApprovalActive &&
+                        !codeReviewConfigFromRepo?.configs
+                            ?.pullRequestApprovalActive
                     ) {
                         return;
                     }
 
                     if (
-                        codeReviewConfigFromRepo?.pullRequestApprovalActive ===
-                        false
+                        codeReviewConfigFromRepo?.configs
+                            ?.pullRequestApprovalActive === false
                     ) {
                         return;
                     }
@@ -275,15 +273,15 @@ export class CheckIfPRCanBeApprovedCronProvider {
         organizationAndTeamData: OrganizationAndTeamData;
         pr: PullRequestsEntity;
     }): Promise<boolean> {
-        const repository = pr.repository;
-        const prNumber = pr.number;
-        const platformType = pr.provider as PlatformType;
+        const repository = pr?.repository;
+        const prNumber = pr?.number;
+        const platformType = pr?.provider as PlatformType;
 
         const codeManagementRequestData = {
             organizationAndTeamData,
             repository: {
-                id: repository.id,
-                name: repository.name,
+                id: repository?.id,
+                name: repository?.name,
             },
             prNumber: prNumber,
         };
@@ -314,26 +312,26 @@ export class CheckIfPRCanBeApprovedCronProvider {
                     organizationAndTeamData,
                     prNumber,
                     repository: {
-                        name: repository.name,
-                        id: repository.id,
+                        name: repository?.name,
+                        id: repository?.id,
                     },
                 },
             });
 
             if (platformType === PlatformType.AZURE_REPOS) {
-                reviewComments = reviewComments.filter(
+                reviewComments = reviewComments?.filter(
                     (comment) =>
                         comment?.commentType ===
                         AzureRepoCommentTypeString.CODE,
                 );
             }
 
-            if (!reviewComments || reviewComments.length < 1) {
+            if (!reviewComments || reviewComments?.length < 1) {
                 return false;
             }
 
             const isEveryReviewCommentResolved = reviewComments?.every(
-                (reviewComment) => reviewComment.isResolved,
+                (reviewComment) => reviewComment?.isResolved,
             );
 
             if (isEveryReviewCommentResolved) {
@@ -345,8 +343,8 @@ export class CheckIfPRCanBeApprovedCronProvider {
                         organizationAndTeamData,
                         prNumber,
                         repository: {
-                            name: repository.name,
-                            id: repository.id,
+                            name: repository?.name,
+                            id: repository?.id,
                         },
                     },
                 });
@@ -356,8 +354,8 @@ export class CheckIfPRCanBeApprovedCronProvider {
                         organizationAndTeamData,
                         prNumber,
                         repository: {
-                            name: repository.name,
-                            id: repository.id,
+                            name: repository?.name,
+                            id: repository?.id,
                         },
                     },
                     platformType,
@@ -373,8 +371,8 @@ export class CheckIfPRCanBeApprovedCronProvider {
                     platformType,
                     prNumber: pr.number,
                     repository: {
-                        name: repository.name,
-                        id: repository.id,
+                        name: repository?.name,
+                        id: repository?.id,
                     },
                 },
                 error,

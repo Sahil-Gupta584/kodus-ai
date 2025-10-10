@@ -7,17 +7,12 @@ import {
     TEAM_AUTOMATION_SERVICE_TOKEN,
     ITeamAutomationService,
 } from '@/core/domain/automation/contracts/team-automation.service';
-import {
-    TEAM_SERVICE_TOKEN,
-    ITeamService,
-} from '@/core/domain/team/contracts/team.service.contract';
 import { AutomationType } from '@/core/domain/automation/enums/automation-type';
 import {
     EXECUTE_AUTOMATION_SERVICE_TOKEN,
     IExecuteAutomationService,
 } from '@/shared/domain/contracts/execute.automation.service.contracts';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { CommunicationService } from '@/core/infrastructure/adapters/services/platformIntegration/communication.service';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 
 @Injectable()
@@ -31,8 +26,6 @@ export class RunTeamAutomationsUseCase {
 
         @Inject(EXECUTE_AUTOMATION_SERVICE_TOKEN)
         private readonly executeAutomation: IExecuteAutomationService,
-
-        private readonly communication: CommunicationService,
 
         private logger: PinoLoggerService,
     ) {}
@@ -77,17 +70,6 @@ export class RunTeamAutomationsUseCase {
                     },
                 });
                 new Error('No active team automation found');
-
-                if (
-                    params &&
-                    params.channelId &&
-                    params.organizationAndTeamData.organizationId
-                ) {
-                    this.sendErrorMessageTemplate(
-                        params.organizationAndTeamData,
-                        params.channelId,
-                    );
-                }
             }
 
             for (const teamAutomation of teamAutomations) {
@@ -113,23 +95,5 @@ export class RunTeamAutomationsUseCase {
                 },
             });
         }
-    }
-
-    private async sendErrorMessageTemplate(
-        organizationAndTeamData: OrganizationAndTeamData,
-        channelId: string,
-    ): Promise<any> {
-        const template = await this.communication.handlerTemplateMessage({
-            methodName: 'getDefaultMessageErrorProcessCommands',
-            organizationId: organizationAndTeamData.organizationId,
-            errorMessage:
-                'No information found at the moment for processing metrics.',
-        });
-
-        await this.communication.newBlockMessage({
-            organizationAndTeamData,
-            blocks: template,
-            channelId: channelId,
-        });
     }
 }
