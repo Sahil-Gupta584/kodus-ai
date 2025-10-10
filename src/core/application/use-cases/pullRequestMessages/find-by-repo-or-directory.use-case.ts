@@ -10,6 +10,7 @@ import {
 } from '@/core/domain/pullRequestMessages/contracts/pullRequestMessages.service.contract';
 import { PullRequestMessagesEntity } from '@/core/domain/pullRequestMessages/entities/pullRequestMessages.entity';
 import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
+import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
 import { deepDifference } from '@/shared/utils/deep';
 import { getDefaultKodusConfigFile } from '@/shared/utils/validateCodeReviewConfigFile';
 import { Inject, Injectable } from '@nestjs/common';
@@ -27,6 +28,8 @@ export class FindByRepositoryOrDirectoryIdPullRequestMessagesUseCase {
     constructor(
         @Inject(PULL_REQUEST_MESSAGES_SERVICE_TOKEN)
         private readonly pullRequestMessagesService: IPullRequestMessagesService,
+
+        private readonly logger: PinoLoggerService,
     ) {}
 
     async execute(
@@ -34,88 +37,113 @@ export class FindByRepositoryOrDirectoryIdPullRequestMessagesUseCase {
         repositoryId: string,
         directoryId?: string,
     ) {
-        if (!organizationId) {
-            throw new Error('Organization ID is required');
-        }
+        try {
+            if (!organizationId) {
+                throw new Error('Organization ID is required');
+            }
 
-        if (directoryId && !repositoryId) {
-            throw new Error(
-                'Repository ID is required when Directory ID is provided',
+            if (directoryId && !repositoryId) {
+                throw new Error(
+                    'Repository ID is required when Directory ID is provided',
+                );
+            }
+
+            const { customMessages: defaultConfig } =
+                getDefaultKodusConfigFile();
+
+            const globalEntity = await this.pullRequestMessagesService.findOne({
+                organizationId,
+                configLevel: ConfigLevel.GLOBAL,
+            });
+            const globalConfig = this.getConfigs(globalEntity);
+
+            const repoEntity = repositoryId
+                ? await this.pullRequestMessagesService.findOne({
+                      organizationId,
+                      repositoryId,
+                      configLevel: ConfigLevel.REPOSITORY,
+                  })
+                : undefined;
+            const repoConfig = this.getConfigs(repoEntity);
+
+            const directoryEntity = directoryId
+                ? await this.pullRequestMessagesService.findOne({
+                      organizationId,
+                      repositoryId,
+                      directoryId,
+                      configLevel: ConfigLevel.DIRECTORY,
+                  })
+                : undefined;
+            const directoryConfig = this.getConfigs(directoryEntity);
+
+            const globalDelta = deepDifference(defaultConfig, globalConfig);
+            const repoDelta = deepDifference(globalConfig, repoConfig);
+            const directoryDelta = deepDifference(repoConfig, directoryConfig);
+
+            const formattedDefaultConfig =
+                this.formatDefaultConfig(defaultConfig);
+
+            const formattedGlobalConfig = this.formatLevel(
+                formattedDefaultConfig,
+                globalDelta,
+                FormattedConfigLevel.GLOBAL,
             );
+
+            const formattedRepoConfig = this.formatLevel(
+                formattedGlobalConfig,
+                repoDelta,
+                FormattedConfigLevel.REPOSITORY,
+            );
+
+            const formattedDirectoryConfig = this.formatLevel(
+                formattedRepoConfig,
+                directoryDelta,
+                FormattedConfigLevel.DIRECTORY,
+            );
+
+            const finalEntity = directoryEntity ?? repoEntity ?? globalEntity;
+
+            const baseEntityObject = finalEntity?.toJson() ?? {
+                uuid: undefined,
+                organizationId,
+                repositoryId,
+                directoryId,
+            };
+            console.log(
+                'startReviewMessage',
+                formattedDirectoryConfig.startReviewMessage,
+            );
+
+            return {
+                ...baseEntityObject,
+                ...formattedDirectoryConfig,
+            };
+        } catch (error) {
+            this.logger.error({
+                message:
+                    'Error finding pull request messages by repository or directory',
+                context:
+                    FindByRepositoryOrDirectoryIdPullRequestMessagesUseCase.name,
+                error: error,
+                metadata: { organizationId, repositoryId, directoryId },
+            });
         }
-
-        const { customMessages: defaultConfig } = getDefaultKodusConfigFile();
-
-        const globalEntity = await this.pullRequestMessagesService.findOne({
-            organizationId,
-            configLevel: ConfigLevel.GLOBAL,
-        });
-        const globalConfig = this.getConfigs(globalEntity);
-
-        const repoEntity = repositoryId
-            ? await this.pullRequestMessagesService.findOne({
-                  organizationId,
-                  repositoryId,
-                  configLevel: ConfigLevel.REPOSITORY,
-              })
-            : undefined;
-        const repoConfig = this.getConfigs(repoEntity);
-
-        const directoryEntity = directoryId
-            ? await this.pullRequestMessagesService.findOne({
-                  organizationId,
-                  repositoryId,
-                  directoryId,
-                  configLevel: ConfigLevel.DIRECTORY,
-              })
-            : undefined;
-        const directoryConfig = this.getConfigs(directoryEntity);
-
-        const globalDelta = deepDifference(defaultConfig, globalConfig);
-        const repoDelta = deepDifference(globalConfig, repoConfig);
-        const directoryDelta = deepDifference(repoConfig, directoryConfig);
-
-        const formattedDefaultConfig = this.formatDefaultConfig(defaultConfig);
-
-        const formattedGlobalConfig = this.formatLevel(
-            formattedDefaultConfig,
-            globalDelta,
-            FormattedConfigLevel.GLOBAL,
-        );
-
-        const formattedRepoConfig = this.formatLevel(
-            formattedGlobalConfig,
-            repoDelta,
-            FormattedConfigLevel.REPOSITORY,
-        );
-
-        const formattedDirectoryConfig = this.formatLevel(
-            formattedRepoConfig,
-            directoryDelta,
-            FormattedConfigLevel.DIRECTORY,
-        );
-
-        const finalEntity = directoryEntity ?? repoEntity ?? globalEntity;
-
-        const baseEntityObject = finalEntity?.toJson() ?? {
-            uuid: undefined,
-            organizationId,
-            repositoryId,
-            directoryId,
-        };
-
-        return {
-            ...baseEntityObject,
-            ...formattedDirectoryConfig,
-        };
     }
 
     private getConfigs(entity: PullRequestMessagesEntity | undefined) {
         const json = entity?.toJson();
         return {
-            globalSettings: json?.globalSettings,
-            endReviewMessage: json?.endReviewMessage,
-            startReviewMessage: json?.startReviewMessage,
+            globalSettings: {
+                hideComments: json?.globalSettings?.hideComments,
+            },
+            endReviewMessage: {
+                content: json?.endReviewMessage?.content,
+                status: json?.endReviewMessage?.status,
+            },
+            startReviewMessage: {
+                content: json?.startReviewMessage?.content,
+                status: json?.startReviewMessage?.status,
+            },
         } as CustomMessagesConfig;
     }
 
