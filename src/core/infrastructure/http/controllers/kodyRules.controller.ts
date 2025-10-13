@@ -44,6 +44,7 @@ import {
 import { GetInheritedRulesKodyRulesUseCase } from '@/core/application/use-cases/kodyRules/get-inherited-kody-rules.use-case';
 import { GetRulesLimitStatusUseCase } from '@/core/application/use-cases/kodyRules/get-rules-limit-status.use-case';
 import { UserRequest } from '@/config/types/http/user-request.type';
+import { ResyncRulesFromIdeUseCase } from '@/core/application/use-cases/kodyRules/resync-rules-from-ide.use-case';
 
 @Controller('kody-rules')
 export class KodyRulesController {
@@ -65,7 +66,7 @@ export class KodyRulesController {
         private readonly syncSelectedReposKodyRulesUseCase: SyncSelectedRepositoriesKodyRulesUseCase,
         private readonly getInheritedRulesKodyRulesUseCase: GetInheritedRulesKodyRulesUseCase,
         private readonly getRulesLimitStatusUseCase: GetRulesLimitStatusUseCase,
-
+        private readonly resyncRulesFromIdeUseCase: ResyncRulesFromIdeUseCase,
         @Inject(REQUEST)
         private readonly request: UserRequest,
     ) {}
@@ -288,6 +289,20 @@ export class KodyRulesController {
         const respositories = [body.repositoryId];
 
         return this.syncSelectedReposKodyRulesUseCase.execute({
+            teamId: body.teamId,
+            repositoriesIds: respositories,
+        });
+    }
+
+    @Post('/resync-ide-rules')
+    @UseGuards(PolicyGuard)
+    @CheckPolicies(checkPermissions(Action.Create, ResourceType.KodyRules))
+    public async resyncIdeRules(
+        @Body() body: { teamId: string; repositoryId: string; },
+    ) {
+        const respositories = [body.repositoryId];
+
+        return this.resyncRulesFromIdeUseCase.execute({
             teamId: body.teamId,
             repositoriesIds: respositories,
         });
