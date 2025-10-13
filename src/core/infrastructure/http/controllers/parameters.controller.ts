@@ -261,14 +261,4 @@ export class ParametersController {
     ) {
         return this.previewPrSummaryUseCase.execute(body);
     }
-
-    // TODO: Remove once all orgs have migrated
-    @Post('/migrate-code-review-parameters')
-    @UseGuards(PolicyGuard)
-    @CheckPolicies(
-        checkPermissions(Action.Manage, ResourceType.CodeReviewSettings),
-    )
-    public async migrateCodeReviewParameters() {
-        return this.migrateCodeReviewParametersUseCase.execute();
-    }
 }
