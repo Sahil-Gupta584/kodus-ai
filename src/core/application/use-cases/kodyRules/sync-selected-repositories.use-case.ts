@@ -32,10 +32,15 @@ export class SyncSelectedRepositoriesKodyRulesUseCase {
                 organizationAndTeamData,
             });
 
-            if (!Array.isArray(repos) || repos.length === 0) return;
+            if (!Array.isArray(repos) || repos.length === 0) {
+                return;
+            }
 
             const filtered = repos
-                .filter((r: any) => r && (r.selected === true || r.isSelected === true))
+                .filter(
+                    (r: any) =>
+                        r && (r.selected === true || r.isSelected === true),
+                )
                 .filter((r: any) =>
                     params.repositoriesIds && params.repositoriesIds.length > 0
                         ? params.repositoriesIds.includes(r.id) ||
@@ -49,7 +54,9 @@ export class SyncSelectedRepositoriesKodyRulesUseCase {
                     repository: {
                         id: String(repo.id),
                         name: repo.name,
-                        fullName: (repo as any)?.fullName || `${(repo as any)?.organizationName || ''}/${repo.name}`,
+                        fullName:
+                            (repo as any)?.fullName ||
+                            `${(repo as any)?.organizationName || ''}/${repo.name}`,
                         defaultBranch: (repo as any)?.default_branch,
                     },
                 });
@@ -67,5 +74,3 @@ export class SyncSelectedRepositoriesKodyRulesUseCase {
         }
     }
 }
-
-

@@ -709,10 +709,13 @@ export class KodyRulesSyncService {
                     organizationAndTeamData,
                 });
 
-                const oneRule = rules.find(
+                const oneRule = rules?.find(
                     (r) => r && typeof r === 'object' && r.title && r.rule,
                 );
-                if (!oneRule) continue;
+
+                if (!oneRule) {
+                    continue;
+                }
 
                 const existing = await this.findRuleBySourcePath({
                     organizationAndTeamData,
@@ -749,7 +752,7 @@ export class KodyRulesSyncService {
                         : [],
                 } as CreateKodyRuleDto;
 
-                const result = await this.upsertRule.execute(
+                await this.upsertRule.execute(
                     dto,
                     organizationAndTeamData.organizationId,
                 );
