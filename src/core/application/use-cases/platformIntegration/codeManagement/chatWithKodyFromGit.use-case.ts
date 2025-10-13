@@ -788,6 +788,7 @@ export class ChatWithKodyFromGitUseCase {
                 'Successfully showed invalid context message for business logic command',
             context: ChatWithKodyFromGitUseCase.name,
             metadata: {
+                organizationAndTeamData,
                 repository: repository.name,
                 pullRequestNumber,
                 commentId: comment.id,
