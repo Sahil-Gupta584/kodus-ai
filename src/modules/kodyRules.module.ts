@@ -33,6 +33,7 @@ import { LicenseModule } from '@/ee/license/license.module';
 import { LicenseService } from '@/ee/license/license.service';
 import { OrganizationParametersModule } from './organizationParameters.module';
 import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
+import { ResyncRulesFromIdeUseCase } from '@/core/application/use-cases/kodyRules/resync-rules-from-ide.use-case';
 
 @Module({
     imports: [
@@ -83,6 +84,7 @@ import { PermissionValidationModule } from '@/ee/shared/permission-validation.mo
         KodyRulesValidationService,
         KodyRulesSyncService,
         SyncSelectedRepositoriesKodyRulesUseCase,
+        ResyncRulesFromIdeUseCase,
         LicenseService,
     ],
 })
