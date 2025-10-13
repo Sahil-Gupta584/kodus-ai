@@ -204,6 +204,9 @@ export class ChatWithKodyFromGitUseCase {
             const pullRequestNumber = this.getPullRequestNumber(params);
             const pullRequestDescription =
                 this.getPullRequestDescription(params);
+            const headRef = this.getHeadRef(params);
+            const baseRef = this.getBaseRef(params);
+            const defaultBranch = this.getDefaultBranch(params, repository);
 
             this.logger.log({
                 message: 'Extracted PR information',
@@ -247,6 +250,9 @@ export class ChatWithKodyFromGitUseCase {
                     pullRequestNumber,
                     pullRequestDescription,
                     organizationAndTeamData,
+                    headRef,
+                    baseRef,
+                    defaultBranch,
                 );
             }
         } catch (error) {
@@ -520,6 +526,9 @@ export class ChatWithKodyFromGitUseCase {
         pullRequestNumber: number,
         pullRequestDescription: string,
         organizationAndTeamData: OrganizationAndTeamData,
+        headRef?: string,
+        baseRef?: string,
+        defaultBranch?: string,
     ): Promise<void> {
         const allComments =
             await this.codeManagementService.getPullRequestReviewComment({
@@ -633,6 +642,9 @@ export class ChatWithKodyFromGitUseCase {
                 repository,
                 pullRequestDescription,
                 platformType: params.platformType,
+                headRef,
+                baseRef,
+                defaultBranch,
             });
 
             const thread = createThreadId(
@@ -868,6 +880,95 @@ export class ChatWithKodyFromGitUseCase {
                     context: ChatWithKodyFromGitUseCase.name,
                 });
                 return 0;
+        }
+    }
+
+    private getHeadRef(params: WebhookParams): string {
+        switch (params.platformType) {
+            case PlatformType.GITHUB:
+                return params.payload?.pull_request?.head?.ref || '';
+            case PlatformType.GITLAB:
+                return params.payload?.merge_request?.source_branch || '';
+            case PlatformType.BITBUCKET:
+                return params.payload?.pullrequest?.source?.branch?.name || '';
+            case PlatformType.AZURE_REPOS:
+                return (
+                    params.payload?.resource?.pullRequest?.sourceRefName?.replace(
+                        'refs/heads/',
+                        '',
+                    ) || ''
+                );
+            default:
+                this.logger.warn({
+                    message: `Unsupported platform type: ${params.platformType} for head ref`,
+                    context: ChatWithKodyFromGitUseCase.name,
+                });
+                return '';
+        }
+    }
+
+    private getBaseRef(params: WebhookParams): string {
+        switch (params.platformType) {
+            case PlatformType.GITHUB:
+                return params.payload?.pull_request?.base?.ref || '';
+            case PlatformType.GITLAB:
+                return params.payload?.merge_request?.target_branch || '';
+            case PlatformType.BITBUCKET:
+                return (
+                    params.payload?.pullrequest?.destination?.branch?.name || ''
+                );
+            case PlatformType.AZURE_REPOS:
+                return (
+                    params.payload?.resource?.pullRequest?.targetRefName?.replace(
+                        'refs/heads/',
+                        '',
+                    ) || ''
+                );
+            default:
+                this.logger.warn({
+                    message: `Unsupported platform type: ${params.platformType} for base ref`,
+                    context: ChatWithKodyFromGitUseCase.name,
+                });
+                return '';
+        }
+    }
+
+    private getDefaultBranch(
+        params: WebhookParams,
+        repository: Repository,
+    ): string {
+        switch (params.platformType) {
+            case PlatformType.GITHUB:
+                return (
+                    params.payload?.repository?.default_branch ||
+                    params.payload?.pull_request?.base?.repo?.default_branch ||
+                    ''
+                );
+            case PlatformType.GITLAB:
+                return (
+                    params.payload?.project?.default_branch ||
+                    params.payload?.repository?.default_branch ||
+                    ''
+                );
+            case PlatformType.BITBUCKET:
+                return (
+                    params.payload?.repository?.mainbranch?.name ||
+                    params.payload?.pullrequest?.destination?.branch?.name ||
+                    ''
+                );
+            case PlatformType.AZURE_REPOS:
+                return (
+                    params.payload?.resource?.repository?.defaultBranch?.replace(
+                        'refs/heads/',
+                        '',
+                    ) || ''
+                );
+            default:
+                this.logger.warn({
+                    message: `Unsupported platform type: ${params.platformType} for default branch`,
+                    context: ChatWithKodyFromGitUseCase.name,
+                });
+                return '';
         }
     }
 
@@ -1232,6 +1333,9 @@ export class ChatWithKodyFromGitUseCase {
         repository,
         pullRequestDescription,
         platformType,
+        headRef,
+        baseRef,
+        defaultBranch,
     }: {
         comment?: Comment;
         originalKodyComment?: Comment;
@@ -1241,6 +1345,9 @@ export class ChatWithKodyFromGitUseCase {
         platformType?: PlatformType;
         pullRequestNumber?: number;
         pullRequestDescription?: string;
+        headRef?: string;
+        baseRef?: string;
+        defaultBranch?: string;
     }): any {
         const userQuestion =
             comment.body.trim() === '@kody'
@@ -1250,10 +1357,17 @@ export class ChatWithKodyFromGitUseCase {
         return {
             gitUserName,
             userQuestion,
-            pullRequestNumber,
-            repository,
+            repository: {
+                ...repository,
+                defaultBranch: defaultBranch ?? baseRef,
+            },
             pullRequestDescription,
             platformType,
+            pullRequest: {
+                pullRequestNumber,
+                headRef: headRef,
+                baseRef: baseRef,
+            },
             codeManagementContext: {
                 originalComment: {
                     suggestionCommentId: originalKodyComment?.id,

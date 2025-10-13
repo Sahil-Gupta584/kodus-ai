@@ -1001,7 +1001,9 @@ export class KodyRulesSyncService {
                     });
 
                 const parsed = this.extractJsonArray(raw);
-                if (!Array.isArray(parsed)) return [];
+                if (!Array.isArray(parsed)) {
+                    return [];
+                }
 
                 return parsed.map((r) => ({
                     ...r,

@@ -52,10 +52,14 @@ export class BusinessRulesValidationAgentProvider extends BaseAgentProvider {
         permissionValidationService: PermissionValidationService,
         @Inject(PARAMETERS_SERVICE_TOKEN)
         private readonly parametersService: IParametersService,
-        private readonly observabilityService: ObservabilityService,
+        observabilityService: ObservabilityService,
         private readonly mcpManagerService?: MCPManagerService,
     ) {
-        super(promptRunnerService, permissionValidationService);
+        super(
+            promptRunnerService,
+            permissionValidationService,
+            observabilityService,
+        );
         this.config =
             this.configService.get<DatabaseConnection>('mongoDatabase');
     }
@@ -112,7 +116,10 @@ export class BusinessRulesValidationAgentProvider extends BaseAgentProvider {
     }
 
     private async createOrchestration() {
-        this.llmAdapter = super.createLLMAdapter('BusinessRulesValidation');
+        this.llmAdapter = super.createLLMAdapter(
+            'BusinessRulesValidation',
+            'businessRulesValidationAgent',
+        );
 
         this.orchestration = await createOrchestration({
             tenantId: 'kodus-agent-business-rules',
