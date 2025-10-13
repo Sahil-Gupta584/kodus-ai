@@ -423,18 +423,14 @@ export class CrossFileAnalysisService {
         prNumber: number,
         organizationAndTeamData: OrganizationAndTeamData,
     ): Promise<CodeSuggestion[] | null> {
-        // Monta o payload exatamente como antes
-        let payload: any;
-        if (analysisType === 'analyzeCodeWithAI') {
-            const fileContexts =
-                this.convertFilesToFileChangeContext(preparedFilesChunk);
-            payload = {
-                files: fileContexts,
-                language,
-            } as CrossFileAnalysisPayload;
-        } else {
-            payload = preparedFilesChunk;
-        }
+        const fileContexts =
+            this.convertFilesToFileChangeContext(preparedFilesChunk);
+
+        const payload = {
+            files: fileContexts,
+            language,
+            v2PromptOverrides: context?.codeReviewConfig?.v2PromptOverrides,
+        };
 
         const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
         const runName = 'crossFileAnalyzeCodeWithAI';
@@ -631,7 +627,9 @@ export class CrossFileAnalysisService {
     /**
      * Enriquece sugestão com campos padrão se necessário
      */
-    private enrichSuggestion(suggestion: any): CodeSuggestion {
+    private enrichSuggestion(
+        suggestion: CrossFileAnalysisSchemaType['suggestions'][number],
+    ): CodeSuggestion {
         return {
             id: uuidv4(),
             relevantFile: suggestion.relevantFile,
@@ -657,7 +655,7 @@ export class CrossFileAnalysisService {
      */
     private convertFilesToFileChangeContext(
         preparedFiles: PreparedFileData[],
-    ): Partial<any>[] {
+    ): Partial<CrossFileAnalysisPayload['files']> {
         return preparedFiles.map((preparedFile) => ({
             file: {
                 filename: preparedFile.filename,
