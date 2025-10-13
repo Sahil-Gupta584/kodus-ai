@@ -713,9 +713,8 @@ export class CodeManagementTools {
                 ),
             branch: z
                 .string()
-                .default('main')
                 .describe(
-                    'Branch name to get the file from (defaults to "main" if not specified)',
+                    'Branch name to get the file from. IMPORTANT: Always prioritize in this order: 1 - The PR source/head branch (where the changes are), 2 - The PR target/base branch (where it will be merged), 3 - The repository default branch (use the exact value provided in the context). Always use the branch that is most contextually relevant to the user\'s question. Examples: "main", "develop", "feature/new-feature", "bug/fix-issue".',
                 ),
         });
 

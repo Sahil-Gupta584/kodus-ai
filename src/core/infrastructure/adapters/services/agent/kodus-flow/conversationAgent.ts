@@ -15,7 +15,6 @@ import { DatabaseConnection } from '@/config/types';
 import { LLMModelProvider, PromptRunnerService } from '@kodus/kodus-common/llm';
 import { SDKOrchestrator } from '@kodus/flow/dist/orchestration';
 import { PinoLoggerService } from '../../logger/pino.service';
-import { ObservabilityService } from '../../logger/observability.service';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import {
     PARAMETERS_SERVICE_TOKEN,
@@ -24,6 +23,7 @@ import {
 import { Inject } from '@nestjs/common';
 import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
 import { BaseAgentProvider } from './base-agent.provider';
+import { ObservabilityService } from '../../logger/observability.service';
 
 @Injectable()
 export class ConversationAgentProvider extends BaseAgentProvider {
@@ -46,10 +46,14 @@ export class ConversationAgentProvider extends BaseAgentProvider {
         promptRunnerService: PromptRunnerService,
         private readonly logger: PinoLoggerService,
         permissionValidationService: PermissionValidationService,
-        private readonly observabilityService: ObservabilityService,
+        observabilityService: ObservabilityService,
         private readonly mcpManagerService?: MCPManagerService,
     ) {
-        super(promptRunnerService, permissionValidationService);
+        super(
+            promptRunnerService,
+            permissionValidationService,
+            observabilityService,
+        );
         this.config =
             this.configService.get<DatabaseConnection>('mongoDatabase');
     }
@@ -74,7 +78,10 @@ export class ConversationAgentProvider extends BaseAgentProvider {
     }
 
     private async createOrchestration() {
-        this.llmAdapter = super.createLLMAdapter('ConversationalAgent');
+        this.llmAdapter = super.createLLMAdapter(
+            'ConversationalAgent',
+            'conversationAgent',
+        );
 
         this.orchestration = await createOrchestration({
             tenantId: 'kodus-agent-conversation',
