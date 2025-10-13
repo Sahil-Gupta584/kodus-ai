@@ -847,6 +847,7 @@ export class ChatWithKodyFromGitUseCase {
                 this.logger.warn({
                     message: `Unsupported platform type: ${params.platformType}`,
                     context: ChatWithKodyFromGitUseCase.name,
+                    metadata: { platformType: params.platformType },
                 });
                 return { name: '', id: '' };
         }
@@ -879,6 +880,7 @@ export class ChatWithKodyFromGitUseCase {
                 this.logger.warn({
                     message: `Unsupported platform type: ${params.platformType}`,
                     context: ChatWithKodyFromGitUseCase.name,
+                    metadata: { platformType: params.platformType },
                 });
                 return 0;
         }
@@ -903,6 +905,7 @@ export class ChatWithKodyFromGitUseCase {
                 this.logger.warn({
                     message: `Unsupported platform type: ${params.platformType} for head ref`,
                     context: ChatWithKodyFromGitUseCase.name,
+                    metadata: { platformType: params.platformType },
                 });
                 return '';
         }
@@ -929,6 +932,7 @@ export class ChatWithKodyFromGitUseCase {
                 this.logger.warn({
                     message: `Unsupported platform type: ${params.platformType} for base ref`,
                     context: ChatWithKodyFromGitUseCase.name,
+                    metadata: { platformType: params.platformType },
                 });
                 return '';
         }
@@ -968,6 +972,7 @@ export class ChatWithKodyFromGitUseCase {
                 this.logger.warn({
                     message: `Unsupported platform type: ${params.platformType} for default branch`,
                     context: ChatWithKodyFromGitUseCase.name,
+                    metadata: { platformType: params.platformType },
                 });
                 return '';
         }
@@ -1009,6 +1014,7 @@ export class ChatWithKodyFromGitUseCase {
                 this.logger.warn({
                     message: `Unsupported platform type: ${params.platformType} for PR description`,
                     context: ChatWithKodyFromGitUseCase.name,
+                    metadata: { platformType: params.platformType },
                 });
                 return '';
         }
@@ -1081,6 +1087,7 @@ export class ChatWithKodyFromGitUseCase {
                 this.logger.warn({
                     message: `Unsupported platform type: ${params.platformType}`,
                     context: ChatWithKodyFromGitUseCase.name,
+                    metadata: { platformType: params.platformType },
                 });
                 return 0;
         }
