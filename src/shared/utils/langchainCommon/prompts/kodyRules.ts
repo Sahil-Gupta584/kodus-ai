@@ -244,7 +244,7 @@ export const prompt_kodyrules_suggestiongeneration_user = (payload: any) => {
 
     const mainGenText = getTextOrDefault(
         overrides?.generation?.main,
-        defaults.generation.main,
+        defaults?.generation?.main,
     );
 
     return `

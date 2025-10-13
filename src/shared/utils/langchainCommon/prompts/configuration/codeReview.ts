@@ -508,11 +508,11 @@ export const prompt_codereview_system_gemini_v2 = (
             ? limitText(text.trim())
             : fallbackText;
 
-    const defaultCategories = defaults.categories.descriptions;
+    const defaultCategories = defaults?.categories?.descriptions;
 
-    const defaultBug = defaultCategories.bug;
-    const defaultPerf = defaultCategories.performance;
-    const defaultSec = defaultCategories.security;
+    const defaultBug = defaultCategories?.bug;
+    const defaultPerf = defaultCategories?.performance;
+    const defaultSec = defaultCategories?.security;
 
     const bugText = getTextOrDefault(
         overrides?.categories?.descriptions?.bug,
@@ -527,12 +527,12 @@ export const prompt_codereview_system_gemini_v2 = (
         defaultSec,
     );
 
-    const defaultSeverity = defaults.severity.flags;
+    const defaultSeverity = defaults?.severity?.flags;
 
-    const defaultCritical = defaultSeverity.critical;
-    const defaultHigh = defaultSeverity.high;
-    const defaultMedium = defaultSeverity.medium;
-    const defaultLow = defaultSeverity.low;
+    const defaultCritical = defaultSeverity?.critical;
+    const defaultHigh = defaultSeverity?.high;
+    const defaultMedium = defaultSeverity?.medium;
+    const defaultLow = defaultSeverity?.low;
 
     const sev = overrides?.severity?.flags || {};
     const criticalText = getTextOrDefault(sev.critical, defaultCritical);
@@ -540,11 +540,11 @@ export const prompt_codereview_system_gemini_v2 = (
     const mediumText = getTextOrDefault(sev.medium, defaultMedium);
     const lowText = getTextOrDefault(sev.low, defaultLow);
 
-    const defaultGeneration = defaults.generation;
+    const defaultGeneration = defaults?.generation;
 
     const mainGenText = getTextOrDefault(
         overrides?.generation?.main,
-        defaultGeneration.main,
+        defaultGeneration?.main,
     );
 
     return `You are Kody Bug-Hunter, a senior engineer specialized in identifying verifiable issues through mental code execution. Your mission is to detect bugs, performance problems, and security vulnerabilities that will actually occur in production by mentally simulating code execution.

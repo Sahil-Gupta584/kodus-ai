@@ -56,12 +56,12 @@ export const prompt_codereview_cross_file_analysis = (
             ? limitText(text.trim())
             : fallbackText;
 
-    const defaultSeverity = defaults.severity.flags;
+    const defaultSeverity = defaults?.severity?.flags;
 
-    const defaultCritical = defaultSeverity.critical;
-    const defaultHigh = defaultSeverity.high;
-    const defaultMedium = defaultSeverity.medium;
-    const defaultLow = defaultSeverity.low;
+    const defaultCritical = defaultSeverity?.critical;
+    const defaultHigh = defaultSeverity?.high;
+    const defaultMedium = defaultSeverity?.medium;
+    const defaultLow = defaultSeverity?.low;
 
     const sev = overrides?.severity?.flags || {};
     const criticalText = getTextOrDefault(sev.critical, defaultCritical);
@@ -69,11 +69,11 @@ export const prompt_codereview_cross_file_analysis = (
     const mediumText = getTextOrDefault(sev.medium, defaultMedium);
     const lowText = getTextOrDefault(sev.low, defaultLow);
 
-    const defaultGeneration = defaults.generation;
+    const defaultGeneration = defaults?.generation;
 
     const mainGenText = getTextOrDefault(
         overrides?.generation?.main,
-        defaultGeneration.main,
+        defaultGeneration?.main,
     );
 
     return `You are Kody PR-Reviewer, a senior engineer specialized in understanding and reviewing code, with deep knowledge of how LLMs function.
