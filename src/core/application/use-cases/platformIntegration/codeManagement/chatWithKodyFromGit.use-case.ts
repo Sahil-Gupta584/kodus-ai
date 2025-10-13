@@ -27,10 +27,13 @@ const KODY_IDENTIFIERS = {
 const ACKNOWLEDGMENT_MESSAGES = {
     DEFAULT: 'Analyzing your request...',
     MARKDOWN_SUFFIX: '<!-- kody-codereview -->\n&#8203;',
+    BUSINESS_LOGIC_INVALID_CONTEXT:
+        'The "@kody -v business-logic" command can only be used in the general PR conversation, not in code suggestions or inline comments. Please use it in the main PR discussion thread.',
 } as const;
 
 enum CommandType {
     BUSINESS_LOGIC_VALIDATION = 'business_logic_validation',
+    BUSINESS_LOGIC_INVALID_CONTEXT = 'business_logic_invalid_context',
     CONVERSATION = 'conversation',
     UNKNOWN = 'unknown',
 }
@@ -136,6 +139,7 @@ interface Comment {
     diff_hunk?: string;
     discussion_id?: string;
     originalCommit?: any;
+    subject_type?: string;
     // Azure Repos specific properties
     threadId?: number;
     thread?: any;
@@ -227,6 +231,15 @@ export class ChatWithKodyFromGitUseCase {
                 );
             }
 
+            if (commandType === CommandType.BUSINESS_LOGIC_INVALID_CONTEXT) {
+                await this.handleBusinessLogicInvalidContextFlow(
+                    params,
+                    repository,
+                    pullRequestNumber,
+                    organizationAndTeamData,
+                );
+            }
+
             if (commandType === CommandType.CONVERSATION) {
                 await this.handleConversationFlow(
                     params,
@@ -261,64 +274,81 @@ export class ChatWithKodyFromGitUseCase {
     }
 
     private detectCommandType(params: WebhookParams): CommandType {
-        if (params.event === 'issue_comment' || params.payload?.comment?.body) {
+        if (params.platformType === PlatformType.GITHUB) {
+            const isIssueComment = params.event === 'issue_comment';
+            const isInlineComment =
+                params.event === 'pull_request_review_comment';
             const commentBody =
                 params.payload?.comment?.body ||
                 params.payload?.issue?.body ||
                 '';
-            return this.commandManager.getCommandType(commentBody);
+
+            const commandType = this.commandManager.getCommandType(commentBody);
+
+            // Business logic validation only works in general conversation
+            if (
+                commandType === CommandType.BUSINESS_LOGIC_VALIDATION &&
+                isInlineComment
+            ) {
+                return CommandType.BUSINESS_LOGIC_INVALID_CONTEXT;
+            }
+
+            return commandType;
         }
 
         if (params.platformType === PlatformType.GITLAB) {
             const commentType = params.payload?.object_attributes?.type;
             const isSuggestion = commentType === 'DiffNote';
-            const isGeneralFlow = commentType === null;
             const commentBody = params.payload?.object_attributes?.note || '';
 
-            if (isSuggestion) {
-                return CommandType.CONVERSATION;
+            const commandType = this.commandManager.getCommandType(commentBody);
+
+            // Business logic validation only works in general conversation
+            if (
+                commandType === CommandType.BUSINESS_LOGIC_VALIDATION &&
+                isSuggestion
+            ) {
+                return CommandType.BUSINESS_LOGIC_INVALID_CONTEXT;
             }
 
-            if (isGeneralFlow) {
-                return this.commandManager.getCommandType(commentBody);
-            }
-
-            return CommandType.CONVERSATION;
+            return commandType;
         }
 
         if (params.platformType === PlatformType.BITBUCKET) {
             const comment = params.payload?.comment;
             const isSuggestion =
                 comment?.inline !== null && comment?.inline !== undefined;
-            const isGeneralFlow = !isSuggestion;
             const commentBody = comment?.content?.raw || '';
 
-            if (isSuggestion) {
-                return CommandType.CONVERSATION;
+            const commandType = this.commandManager.getCommandType(commentBody);
+
+            // Business logic validation only works in general conversation
+            if (
+                commandType === CommandType.BUSINESS_LOGIC_VALIDATION &&
+                isSuggestion
+            ) {
+                return CommandType.BUSINESS_LOGIC_INVALID_CONTEXT;
             }
 
-            if (isGeneralFlow) {
-                return this.commandManager.getCommandType(commentBody);
-            }
-
-            return CommandType.CONVERSATION;
+            return commandType;
         }
 
         if (params.platformType === PlatformType.AZURE_REPOS) {
             const comment = params.payload?.resource?.comment;
             const isSuggestion = comment?.parentCommentId > 0;
-            const isGeneralFlow = comment?.parentCommentId === 0;
             const commentBody = comment?.content || '';
 
-            if (isSuggestion) {
-                return CommandType.CONVERSATION;
+            const commandType = this.commandManager.getCommandType(commentBody);
+
+            // Business logic validation only works in general conversation
+            if (
+                commandType === CommandType.BUSINESS_LOGIC_VALIDATION &&
+                isSuggestion
+            ) {
+                return CommandType.BUSINESS_LOGIC_INVALID_CONTEXT;
             }
 
-            if (isGeneralFlow) {
-                return this.commandManager.getCommandType(commentBody);
-            }
-
-            return CommandType.CONVERSATION;
+            return commandType;
         }
 
         return CommandType.CONVERSATION;
@@ -541,13 +571,6 @@ export class ChatWithKodyFromGitUseCase {
         );
         const sender = this.getSender(params);
 
-        const message = this.prepareMessage(
-            comment,
-            originalKodyComment,
-            sender.login,
-            othersReplies,
-        );
-
         const ackResponse =
             await this.codeManagementService.createResponseToComment({
                 organizationAndTeamData,
@@ -683,29 +706,80 @@ export class ChatWithKodyFromGitUseCase {
         });
     }
 
-    private prepareMessage(
-        comment: Comment,
-        originalKodyComment: Comment,
-        userName: string,
-        othersReplies: Comment[],
-    ): string {
-        const userQuestion =
-            comment.body.trim() === '@kody'
-                ? 'The user did not ask any questions. Ask them what they would like to know about the codebase or suggestions for code changes.'
-                : comment.body;
-
-        return JSON.stringify({
-            userName,
-            userQuestion,
-            context: {
-                originalComment: {
-                    text: originalKodyComment?.body,
-                    diffHunk: originalKodyComment?.diff_hunk,
+    private async handleBusinessLogicInvalidContextFlow(
+        params: WebhookParams,
+        repository: Repository,
+        pullRequestNumber: number,
+        organizationAndTeamData: OrganizationAndTeamData,
+    ): Promise<void> {
+        const allComments =
+            await this.codeManagementService.getPullRequestReviewComment({
+                organizationAndTeamData,
+                filters: {
+                    pullRequestNumber,
+                    repository,
+                    discussionId:
+                        params.payload?.object_attributes?.discussion_id ?? '',
                 },
-                othersReplies: othersReplies.map((reply) => ({
-                    text: reply.body,
-                    diffHunk: reply.diff_hunk,
-                })),
+            });
+
+        const commentId = this.getCommentId(params);
+        const comment =
+            params.platformType !== PlatformType.AZURE_REPOS
+                ? allComments?.find((c) => c.id === commentId)
+                : this.getReviewThreadByCommentId(
+                      commentId,
+                      allComments,
+                      params,
+                  );
+
+        if (!comment) {
+            this.logger.warn({
+                message: 'Comment not found for invalid business logic context',
+                context: ChatWithKodyFromGitUseCase.name,
+                metadata: {
+                    repository: repository.name,
+                    pullRequestNumber,
+                    commentId,
+                },
+            });
+            return;
+        }
+
+        const response =
+            await this.codeManagementService.createResponseToComment({
+                organizationAndTeamData,
+                inReplyToId: comment.id,
+                discussionId: params.payload?.object_attributes?.discussion_id,
+                threadId: comment.threadId ?? comment?.in_reply_to_id,
+                body: ACKNOWLEDGMENT_MESSAGES.BUSINESS_LOGIC_INVALID_CONTEXT,
+                repository,
+                prNumber: pullRequestNumber,
+            });
+
+        if (!response) {
+            this.logger.warn({
+                message:
+                    'Failed to create response for invalid business logic context',
+                context: ChatWithKodyFromGitUseCase.name,
+                metadata: {
+                    repository: repository.name,
+                    pullRequestNumber,
+                    commentId: comment.id,
+                },
+            });
+            return;
+        }
+
+        this.logger.log({
+            message:
+                'Successfully showed invalid context message for business logic command',
+            context: ChatWithKodyFromGitUseCase.name,
+            metadata: {
+                repository: repository.name,
+                pullRequestNumber,
+                commentId: comment.id,
+                responseId: response.id,
             },
         });
     }
@@ -967,14 +1041,18 @@ export class ChatWithKodyFromGitUseCase {
     ): Comment | undefined {
         switch (platformType) {
             case PlatformType.GITHUB:
-                if (!comment?.in_reply_to_id) {
+                if (
+                    !comment?.id &&
+                    !comment?.in_reply_to_id &&
+                    !comment?.subject_type
+                ) {
                     return undefined;
                 }
 
                 return allComments.find(
                     (originalComment) =>
-                        originalComment.id === comment.in_reply_to_id &&
-                        this.isKodyComment(originalComment, platformType),
+                        originalComment.id ===
+                        (comment?.in_reply_to_id ?? comment?.id),
                 );
             case PlatformType.GITLAB:
                 return comment?.originalCommit;
@@ -984,9 +1062,7 @@ export class ChatWithKodyFromGitUseCase {
                 }
 
                 const originalComment = allComments.find(
-                    (c) =>
-                        c.id === comment.parent.id &&
-                        this.isKodyComment(c, platformType),
+                    (c) => c.id === comment.parent.id,
                 );
 
                 return originalComment;
@@ -1239,6 +1315,7 @@ export class ChatWithKodyFromGitUseCase {
     ): [ackResponseId: string, parentId: string] {
         let ackResponseId;
         let parentId;
+
         switch (platformType) {
             case PlatformType.GITHUB:
                 ackResponseId = ackResponse.id;
@@ -1250,7 +1327,10 @@ export class ChatWithKodyFromGitUseCase {
                 break;
             case PlatformType.BITBUCKET:
                 ackResponseId = ackResponse.id;
-                parentId = originalKodyComment?.id;
+                parentId =
+                    ackResponse.parent?.id === comment?.id
+                        ? ackResponse.parent?.id
+                        : originalKodyComment?.id;
                 break;
             case PlatformType.AZURE_REPOS:
                 ackResponseId = ackResponse?.id;
@@ -1323,6 +1403,8 @@ export class ChatWithKodyFromGitUseCase {
         switch (commandType) {
             case CommandType.BUSINESS_LOGIC_VALIDATION:
                 return await this.handleBusinessLogicValidation(context);
+            case CommandType.BUSINESS_LOGIC_INVALID_CONTEXT:
+                return ACKNOWLEDGMENT_MESSAGES.BUSINESS_LOGIC_INVALID_CONTEXT;
             case CommandType.CONVERSATION:
                 return await this.handleConversation(context);
             default:
