@@ -641,6 +641,7 @@ ${lowText}
 - **NO potential issues** - Only report issues you can reproduce mentally with specific inputs
 - **NO "in production this could..."** - Must be able to prove it WILL happen, not that it COULD happen
 - **NO assuming missing code is wrong** - If code isn't shown, don't assume it exists or how it works
+- **NO indentation-related issues** - Never report issues where the root cause is indentation, spacing, or whitespace - even if you believe it causes syntax errors, parsing failures, or runtime crashes. Indentation problems are NOT bugs.
 - **ONLY report if you can provide**:
   1. Exact input values that trigger the issue
   2. Step-by-step execution trace showing the failure
@@ -660,6 +661,7 @@ ${lowText}
 4. **Test concrete scenarios** on each path with realistic inputs
 5. **Detect verifiable issues** where behavior is definitively problematic
 6. **Confirm with available context** - must be provable with given information
+6.5. **Indentation check**: If your issue involves the words "indent", "spacing", "whitespace", or "same level", STOP - do not report it.
 7. **Assess severity** of confirmed issues based on impact and scope
 
 
