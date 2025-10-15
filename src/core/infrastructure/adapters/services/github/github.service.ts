@@ -235,6 +235,7 @@ export class GithubService
                 params.configValue,
                 integration?.uuid,
                 params.organizationAndTeamData,
+                params.type,
             );
 
             const githubAuthDetail = await this.getGithubAuthDetails(

@@ -95,6 +95,7 @@ export class IntegrationConfigService implements IIntegrationConfigService {
         payload: any,
         integrationId: any,
         organizationAndTeamData: OrganizationAndTeamData,
+        type?: "replace" | "append",
     ): Promise<IntegrationConfigEntity> {
         try {
             if (!integrationId) {
@@ -106,6 +107,25 @@ export class IntegrationConfigService implements IIntegrationConfigService {
                 team: { uuid: organizationAndTeamData.teamId },
                 configKey: integrationConfigKey,
             });
+
+            // Implementing append logic for repositories
+            if (type === "append" && integrationConfig?.configValue && integrationConfigKey === IntegrationConfigKey.REPOSITORIES) {
+                const existingRepos = Array.isArray(integrationConfig.configValue) 
+                    ? integrationConfig.configValue 
+                    : [];
+                const newRepos = Array.isArray(payload) ? payload : [];
+                
+                // Merge: existing repositories + new repositories, removing duplicates based on ID
+                const mergedRepos = [...existingRepos];
+                newRepos.forEach(newRepo => {
+                    if (!existingRepos.find(existing => existing.id === newRepo.id)) {
+                        mergedRepos.push(newRepo);
+                    }
+                });
+                
+                payload = mergedRepos;
+            }
+            // For type "replace" or undefined: use payload directly (current behavior)
 
             if (!integrationConfig) {
                 const uuid = uuidv4();
