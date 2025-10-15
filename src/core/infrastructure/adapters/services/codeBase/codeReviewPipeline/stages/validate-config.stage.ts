@@ -484,11 +484,9 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 apiBaseBranch || targetBranch,
             );
 
-            // Normalize patterns for Azure DevOps (adds refs/heads/ prefix)
             const normalizedBranches = this.normalizeBranchesForPlatform(
                 mergedBranches,
-                sourceBranch,
-                targetBranch,
+                platformType,
             );
 
             const expression = normalizedBranches.join(', ');
@@ -500,7 +498,6 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 reviewConfig,
             );
 
-            // Log das configurações usadas para gerar o resultValidation
             this.logger.log({
                 message: '🔍 Branch Review Validation',
                 context: 'ValidateConfigStage',
@@ -534,38 +531,41 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
     /**
      * Normalizes branch patterns for different platforms
      * Azure DevOps adds refs/heads/ prefix to all branches
-     * This method detects if we're dealing with Azure and normalizes patterns accordingly
+     * This method adds the prefix to user-configured patterns for compatibility
      */
     private normalizeBranchesForPlatform(
         branches: string[],
-        sourceBranch: string,
-        targetBranch: string,
+        platformType: PlatformType,
     ): string[] {
-        // Check if we're dealing with Azure DevOps (branches have refs/heads/ prefix)
-        const isAzureDevOps =
-            sourceBranch.startsWith('refs/heads/') ||
-            targetBranch.startsWith('refs/heads/');
-
-        if (!isAzureDevOps) {
-            return branches; // No normalization needed for other platforms
+        if (platformType !== PlatformType.AZURE_REPOS) {
+            return branches;
         }
 
         return branches.map((branch) => {
-            // Skip if already has refs/heads/ prefix
             if (branch.startsWith('refs/heads/')) {
                 return branch;
             }
 
-            // Skip exclusions and special patterns
-            if (
-                branch.startsWith('!') ||
-                branch.startsWith('=') ||
-                branch.startsWith('contains:')
-            ) {
+            if (branch.startsWith('!')) {
+                const pattern = branch.slice(1);
+                if (pattern.startsWith('refs/heads/')) {
+                    return branch;
+                }
+                return `!refs/heads/${pattern}`;
+            }
+
+            if (branch.startsWith('=')) {
+                const pattern = branch.slice(1);
+                if (pattern.startsWith('refs/heads/')) {
+                    return branch;
+                }
+                return `=refs/heads/${pattern}`;
+            }
+
+            if (branch.startsWith('contains:')) {
                 return branch;
             }
 
-            // Add refs/heads/ prefix for Azure DevOps
             return `refs/heads/${branch}`;
         });
     }
