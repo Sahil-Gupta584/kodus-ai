@@ -2805,6 +2805,7 @@ export class BitbucketService
         organizationAndTeamData: OrganizationAndTeamData;
         configKey: IntegrationConfigKey;
         configValue: any;
+        type?: "replace" | "append";
     }): Promise<void> {
         try {
             const integration = await this.integrationService.findOne({
@@ -2824,6 +2825,7 @@ export class BitbucketService
                 params.configValue,
                 integration?.uuid,
                 params.organizationAndTeamData,
+                params.type,
             );
 
             this.createWebhook(params.organizationAndTeamData);

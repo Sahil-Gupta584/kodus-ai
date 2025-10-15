@@ -14,6 +14,7 @@ export interface IIntegrationConfigService
         payload: any,
         integrationId: any,
         organizationAndTeamData: OrganizationAndTeamData,
+        type?: "replace" | "append",
     ): Promise<IntegrationConfigEntity>;
     findIntegrationConfigFormatted<T>(
         configKey: IntegrationConfigKey,

@@ -400,6 +400,7 @@ export class GitlabService
                 params.configValue,
                 integration?.uuid,
                 params.organizationAndTeamData,
+                params.type,
             );
 
             this.createMergeRequestWebhook({
