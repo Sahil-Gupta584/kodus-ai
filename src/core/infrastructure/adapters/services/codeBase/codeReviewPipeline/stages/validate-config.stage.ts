@@ -27,6 +27,7 @@ import {
     ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/organizationParameters/contracts/organizationParameters.service.contract';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 
 @Injectable()
 export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -151,6 +152,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             context.pullRequest.isDraft,
             config,
             context.origin || '',
+            context.platformType,
             context.organizationAndTeamData,
             config.baseBranchDefault, // API base branch from repository
         );
@@ -456,6 +458,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         isDraft: boolean,
         config: any,
         origin: string,
+        platformType: PlatformType,
         organizationAndTeamData: OrganizationAndTeamData,
         apiBaseBranch?: string,
     ): boolean {
@@ -480,7 +483,15 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 config.baseBranches,
                 apiBaseBranch || targetBranch,
             );
-            const expression = mergedBranches.join(', ');
+
+            // Normalize patterns for Azure DevOps (adds refs/heads/ prefix)
+            const normalizedBranches = this.normalizeBranchesForPlatform(
+                mergedBranches,
+                sourceBranch,
+                targetBranch,
+            );
+
+            const expression = normalizedBranches.join(', ');
             const reviewConfig = processExpression(expression);
 
             const resultValidation = shouldReviewBranches(
@@ -518,5 +529,44 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         }
 
         return true;
+    }
+
+    /**
+     * Normalizes branch patterns for different platforms
+     * Azure DevOps adds refs/heads/ prefix to all branches
+     * This method detects if we're dealing with Azure and normalizes patterns accordingly
+     */
+    private normalizeBranchesForPlatform(
+        branches: string[],
+        sourceBranch: string,
+        targetBranch: string,
+    ): string[] {
+        // Check if we're dealing with Azure DevOps (branches have refs/heads/ prefix)
+        const isAzureDevOps =
+            sourceBranch.startsWith('refs/heads/') ||
+            targetBranch.startsWith('refs/heads/');
+
+        if (!isAzureDevOps) {
+            return branches; // No normalization needed for other platforms
+        }
+
+        return branches.map((branch) => {
+            // Skip if already has refs/heads/ prefix
+            if (branch.startsWith('refs/heads/')) {
+                return branch;
+            }
+
+            // Skip exclusions and special patterns
+            if (
+                branch.startsWith('!') ||
+                branch.startsWith('=') ||
+                branch.startsWith('contains:')
+            ) {
+                return branch;
+            }
+
+            // Add refs/heads/ prefix for Azure DevOps
+            return `refs/heads/${branch}`;
+        });
     }
 }
