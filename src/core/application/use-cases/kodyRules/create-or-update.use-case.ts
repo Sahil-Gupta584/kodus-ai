@@ -91,6 +91,7 @@ export class CreateOrUpdateKodyRulesUseCase {
                         metadata: {
                             ruleId: result.uuid,
                             ruleTitle: kodyRule.title,
+                            organizationAndTeamData,
                         },
                     });
                 });
@@ -136,6 +137,9 @@ export class CreateOrUpdateKodyRulesUseCase {
                                 'Failed to resolve repository name, using ID as fallback',
                             context: CreateOrUpdateKodyRulesUseCase.name,
                             error,
+                            metadata: {
+                                organizationAndTeamData,
+                            },
                         });
                         repositoryName = repositoryId;
                     }
@@ -148,6 +152,7 @@ export class CreateOrUpdateKodyRulesUseCase {
                             ruleId,
                             repositoryId,
                             repositoryName,
+                            organizationAndTeamData,
                         },
                     });
 
@@ -182,6 +187,7 @@ export class CreateOrUpdateKodyRulesUseCase {
                             metadata: {
                                 ruleId,
                                 syncError,
+                                organizationAndTeamData,
                             },
                         });
                     } else if (references.length > 0) {
@@ -193,15 +199,16 @@ export class CreateOrUpdateKodyRulesUseCase {
                                 ruleId,
                                 referencesCount: references.length,
                                 paths: references.map((r) => r.filePath),
+                                organizationAndTeamData,
                             },
                         });
                     } else {
                         this.logger.log({
-                            message:
-                                'No external references detected for rule',
+                            message: 'No external references detected for rule',
                             context: CreateOrUpdateKodyRulesUseCase.name,
                             metadata: {
                                 ruleId,
+                                organizationAndTeamData,
                             },
                         });
                     }
@@ -214,6 +221,7 @@ export class CreateOrUpdateKodyRulesUseCase {
                         metadata: {
                             ruleId,
                             repositoryId,
+                            organizationAndTeamData,
                         },
                     });
                 }

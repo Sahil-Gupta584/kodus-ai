@@ -268,16 +268,6 @@ export class KodyRulesValidationService {
                 include = [],
             } = rule.inheritance ?? {};
 
-            const currentLevel = this.resolveContextLevel({
-                directoryId,
-                repositoryId,
-            });
-            const ruleLevel = this.resolveRuleLevel(rule);
-
-            if (ruleLevel === currentLevel) {
-                return true;
-            }
-
             // If the rule is not inheritable, it doesn't match.
             if (!inheritable) {
                 return false;
@@ -307,6 +297,20 @@ export class KodyRulesValidationService {
             // we do not allow rules that are specific to a directory (they cannot match)
             if (repositoryId && !directoryId && rule.directoryId) {
                 return false;
+            }
+
+            const currentLevel = this.resolveContextLevel({
+                directoryId,
+                repositoryId,
+            });
+
+            if (
+                (currentLevel === 'repository' &&
+                    repositoryId === rule.repositoryId) ||
+                (currentLevel === 'directory' &&
+                    directoryId === rule.directoryId)
+            ) {
+                return true;
             }
 
             return (

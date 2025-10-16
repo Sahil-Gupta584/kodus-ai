@@ -240,6 +240,7 @@ export class KodyRulesPrLevelAnalysisService
                     referencePaths: fullRule.externalReferences.map(
                         (r) => r.filePath,
                     ),
+                    organizationAndTeamData,
                 },
             });
             return false;

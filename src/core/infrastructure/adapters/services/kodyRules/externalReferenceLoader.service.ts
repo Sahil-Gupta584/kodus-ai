@@ -63,6 +63,8 @@ export class ExternalReferenceLoaderService {
                             filePath: ref.filePath,
                             ruleUuid: rule.uuid,
                             contentLength: content.length,
+                            organizationAndTeamData:
+                                context.organizationAndTeamData,
                         },
                     });
                 } else {
@@ -86,6 +88,8 @@ export class ExternalReferenceLoaderService {
                         ruleUuid: rule.uuid,
                         repository: context.repository?.name,
                         pullRequest: context.pullRequest?.number,
+                        organizationAndTeamData:
+                            context.organizationAndTeamData,
                     },
                 });
             }
@@ -124,10 +128,10 @@ export class ExternalReferenceLoaderService {
                 totalRules: rules.length,
                 rulesWithReferences: referencesMap.size,
                 totalReferencesLoaded: totalLoaded,
+                organizationAndTeamData: context.organizationAndTeamData,
             },
         });
 
         return referencesMap;
     }
 }
-

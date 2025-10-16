@@ -961,6 +961,9 @@ export class KodyRulesSyncService {
                         'Failed to resolve repository name, using ID as fallback',
                     context: KodyRulesSyncService.name,
                     error,
+                    metadata: {
+                        organizationAndTeamData: params.organizationAndTeamData,
+                    },
                 });
                 repositoryName = params.repositoryId;
             }
@@ -982,7 +985,9 @@ export class KodyRulesSyncService {
                     return {
                         ...r,
                         severity:
-                            (r?.severity?.toString?.().toLowerCase?.() as any) ||
+                            (r?.severity
+                                ?.toString?.()
+                                .toLowerCase?.() as any) ||
                             KodyRuleSeverity.MEDIUM,
                         scope: (r?.scope as any) || KodyRulesScope.FILE,
                         path: r?.path || params.filePath,
@@ -1060,6 +1065,10 @@ export class KodyRulesSyncService {
                             'Failed to resolve repository name, using ID as fallback',
                         context: KodyRulesSyncService.name,
                         error,
+                        metadata: {
+                            organizationAndTeamData:
+                                params.organizationAndTeamData,
+                        },
                     });
                     repositoryName = params.repositoryId;
                 }
@@ -1081,7 +1090,9 @@ export class KodyRulesSyncService {
                         return {
                             ...r,
                             severity:
-                                (r?.severity?.toString?.().toLowerCase?.() as any) ||
+                                (r?.severity
+                                    ?.toString?.()
+                                    .toLowerCase?.() as any) ||
                                 KodyRuleSeverity.MEDIUM,
                             scope: (r?.scope as any) || KodyRulesScope.FILE,
                             path: r?.path || params.filePath,
@@ -1099,7 +1110,10 @@ export class KodyRulesSyncService {
                 this.logger.error({
                     message: 'LLM conversion failed for rule file',
                     context: KodyRulesSyncService.name,
-                    metadata: params,
+                    metadata: {
+                        ...params,
+                        organizationAndTeamData: params.organizationAndTeamData,
+                    },
                     error: fallbackError,
                 });
                 return [];
