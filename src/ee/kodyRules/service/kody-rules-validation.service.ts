@@ -268,6 +268,16 @@ export class KodyRulesValidationService {
                 include = [],
             } = rule.inheritance ?? {};
 
+            const currentLevel = this.resolveContextLevel({
+                directoryId,
+                repositoryId,
+            });
+            const ruleLevel = this.resolveRuleLevel(rule);
+
+            if (ruleLevel === currentLevel) {
+                return true;
+            }
+
             // If the rule is not inheritable, it doesn't match.
             if (!inheritable) {
                 return false;
@@ -305,5 +315,34 @@ export class KodyRulesValidationService {
                 isInheritanceMatch(rule)
             );
         });
+    }
+
+    private resolveContextLevel(params: {
+        directoryId?: string;
+        repositoryId?: string;
+    }): 'global' | 'repository' | 'directory' {
+        if (params.directoryId) {
+            return 'directory';
+        }
+
+        if (params.repositoryId) {
+            return 'repository';
+        }
+
+        return 'global';
+    }
+
+    private resolveRuleLevel(
+        rule: Partial<IKodyRule>,
+    ): 'global' | 'repository' | 'directory' {
+        if (rule?.directoryId) {
+            return 'directory';
+        }
+
+        if (rule?.repositoryId && rule.repositoryId !== 'global') {
+            return 'repository';
+        }
+
+        return 'global';
     }
 }

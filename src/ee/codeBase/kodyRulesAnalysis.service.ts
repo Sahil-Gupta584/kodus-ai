@@ -14,6 +14,7 @@ import { tryParseJSONObject } from '@/shared/utils/transforms/json';
 import {
     KodyRulesClassifierSchema,
     kodyRulesClassifierSchema,
+    kodyRulesGeneratorSchema,
     prompt_kodyrules_classifier_system,
     prompt_kodyrules_classifier_user,
     prompt_kodyrules_extract_id_system,
@@ -800,7 +801,10 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
 
         const builder = promptRunner
             .builder()
-            .setParser(ParserType.STRING)
+            .setParser(ParserType.ZOD, kodyRulesGeneratorSchema, {
+                provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
+                fallbackProvider: LLMModelProvider.OPENAI_GPT_4O,
+            })
             .setLLMJsonMode(true)
             .setTemperature(0)
             .setPayload(context)
@@ -912,6 +916,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 rule: rule?.rule,
                 severity: rule?.severity,
                 examples: rule?.examples ?? [],
+                externalReferences: rule?.externalReferences ?? [],
             }));
 
         const baseContext = {
@@ -1022,7 +1027,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
     private processLLMResponse(
         organizationAndTeamData: OrganizationAndTeamData,
         prNumber: number,
-        response: string,
+        response: any,
         fileContext: FileChangeContext,
         provider: LLMModelProvider,
         extendedContext: KodyRulesExtendedContext,
@@ -1032,45 +1037,10 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 return null;
             }
 
-            let cleanResponse = response;
-
-            if (response?.startsWith('```')) {
-                cleanResponse = response
-                    .replace(/^```json\n/, '')
-                    .replace(/\n```(\n)?$/, '')
-                    .trim();
-            }
-
-            let parsedResponse = tryParseJSONObject(cleanResponse);
-
-            if (!parsedResponse) {
-                this.logger.error({
-                    message: 'Failed to parse LLM response',
-                    context: KodyRulesAnalysisService.name,
-                    metadata: {
-                        originalResponse: response,
-                        cleanResponse,
-                        prNumber,
-                    },
-                });
-                return null;
-            }
-
             // Normalize the types of fields that may come as strings
-            if (parsedResponse?.codeSuggestions) {
-                parsedResponse.codeSuggestions =
-                    parsedResponse.codeSuggestions.map((suggestion) => ({
-                        ...suggestion,
-                        relevantLinesStart:
-                            Number(suggestion.relevantLinesStart) || undefined,
-                        relevantLinesEnd:
-                            Number(suggestion.relevantLinesEnd) || undefined,
-                    }));
-            }
-
-            if (parsedResponse?.codeSuggestions) {
-                parsedResponse.codeSuggestions =
-                    parsedResponse.codeSuggestions.map((suggestion) => {
+            if (response?.codeSuggestions) {
+                response.codeSuggestions = response.codeSuggestions.map(
+                    (suggestion) => {
                         if (!suggestion?.id || !uuidValidate(suggestion?.id)) {
                             return {
                                 ...suggestion,
@@ -1078,25 +1048,26 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                             };
                         }
                         return suggestion;
-                    });
+                    },
+                );
 
                 if (extendedContext?.reviewOptions) {
-                    parsedResponse.codeSuggestions =
-                        this.processSuggestionLabels(
-                            parsedResponse.codeSuggestions,
-                            extendedContext.reviewOptions,
-                        );
+                    response.codeSuggestions = this.processSuggestionLabels(
+                        response.codeSuggestions,
+                        extendedContext.reviewOptions,
+                    );
                 } else {
-                    parsedResponse.codeSuggestions =
-                        parsedResponse.codeSuggestions.map((suggestion) => ({
+                    response.codeSuggestions = response.codeSuggestions.map(
+                        (suggestion) => ({
                             ...suggestion,
                             label: suggestion.label ?? 'kody_rules',
-                        }));
+                        }),
+                    );
                 }
             }
 
             this.logTokenUsage({
-                tokenUsages: parsedResponse.codeSuggestions,
+                tokenUsages: response.codeSuggestions,
                 pullRequestId: prNumber,
                 fileContext: fileContext?.file?.filename,
                 provider,
@@ -1104,7 +1075,7 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
             });
 
             return {
-                codeSuggestions: parsedResponse.codeSuggestions || [],
+                codeSuggestions: response.codeSuggestions || [],
             };
         } catch (error) {
             this.logger.error({

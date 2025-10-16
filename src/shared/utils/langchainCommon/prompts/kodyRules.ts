@@ -11,6 +11,27 @@ export const kodyRulesClassifierSchema = z.object({
     ),
 });
 
+//#region classifier
+export const kodyRulesGeneratorSchema = z.object({
+    codeSuggestions: z.array(
+        z.object({
+            id: z.string(),
+            relevantFile: z.string(),
+            language: z.string(),
+            suggestionContent: z.string(),
+            existingCode: z.string(),
+            improvedCode: z.string(),
+            oneSentenceSummary: z.string(),
+            relevantLinesStart: z.number(),
+            relevantLinesEnd: z.number(),
+            label: z.string(),
+            severity: z.string(),
+            violatedKodyRulesIds: z.array(z.string()).optional(),
+            brokenKodyRulesIds: z.array(z.string()).optional(),
+        }),
+    ),
+});
+
 export type KodyRulesClassifierSchema = z.infer<
     typeof kodyRulesClassifierSchema
 >;
@@ -171,7 +192,12 @@ Data you have access to
 
 export const prompt_kodyrules_updatestdsuggestions_user = (payload: any) => {
     const languageNote = payload?.languageResultPrompt || 'en-US';
-    const { patchWithLinesStr, standardSuggestions, kodyRules, externalReferencesMap } = payload;
+    const {
+        patchWithLinesStr,
+        standardSuggestions,
+        kodyRules,
+        externalReferencesMap,
+    } = payload;
 
     let externalReferencesSection = '';
     if (externalReferencesMap && externalReferencesMap.size > 0) {
@@ -263,8 +289,12 @@ Your output must strictly be a valid JSON in the format specified below.`;
 
 export const prompt_kodyrules_suggestiongeneration_user = (payload: any) => {
     const languageNote = payload?.languageResultPrompt || 'en-US';
-    const { patchWithLinesStr, filteredKodyRules, updatedSuggestions, externalReferencesMap } =
-        payload;
+    const {
+        patchWithLinesStr,
+        filteredKodyRules,
+        updatedSuggestions,
+        externalReferencesMap,
+    } = payload;
     const overrides = payload?.v2PromptOverrides || {};
 
     const defaults = getDefaultKodusConfigFile()?.v2PromptOverrides;
@@ -286,9 +316,12 @@ export const prompt_kodyrules_suggestiongeneration_user = (payload: any) => {
 
     let externalReferencesSection = '';
     if (externalReferencesMap && externalReferencesMap.size > 0) {
-        externalReferencesSection = '\n\nExternal Reference Files (use these for validation):\n';
+        externalReferencesSection =
+            '\n\nExternal Reference Files (use these for validation):\n';
         externalReferencesMap.forEach((refs: any[], ruleUuid: string) => {
-            const rule = filteredKodyRules.find((r: any) => r.uuid === ruleUuid);
+            const rule = filteredKodyRules.find(
+                (r: any) => r.uuid === ruleUuid,
+            );
             if (rule && refs.length > 0) {
                 externalReferencesSection += `\nRule: ${rule.title} (${ruleUuid}):\n`;
                 refs.forEach((ref: any) => {

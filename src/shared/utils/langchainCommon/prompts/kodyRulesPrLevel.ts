@@ -11,6 +11,7 @@ export type KodyRulesPrLevelPayload = {
     rules?: any;
     rule?: any;
     language?: string;
+    externalReferencesMap?: Map<string, any[]>;
 };
 
 export const prompt_kodyrules_prlevel_analyzer = (
@@ -51,6 +52,29 @@ You are a code review expert specialized in identifying cross-file rule violatio
   "rules": ${JSON.stringify(payload?.rules || [], null, 2)}
 }
 \`\`\`
+${
+    payload?.externalReferencesMap && payload.externalReferencesMap.size > 0
+        ? `
+### External Reference Files
+${Array.from(payload.externalReferencesMap.entries())
+    .map(([ruleUuid, refs]: [string, any[]]) => {
+        const rule = payload.rules?.find((r: any) => r.uuid === ruleUuid);
+        if (!rule || !refs.length) return '';
+        return `
+Rule: ${rule.title} (${ruleUuid})
+${refs
+    .map(
+        (ref: any) => `  File: ${ref.filePath}
+  ${ref.description ? `Purpose: ${ref.description}\n  ` : ''}Content:
+${ref.content}
+`,
+    )
+    .join('\n')}`;
+    })
+    .join('\n')}
+`
+        : ''
+}
 
 ## Analysis Process
 
