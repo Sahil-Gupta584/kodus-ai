@@ -38,6 +38,7 @@ import {
 } from '@kodus/kodus-common/llm';
 import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import { ObservabilityService } from '@/core/infrastructure/adapters/services/logger/observability.service';
+import { ExternalReferenceLoaderService } from '@/core/infrastructure/adapters/services/kodyRules/externalReferenceLoader.service';
 
 //#region Interfaces
 // Interface for analyzer response
@@ -112,6 +113,7 @@ export class KodyRulesPrLevelAnalysisService
 
         private readonly promptRunnerService: PromptRunnerService,
         private readonly observabilityService: ObservabilityService,
+        private readonly externalReferenceLoaderService: ExternalReferenceLoaderService,
     ) {}
 
     async analyzeCodeWithAI(
@@ -214,6 +216,48 @@ export class KodyRulesPrLevelAnalysisService
             filteredKodyRules = kodyRulesPrLevel;
         }
 
+        const externalReferencesMap =
+            await this.externalReferenceLoaderService.loadReferencesForRules(
+                filteredKodyRules,
+                context,
+            );
+
+        const rulesWithLoadedReferences = filteredKodyRules.filter((rule) => {
+            const fullRule = rule as Partial<IKodyRule>;
+            if (!fullRule.externalReferences?.length) {
+                return true;
+            }
+            if (fullRule.uuid && externalReferencesMap.has(fullRule.uuid)) {
+                return true;
+            }
+            this.logger.warn({
+                message:
+                    'Skipping PR-level rule with external references that failed to load',
+                context: KodyRulesPrLevelAnalysisService.name,
+                metadata: {
+                    ruleUuid: fullRule.uuid,
+                    ruleTitle: fullRule.title,
+                    referencePaths: fullRule.externalReferences.map(
+                        (r) => r.filePath,
+                    ),
+                    organizationAndTeamData,
+                },
+            });
+            return false;
+        });
+
+        if (rulesWithLoadedReferences.length === 0) {
+            this.logger.log({
+                message: `No PR-level rules with loaded references for PR#${prNumber}`,
+                context: KodyRulesPrLevelAnalysisService.name,
+                metadata: {
+                    organizationAndTeamData,
+                    prNumber,
+                },
+            });
+            return { codeSuggestions: [] };
+        }
+
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
 
         try {
@@ -222,9 +266,10 @@ export class KodyRulesPrLevelAnalysisService
                 prNumber,
                 context,
                 changedFiles,
-                filteredKodyRules,
+                rulesWithLoadedReferences,
                 language,
                 provider,
+                externalReferencesMap,
             );
         } catch (error) {
             this.logger.error({
@@ -561,6 +606,7 @@ export class KodyRulesPrLevelAnalysisService
         kodyRulesPrLevel: Array<Partial<IKodyRule>>,
         language: string,
         provider: LLMModelProvider,
+        externalReferencesMap?: Map<string, any[]>,
     ): Promise<AIAnalysisResultPrLevel> {
         // 1. Preparar dados para chunking
         const preparedFiles = this.prepareFilesForPayload(changedFiles);
@@ -611,6 +657,7 @@ export class KodyRulesPrLevelAnalysisService
             prNumber,
             organizationAndTeamData,
             batchConfig,
+            externalReferencesMap,
         );
 
         this.logger.log({
@@ -667,6 +714,7 @@ export class KodyRulesPrLevelAnalysisService
         prNumber: number,
         organizationAndTeamData: OrganizationAndTeamData,
         batchConfig: BatchProcessingConfig,
+        externalReferencesMap?: Map<string, any[]>,
     ): Promise<ExtendedKodyRule[]> {
         const allViolatedRules: ExtendedKodyRule[] = [];
         const totalChunks = chunks.length;
@@ -701,6 +749,7 @@ export class KodyRulesPrLevelAnalysisService
                 prNumber,
                 organizationAndTeamData,
                 batchConfig,
+                externalReferencesMap,
             );
 
             // Consolidar resultados do batch
@@ -749,6 +798,7 @@ export class KodyRulesPrLevelAnalysisService
         prNumber: number,
         organizationAndTeamData: OrganizationAndTeamData,
         batchConfig: BatchProcessingConfig,
+        externalReferencesMap?: Map<string, any[]>,
     ): Promise<ChunkProcessingResult[]> {
         // Criar promises para processar chunks em paralelo
         const chunkPromises = batchChunks.map(async (chunk, batchIndex) => {
@@ -764,6 +814,7 @@ export class KodyRulesPrLevelAnalysisService
                 prNumber,
                 organizationAndTeamData,
                 batchConfig,
+                externalReferencesMap,
             );
         });
 
@@ -784,6 +835,7 @@ export class KodyRulesPrLevelAnalysisService
         prNumber: number,
         organizationAndTeamData: OrganizationAndTeamData,
         batchConfig: BatchProcessingConfig,
+        externalReferencesMap?: Map<string, any[]>,
     ): Promise<ChunkProcessingResult> {
         const { retryAttempts, retryDelay } = batchConfig;
 
@@ -813,6 +865,7 @@ export class KodyRulesPrLevelAnalysisService
                     chunkIndex,
                     prNumber,
                     organizationAndTeamData,
+                    externalReferencesMap,
                 );
 
                 return {
@@ -900,6 +953,7 @@ export class KodyRulesPrLevelAnalysisService
         chunkIndex: number,
         prNumber: number,
         organizationAndTeamData: OrganizationAndTeamData,
+        externalReferencesMap?: Map<string, any[]>,
     ): Promise<ExtendedKodyRule[] | null> {
         // payload do chunk
         const analyzerPayload: KodyRulesPrLevelPayload = {
@@ -914,6 +968,7 @@ export class KodyRulesPrLevelAnalysisService
             files: filesChunk,
             rules: kodyRulesPrLevel,
             language,
+            externalReferencesMap,
         };
 
         const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;

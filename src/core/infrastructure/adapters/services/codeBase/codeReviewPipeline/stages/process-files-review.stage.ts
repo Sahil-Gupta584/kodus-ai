@@ -557,190 +557,182 @@ export class ProcessFilesReview extends BasePipelineStage<CodeReviewPipelineCont
         const discardedSuggestionsBySafeGuard: Partial<CodeSuggestion>[] = [];
         let safeguardLLMProvider = '';
 
+        const crossFileAnalysisSuggestions =
+            context?.validCrossFileSuggestions || [];
+
+        const validCrossFileSuggestions = crossFileAnalysisSuggestions?.filter(
+            (suggestion) => suggestion.relevantFile === file.filename,
+        );
+
+        const initialFilterResult = await this.initialFilterSuggestions(
+            result,
+            context,
+            validCrossFileSuggestions,
+            patchWithLinesStr,
+        );
+
+        const kodyFineTuningResult = await this.applyKodyFineTuningFilter(
+            initialFilterResult.filteredSuggestions,
+            context,
+        );
+
+        const discardedSuggestionsByCodeDiff =
+            initialFilterResult.discardedSuggestionsByCodeDiff;
+        const discardedSuggestionsByKodyFineTuning =
+            kodyFineTuningResult.discardedSuggestionsByKodyFineTuning;
+        const keepedSuggestions = kodyFineTuningResult.keepedSuggestions;
+
+        // Separar sugestões cross-file das demais
+        const crossFileIds = new Set(
+            validCrossFileSuggestions?.map((suggestion) => suggestion.id),
+        );
+
+        const filteredCrossFileSuggestions = keepedSuggestions.filter(
+            (suggestion) => crossFileIds?.has(suggestion.id),
+        );
+
+        const filteredKeepedSuggestions = keepedSuggestions.filter(
+            (suggestion) => !crossFileIds?.has(suggestion.id),
+        );
+
+        // Aplicar safeguard apenas nas sugestões não cross-file
+        const safeGuardResult = await this.applySafeguardFilter(
+            filteredKeepedSuggestions,
+            context,
+            file,
+            relevantContent,
+            patchWithLinesStr,
+            reviewModeResponse,
+        );
+
+        safeguardLLMProvider = safeGuardResult.safeguardLLMProvider;
+
+        discardedSuggestionsBySafeGuard.push(
+            ...safeGuardResult.allDiscardedSuggestions,
+            ...discardedSuggestionsByCodeDiff,
+            ...discardedSuggestionsByKodyFineTuning,
+        );
+
+        const suggestionsWithSeverity =
+            await this.suggestionService.analyzeSuggestionsSeverity(
+                context?.organizationAndTeamData,
+                context?.pullRequest?.number,
+                safeGuardResult.safeguardSuggestions,
+                context?.codeReviewConfig?.reviewOptions,
+                context?.codeReviewConfig?.codeReviewVersion,
+                context?.codeReviewConfig?.byokConfig,
+            );
+
+        const crossFileSuggestionsWithSeverity =
+            await this.suggestionService.analyzeSuggestionsSeverity(
+                context?.organizationAndTeamData,
+                context?.pullRequest?.number,
+                filteredCrossFileSuggestions,
+                context?.codeReviewConfig?.reviewOptions,
+                context?.codeReviewConfig?.codeReviewVersion,
+                context?.codeReviewConfig?.byokConfig,
+            );
+
+        let mergedSuggestions = [];
+
+        const kodyRulesSuggestions =
+            await this.codeAnalysisOrchestrator.executeKodyRulesAnalysis(
+                context?.organizationAndTeamData,
+                context?.pullRequest?.number,
+                { file, patchWithLinesStr },
+                context,
+                {
+                    codeSuggestions: suggestionsWithSeverity,
+                },
+            );
+
+        if (kodyRulesSuggestions?.codeSuggestions?.length > 0) {
+            mergedSuggestions.push(...kodyRulesSuggestions.codeSuggestions);
+        }
+
+        // Se tem sugestões com severidade, adiciona também
         if (
-            result &&
-            'codeSuggestions' in result &&
-            Array.isArray(result.codeSuggestions) &&
-            result.codeSuggestions.length > 0
+            !kodyRulesSuggestions?.codeSuggestions?.length &&
+            suggestionsWithSeverity?.length > 0
         ) {
-            const crossFileAnalysisSuggestions =
-                context?.validCrossFileSuggestions || [];
+            mergedSuggestions.push(...suggestionsWithSeverity);
+        }
 
-            const validCrossFileSuggestions =
-                crossFileAnalysisSuggestions?.filter(
-                    (suggestion) => suggestion.relevantFile === file.filename,
-                );
-
-            const initialFilterResult = await this.initialFilterSuggestions(
-                result,
-                context,
-                validCrossFileSuggestions,
-                patchWithLinesStr,
-            );
-
-            const kodyFineTuningResult = await this.applyKodyFineTuningFilter(
-                initialFilterResult.filteredSuggestions,
+        const kodyASTSuggestions =
+            await this.kodyAstAnalyzeContextPreparation.prepareKodyASTAnalyzeContext(
                 context,
             );
 
-            const discardedSuggestionsByCodeDiff =
-                initialFilterResult.discardedSuggestionsByCodeDiff;
-            const discardedSuggestionsByKodyFineTuning =
-                kodyFineTuningResult.discardedSuggestionsByKodyFineTuning;
-            const keepedSuggestions = kodyFineTuningResult.keepedSuggestions;
+        // Garantir que as sugestões do AST tenham IDs
+        const kodyASTSuggestionsWithId = await this.addSuggestionsId(
+            kodyASTSuggestions?.codeSuggestions || [],
+        );
 
-            // Separar sugestões cross-file das demais
-            const crossFileIds = new Set(
-                validCrossFileSuggestions?.map((suggestion) => suggestion.id),
-            );
+        mergedSuggestions = [
+            ...mergedSuggestions,
+            ...kodyASTSuggestionsWithId,
+            ...crossFileSuggestionsWithSeverity,
+        ];
 
-            const filteredCrossFileSuggestions = keepedSuggestions.filter(
-                (suggestion) => crossFileIds?.has(suggestion.id),
-            );
+        const VALID_ACTIONS = [
+            'synchronize',
+            'update',
+            'updated',
+            'git.pullrequest.updated',
+        ];
 
-            const filteredKeepedSuggestions = keepedSuggestions.filter(
-                (suggestion) => !crossFileIds?.has(suggestion.id),
-            );
-
-            // Aplicar safeguard apenas nas sugestões não cross-file
-            const safeGuardResult = await this.applySafeguardFilter(
-                filteredKeepedSuggestions,
-                context,
-                file,
-                relevantContent,
-                patchWithLinesStr,
-                reviewModeResponse,
-            );
-
-            safeguardLLMProvider = safeGuardResult.safeguardLLMProvider;
-
-            discardedSuggestionsBySafeGuard.push(
-                ...safeGuardResult.allDiscardedSuggestions,
-                ...discardedSuggestionsByCodeDiff,
-                ...discardedSuggestionsByKodyFineTuning,
-            );
-
-            const suggestionsWithSeverity =
-                await this.suggestionService.analyzeSuggestionsSeverity(
-                    context?.organizationAndTeamData,
+        // If it's a commit, validate repeated suggestions
+        if (context?.action && VALID_ACTIONS.includes(context.action)) {
+            const savedSuggestions =
+                await this.pullRequestService.findSuggestionsByPRAndFilename(
                     context?.pullRequest?.number,
-                    safeGuardResult.safeguardSuggestions,
-                    context?.codeReviewConfig?.reviewOptions,
-                    context?.codeReviewConfig?.codeReviewVersion,
-                    context?.codeReviewConfig?.byokConfig,
+                    context?.pullRequest?.base?.repo?.fullName,
+                    file.filename,
+                    context.organizationAndTeamData,
                 );
 
-            const crossFileSuggestionsWithSeverity =
-                await this.suggestionService.analyzeSuggestionsSeverity(
-                    context?.organizationAndTeamData,
-                    context?.pullRequest?.number,
-                    filteredCrossFileSuggestions,
-                    context?.codeReviewConfig?.reviewOptions,
-                    context?.codeReviewConfig?.codeReviewVersion,
-                    context?.codeReviewConfig?.byokConfig,
+            if (savedSuggestions?.length > 0) {
+                const sentSuggestions = savedSuggestions.filter(
+                    (suggestion) =>
+                        suggestion.deliveryStatus === DeliveryStatus.SENT &&
+                        suggestion.implementationStatus ===
+                            ImplementationStatus.NOT_IMPLEMENTED,
                 );
 
-            let mergedSuggestions = [];
-
-            const kodyRulesSuggestions =
-                await this.codeAnalysisOrchestrator.executeKodyRulesAnalysis(
-                    context?.organizationAndTeamData,
-                    context?.pullRequest?.number,
-                    { file, patchWithLinesStr },
-                    context,
-                    {
-                        codeSuggestions: suggestionsWithSeverity,
-                    },
-                );
-
-            if (kodyRulesSuggestions?.codeSuggestions?.length > 0) {
-                mergedSuggestions.push(...kodyRulesSuggestions.codeSuggestions);
-            }
-
-            // Se tem sugestões com severidade, adiciona também
-            if (
-                !kodyRulesSuggestions?.codeSuggestions?.length &&
-                suggestionsWithSeverity?.length > 0
-            ) {
-                mergedSuggestions.push(...suggestionsWithSeverity);
-            }
-
-            const kodyASTSuggestions =
-                await this.kodyAstAnalyzeContextPreparation.prepareKodyASTAnalyzeContext(
-                    context,
-                );
-
-            // Garantir que as sugestões do AST tenham IDs
-            const kodyASTSuggestionsWithId = await this.addSuggestionsId(
-                kodyASTSuggestions?.codeSuggestions || [],
-            );
-
-            mergedSuggestions = [
-                ...mergedSuggestions,
-                ...kodyASTSuggestionsWithId,
-                ...crossFileSuggestionsWithSeverity,
-            ];
-
-            const VALID_ACTIONS = [
-                'synchronize',
-                'update',
-                'updated',
-                'git.pullrequest.updated',
-            ];
-
-            // If it's a commit, validate repeated suggestions
-            if (context?.action && VALID_ACTIONS.includes(context.action)) {
-                const savedSuggestions =
-                    await this.pullRequestService.findSuggestionsByPRAndFilename(
-                        context?.pullRequest?.number,
-                        context?.pullRequest?.base?.repo?.fullName,
-                        file.filename,
-                        context.organizationAndTeamData,
-                    );
-
-                if (savedSuggestions?.length > 0) {
-                    const sentSuggestions = savedSuggestions.filter(
-                        (suggestion) =>
-                            suggestion.deliveryStatus === DeliveryStatus.SENT &&
-                            suggestion.implementationStatus ===
-                                ImplementationStatus.NOT_IMPLEMENTED,
-                    );
-
-                    if (mergedSuggestions?.length > 0) {
-                        mergedSuggestions =
-                            await this.suggestionService.removeSuggestionsRelatedToSavedFiles(
-                                context?.organizationAndTeamData,
-                                context?.pullRequest?.number.toString(),
-                                savedSuggestions,
-                                mergedSuggestions,
-                            );
-                    }
-
-                    // We can only validate the implementation of suggestions that were sent
-                    if (sentSuggestions.length > 0) {
-                        await this.suggestionService.validateImplementedSuggestions(
+                if (mergedSuggestions?.length > 0) {
+                    mergedSuggestions =
+                        await this.suggestionService.removeSuggestionsRelatedToSavedFiles(
                             context?.organizationAndTeamData,
-                            file?.patch,
-                            sentSuggestions,
-                            context?.pullRequest?.number,
+                            context?.pullRequest?.number.toString(),
+                            savedSuggestions,
+                            mergedSuggestions,
                         );
-                    }
+                }
+
+                // We can only validate the implementation of suggestions that were sent
+                if (sentSuggestions.length > 0) {
+                    await this.suggestionService.validateImplementedSuggestions(
+                        context?.organizationAndTeamData,
+                        file?.patch,
+                        sentSuggestions,
+                        context?.pullRequest?.number,
+                    );
                 }
             }
-
-            if (mergedSuggestions?.length > 0) {
-                await Promise.all(
-                    mergedSuggestions.map(async (suggestion) => {
-                        suggestion.rankScore =
-                            await this.suggestionService.calculateSuggestionRankScore(
-                                suggestion,
-                            );
-                    }),
-                );
-            }
-
-            validSuggestionsToAnalyze.push(...mergedSuggestions);
         }
+
+        if (mergedSuggestions?.length > 0) {
+            await Promise.all(
+                mergedSuggestions.map(async (suggestion) => {
+                    suggestion.rankScore =
+                        await this.suggestionService.calculateSuggestionRankScore(
+                            suggestion,
+                        );
+                }),
+            );
+        }
+
+        validSuggestionsToAnalyze.push(...mergedSuggestions);
 
         return {
             validSuggestionsToAnalyze,
