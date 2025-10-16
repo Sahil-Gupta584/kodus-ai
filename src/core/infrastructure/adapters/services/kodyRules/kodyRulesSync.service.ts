@@ -872,10 +872,8 @@ export class KodyRulesSyncService {
                 params.organizationAndTeamData,
             );
 
-        const mainProvider =
-            LLMModelProvider.NOVITA_MOONSHOTAI_KIMI_K2_INSTRUCT;
-        const mainFallback =
-            LLMModelProvider.NOVITA_QWEN3_235B_A22B_THINKING_2507;
+        const mainProvider = LLMModelProvider.GEMINI_2_5_FLASH;
+        const mainFallback = LLMModelProvider.GEMINI_2_5_PRO;
         const mainRun = 'kodyRulesFileToRules';
 
         const promptRunner = new BYOKPromptRunnerService(
@@ -908,7 +906,7 @@ export class KodyRulesSyncService {
                         .addPrompt({
                             role: PromptRole.SYSTEM,
                             prompt: [
-                                'Convert repository rule files (Cursor, Claude, GitHub rules, coding standards, etc.) into a JSON array of Kody Rules. IMPORTANT: Enforce exactly one rule per file. If multiple candidate rules exist, merge them concisely into one or pick the most representative. Return an array with a single item or [].',
+                                'Convert repository rule files (Cursor, Claude, GitHub rules, coding standards, etc.) into a JSON array of Kody Rules. IMPORTANT: Enforce exactly one rule per file. If multiple candidate rules exist, merge them COMPREHENSIVELY into one unified rule that preserves all essential details.',
                                 'Output ONLY a valid JSON array. If none, output []. No comments or explanations.',
                                 'Each item MUST match exactly:',
                                 '{"title": string, "rule": string, "path": string, "sourcePath": string, "severity": "low"|"medium"|"high"|"critical", "scope"?: "file"|"pull-request", "status"?: "active"|"pending"|"rejected"|"deleted", "examples": [{ "snippet": string, "isCorrect": boolean }], "sourceSnippet"?: string}',
@@ -919,10 +917,21 @@ export class KodyRulesSyncService {
                                 'path (target GLOB): use declared globs/paths when present (frontmatter like "globs:" or explicit sections). If none, set "**/*". If multiple, join with commas (e.g., "services/**,api/**").',
                                 'sourcePath: ALWAYS set to the exact file path provided in input.',
                                 'sourceSnippet: when possible, include an EXACT copy (verbatim) of the bullet/line/paragraph from the file that led to this rule. Do NOT paraphrase. If none is suitable, omit this key.',
-                                'Examples: prefer 1 incorrect and 1 correct (minimal snippets).',
+
+                                '**CRITICAL: The "rule" field must capture ALL essential information from the source file:**',
+                                '- Include ALL prohibited patterns/anti-patterns (list each one explicitly)',
+                                '- Include ALL recommended patterns/best practices (with code examples when present)',
+                                '- Include ALL key principles, guidelines, and rationale',
+                                '- Include configuration instructions and setup steps when present',
+                                '- Include references to real examples in the codebase when mentioned',
+                                '- Use markdown formatting (lists, code blocks, headers) to organize complex rules clearly',
+                                '- DO NOT summarize or compress - preserve specific method names, class names, code snippets, and technical details',
+                                '- The rule should be self-contained and actionable without needing to read the source file',
+
+                                'Examples: prefer 1 incorrect and 1 correct (minimal snippets). When the source has many examples, include the most representative ones.',
                                 'Language: keep the rule language consistent with the source (EN or PT-BR).',
                                 'Do NOT include keys like repositoryId, origin, createdAt, updatedAt, uuid, or any extra keys.',
-                                'Keep strings concise and strictly typed.',
+                                'Keep strings strictly typed, but COMPREHENSIVE in content - do not sacrifice completeness for brevity.',
                             ].join(' '),
                         })
                         .addPrompt({
