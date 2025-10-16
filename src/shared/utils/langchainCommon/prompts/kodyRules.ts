@@ -32,6 +32,26 @@ export const kodyRulesGeneratorSchema = z.object({
     ),
 });
 
+export const kodyRulesIDEGeneratorSchema = z.object({
+    rules: z.array(
+        z.object({
+            title: z.string(),
+            rule: z.string(),
+            path: z.string(),
+            sourcePath: z.string(),
+            severity: z.enum(['low', 'medium', 'high', 'critical']),
+            scope: z.enum(['file', 'pull-request']).optional(),
+            status: z
+                .enum(['active', 'pending', 'rejected', 'deleted'])
+                .optional(),
+            examples: z.array(
+                z.object({ snippet: z.string(), isCorrect: z.boolean() }),
+            ),
+            sourceSnippet: z.string().optional(),
+        }),
+    ),
+});
+
 export type KodyRulesClassifierSchema = z.infer<
     typeof kodyRulesClassifierSchema
 >;

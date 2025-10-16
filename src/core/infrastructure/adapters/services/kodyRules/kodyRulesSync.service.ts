@@ -7,6 +7,7 @@ import { CreateOrUpdateKodyRulesUseCase } from '@/core/application/use-cases/kod
 import {
     KodyRulesOrigin,
     KodyRulesScope,
+    KodyRulesStatus,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import {
     CreateKodyRuleDto,
@@ -35,6 +36,7 @@ import { PermissionValidationService } from '@/ee/shared/services/permissionVali
 import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
 import { ExternalReferenceDetectorService } from './externalReferenceDetector.service';
 import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
+import { kodyRulesIDEGeneratorSchema } from '@/shared/utils/langchainCommon/prompts/kodyRules';
 
 type SyncTarget = {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -896,7 +898,15 @@ export class KodyRulesSyncService {
                 exec: async (callbacks) => {
                     return await promptRunner
                         .builder()
-                        .setParser(ParserType.JSON)
+                        .setParser(
+                            ParserType.ZOD,
+                            kodyRulesIDEGeneratorSchema,
+                            {
+                                provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
+                                fallbackProvider:
+                                    LLMModelProvider.OPENAI_GPT_4O,
+                            },
+                        )
                         .setLLMJsonMode(true)
                         .setPayload({
                             filePath: params.filePath,
@@ -913,7 +923,7 @@ export class KodyRulesSyncService {
                                 'Detection: extract a rule only if the text imposes a requirement/restriction/convention/standard.',
                                 'Severity map: must/required/security/blocker → "high" or "critical"; should/warn → "medium"; tip/info/optional → "low".',
                                 'Scope: "file" for code/content; "pull-request" for PR titles/descriptions/commits/reviewers/labels.',
-                                'Status: "active" if mandatory; "pending" if suggestive; "deleted" if deprecated.',
+                                'Status: "active"',
                                 'path (target GLOB): use declared globs/paths when present (frontmatter like "globs:" or explicit sections). If none, set "**/*". If multiple, join with commas (e.g., "services/**,api/**").',
                                 'sourcePath: ALWAYS set to the exact file path provided in input.',
                                 'sourceSnippet: when possible, include an EXACT copy (verbatim) of the bullet/line/paragraph from the file that led to this rule. Do NOT paraphrase. If none is suitable, omit this key.',
@@ -945,17 +955,7 @@ export class KodyRulesSyncService {
                 },
             });
 
-            let normalizedResult: any[] = [];
-
-            if (result) {
-                if (Array.isArray(result)) {
-                    normalizedResult = result;
-                } else if (typeof result === 'object') {
-                    normalizedResult = [result]; // Objeto único → array
-                }
-            }
-
-            if (normalizedResult.length === 0) return [];
+            if (result?.rules.length === 0) return [];
 
             let repositoryName: string;
             try {
@@ -978,7 +978,7 @@ export class KodyRulesSyncService {
             }
 
             const rulesWithReferences = await Promise.all(
-                normalizedResult.map(async (r) => {
+                result?.rules.map(async (r) => {
                     const { references, syncError } =
                         await this.externalReferenceDetectorService.detectAndResolveReferences(
                             {
@@ -1008,7 +1008,14 @@ export class KodyRulesSyncService {
                 }),
             );
 
-            return rulesWithReferences;
+            return rulesWithReferences.map((r) => ({
+                ...r,
+                status: KodyRulesStatus.ACTIVE,
+                examples: r?.examples?.map((e) => ({
+                    snippet: e?.snippet || '',
+                    isCorrect: e?.isCorrect || false,
+                })),
+            }));
         } catch (error) {
             const fbRun = 'kodyRulesFileToRulesRaw';
             try {
