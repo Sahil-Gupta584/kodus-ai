@@ -22,6 +22,8 @@ import { KodyRulesService } from '@/ee/kodyRules/service/kodyRules.service';
 import { KodyRulesRepository } from '@/ee/kodyRules/repository/kodyRules.repository';
 import { KodyRulesValidationService } from '@/ee/kodyRules/service/kody-rules-validation.service';
 import { KodyRulesSyncService } from '@/core/infrastructure/adapters/services/kodyRules/kodyRulesSync.service';
+import { ExternalReferenceDetectorService } from '@/core/infrastructure/adapters/services/kodyRules/externalReferenceDetector.service';
+import { ExternalReferenceLoaderService } from '@/core/infrastructure/adapters/services/kodyRules/externalReferenceLoader.service';
 import { SendRulesNotificationUseCase } from '@/core/application/use-cases/kodyRules/send-rules-notification.use-case';
 import { SyncSelectedRepositoriesKodyRulesUseCase } from '@/core/application/use-cases/kodyRules/sync-selected-repositories.use-case';
 import { UsersModule } from './user.module';
@@ -34,6 +36,7 @@ import { LicenseService } from '@/ee/license/license.service';
 import { OrganizationParametersModule } from './organizationParameters.module';
 import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
 import { ResyncRulesFromIdeUseCase } from '@/core/application/use-cases/kodyRules/resync-rules-from-ide.use-case';
+import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
 
 @Module({
     imports: [
@@ -70,6 +73,9 @@ import { ResyncRulesFromIdeUseCase } from '@/core/application/use-cases/kodyRule
         },
         KodyRulesValidationService,
         KodyRulesSyncService,
+        ExternalReferenceDetectorService,
+        ExternalReferenceLoaderService,
+        GetAdditionalInfoHelper,
         LicenseService,
     ],
     controllers: [KodyRulesController],
@@ -83,6 +89,8 @@ import { ResyncRulesFromIdeUseCase } from '@/core/application/use-cases/kodyRule
         SendRulesNotificationUseCase,
         KodyRulesValidationService,
         KodyRulesSyncService,
+        ExternalReferenceDetectorService,
+        ExternalReferenceLoaderService,
         SyncSelectedRepositoriesKodyRulesUseCase,
         ResyncRulesFromIdeUseCase,
         LicenseService,
