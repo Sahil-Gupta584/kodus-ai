@@ -955,7 +955,7 @@ export class KodyRulesSyncService {
                 },
             });
 
-            if (result?.rules.length === 0) return [];
+            if (!result?.rules || result.rules.length === 0) return [];
 
             let repositoryName: string;
             try {
