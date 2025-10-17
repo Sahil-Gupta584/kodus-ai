@@ -49,6 +49,7 @@ import {
 } from '@/core/domain/codeBase/contracts/CodeBaseConfigService.contract';
 import { ObservabilityService } from '@/core/infrastructure/adapters/services/logger/observability.service';
 import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
+import { ConfigLevel } from '@/config/types/general/pullRequestMessages.type';
 
 // Interface for extended context used in Kody Rules analysis
 interface KodyRulesExtendedContext {
@@ -272,32 +273,33 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
         suggestion: Partial<CodeSuggestion>,
         byokConfig?: BYOKConfig,
     ): Promise<string[]> {
-        const provider = LLMModelProvider.GEMINI_2_5_FLASH;
-        const fallbackProvider = LLMModelProvider.GEMINI_2_5_PRO;
-        const runName = 'extractKodyRuleIdsFromContent';
-        const spanName = `${KodyRulesAnalysisService.name}::${runName}`;
-        const spanAttrs = {
-            type: 'byok',
-            organizationId: organizationAndTeamData?.organizationId,
-            teamId: organizationAndTeamData?.teamId,
-            prNumber,
-            suggestionId: suggestion?.id,
-        };
-
         try {
+            const provider = LLMModelProvider.GEMINI_2_5_FLASH;
+            const fallbackProvider = LLMModelProvider.GEMINI_2_5_PRO;
+
+            const promptRunner = new BYOKPromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
+
+            const runName = 'extractKodyRuleIdsFromContent';
+            const spanName = `${KodyRulesAnalysisService.name}::${runName}`;
+            const spanAttrs = {
+                type: promptRunner.executeMode,
+                organizationId: organizationAndTeamData?.organizationId,
+                teamId: organizationAndTeamData?.teamId,
+                prNumber,
+                suggestionId: suggestion?.id,
+            };
+
             const { result: extraction } =
                 await this.observabilityService.runLLMInSpan({
                     spanName,
                     runName,
                     attrs: spanAttrs,
                     exec: async (callbacks) => {
-                        const promptRunner = new BYOKPromptRunnerService(
-                            this.promptRunnerService,
-                            provider,
-                            fallbackProvider,
-                            byokConfig,
-                        );
-
                         return await promptRunner
                             .builder()
                             .setParser(ParserType.STRING)
@@ -828,29 +830,15 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
     ) {
         let directoryId = context?.codeReviewConfig?.directoryId;
         if (!directoryId) {
-            const configs =
-                await this.codeBaseConfigService.getDirectoryConfigs(
+            directoryId =
+                await this.codeBaseConfigService.getDirectoryIdForPath(
                     context?.organizationAndTeamData,
                     {
                         id: context?.repository?.id || '',
                         name: context?.repository?.name || '',
                     },
+                    fileContext?.file?.filename || '',
                 );
-
-            if (configs.hasConfigs) {
-                const config =
-                    await this.codeBaseConfigService.resolveMostSpecificConfigForPath(
-                        context?.organizationAndTeamData,
-                        {
-                            id: context?.repository?.id || '',
-                            name: context?.repository?.name || '',
-                        },
-                        fileContext?.file?.filename || '',
-                        configs.repoConfig,
-                    );
-
-                directoryId = config?.directoryId;
-            }
         }
 
         const kodyRulesFiltered = this.kodyRulesValidationService
@@ -858,7 +846,9 @@ export class KodyRulesAnalysisService implements IKodyRulesAnalysisService {
                 fileContext.file.filename,
                 context?.codeReviewConfig?.kodyRules || [],
                 {
-                    directoryId,
+                    ...(directoryId
+                        ? { directoryId }
+                        : { repositoryId: context?.repository?.id }),
                 },
             )
             ?.filter(

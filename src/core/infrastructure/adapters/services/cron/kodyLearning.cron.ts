@@ -176,7 +176,8 @@ export class KodyLearningCronProvider {
             }
 
             const filteredRepos = repos.filter(
-                (repo) => repo.isSelected && repo.kodyRulesGeneratorEnabled,
+                (repo) =>
+                    repo.isSelected && repo.configs.kodyRulesGeneratorEnabled,
             );
 
             if (!filteredRepos || filteredRepos.length === 0) {

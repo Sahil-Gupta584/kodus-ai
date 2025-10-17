@@ -21,6 +21,7 @@ import {
     ActionType,
     ConfigLevel,
 } from '@/config/types/general/codeReviewSettingsLog.type';
+import { CodeReviewParameter } from '@/config/types/general/codeReviewConfig.type';
 interface ICodeRepository {
     avatar_url?: string;
     default_branch: string;
@@ -59,7 +60,7 @@ export class UpdateCodeReviewParameterRepositoriesUseCase {
 
     async execute(body: {
         organizationAndTeamData: OrganizationAndTeamData;
-    }): Promise<ParametersEntity | boolean> {
+    }): Promise<ParametersEntity<ParametersKey.CODE_REVIEW_CONFIG> | boolean> {
         try {
             const { organizationAndTeamData } = body;
 
@@ -114,7 +115,7 @@ export class UpdateCodeReviewParameterRepositoriesUseCase {
             const updatedCodeReviewConfigValue = {
                 ...codeReviewConfigs.configValue,
                 repositories: updatedRepositories,
-            };
+            } as CodeReviewParameter;
 
             const result = await this.parametersService.createOrUpdateConfig(
                 ParametersKey.CODE_REVIEW_CONFIG,

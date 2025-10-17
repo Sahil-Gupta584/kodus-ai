@@ -9,6 +9,10 @@ import {
 } from '@/core/domain/platformIntegrations/types/codeManagement/pullRequests.type';
 import { Repositories } from '@/core/domain/platformIntegrations/types/codeManagement/repositories.type';
 import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
+import {
+    GitlabReaction,
+    GitHubReaction,
+} from '@/core/domain/codeReviewFeedback/enums/codeReviewCommentReaction.enum';
 
 import { IntegrationServiceDecorator } from '@/shared/utils/decorators/integration-service.decorator';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
@@ -2374,6 +2378,203 @@ export class GitlabService
                     },
                 },
             }));
+    }
+
+    async addReactionToPR(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id?: string; name?: string };
+        prNumber: number;
+        reaction: GitHubReaction | GitlabReaction;
+    }): Promise<void> {
+        try {
+            if (!params.repository.id) {
+                this.logger.warn({
+                    message: 'Repository ID is required for GitLab reactions',
+                    context: GitlabService.name,
+                    metadata: params,
+                });
+                return;
+            }
+
+            const gitlabAuthDetail = await this.getAuthDetails(
+                params.organizationAndTeamData,
+            );
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            await gitlabAPI.MergeRequestAwardEmojis.award(
+                params.repository.id,
+                params.prNumber,
+                params.reaction,
+            );
+
+            this.logger.log({
+                message: `Added reaction ${params.reaction} to MR#${params.prNumber}`,
+                context: GitlabService.name,
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Error adding reaction to MR#${params.prNumber}`,
+                context: GitlabService.name,
+                error: error,
+                metadata: params,
+            });
+        }
+    }
+
+    async addReactionToComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id?: string; name?: string };
+        prNumber: number;
+        commentId: number;
+        reaction: GitHubReaction | GitlabReaction;
+    }): Promise<void> {
+        try {
+            if (!params.repository.id) {
+                this.logger.warn({
+                    message: 'Repository ID is required for GitLab reactions',
+                    context: GitlabService.name,
+                    metadata: params,
+                });
+                return;
+            }
+
+            const gitlabAuthDetail = await this.getAuthDetails(
+                params.organizationAndTeamData,
+            );
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            await gitlabAPI.MergeRequestNoteAwardEmojis.award(
+                params.repository.id,
+                params.prNumber,
+                params.commentId,
+                params.reaction,
+            );
+
+            this.logger.log({
+                message: `Added reaction ${params.reaction} to note ${params.commentId} on MR#${params.prNumber}`,
+                context: GitlabService.name,
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Error adding reaction to note ${params.commentId}`,
+                context: GitlabService.name,
+                error: error,
+                metadata: params,
+            });
+        }
+    }
+
+    async removeReactionsFromPR(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id?: string; name?: string };
+        prNumber: number;
+        reactions: (GitHubReaction | GitlabReaction)[];
+    }): Promise<void> {
+        try {
+            if (!params.repository.id) {
+                this.logger.warn({
+                    message: 'Repository ID is required for GitLab reactions',
+                    context: GitlabService.name,
+                    metadata: params,
+                });
+                return;
+            }
+
+            const gitlabAuthDetail = await this.getAuthDetails(
+                params.organizationAndTeamData,
+            );
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            const awards = await gitlabAPI.MergeRequestAwardEmojis.all(
+                params.repository.id,
+                params.prNumber,
+            );
+
+            const awardsToRemove = awards.filter((award: any) =>
+                params.reactions.includes(award.name),
+            );
+
+            await Promise.all(
+                awardsToRemove.map((award) =>
+                    gitlabAPI.MergeRequestAwardEmojis.remove(
+                        params.repository.id,
+                        params.prNumber,
+                        award.id,
+                    ),
+                ),
+            );
+
+            this.logger.log({
+                message: `Removed reactions from MR#${params.prNumber}`,
+                context: GitlabService.name,
+                metadata: { awardsRemoved: awardsToRemove.length },
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Error removing reactions from MR#${params.prNumber}`,
+                context: GitlabService.name,
+                error: error,
+                metadata: params,
+            });
+        }
+    }
+
+    async removeReactionsFromComment(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id?: string; name?: string };
+        prNumber: number;
+        commentId: number;
+        reactions: (GitHubReaction | GitlabReaction)[];
+    }): Promise<void> {
+        try {
+            if (!params.repository.id) {
+                this.logger.warn({
+                    message: 'Repository ID is required for GitLab reactions',
+                    context: GitlabService.name,
+                    metadata: params,
+                });
+                return;
+            }
+
+            const gitlabAuthDetail = await this.getAuthDetails(
+                params.organizationAndTeamData,
+            );
+            const gitlabAPI = this.instanceGitlabApi(gitlabAuthDetail);
+
+            const awards = await gitlabAPI.MergeRequestNoteAwardEmojis.all(
+                params.repository.id,
+                params.prNumber,
+                params.commentId,
+            );
+
+            const awardsToRemove = awards.filter((award: any) =>
+                params.reactions.includes(award.name),
+            );
+
+            await Promise.all(
+                awardsToRemove.map((award) =>
+                    gitlabAPI.MergeRequestNoteAwardEmojis.remove(
+                        params.repository.id,
+                        params.prNumber,
+                        params.commentId,
+                        award.id,
+                    ),
+                ),
+            );
+
+            this.logger.log({
+                message: `Removed reactions from note ${params.commentId} on MR#${params.prNumber}`,
+                context: GitlabService.name,
+                metadata: { awardsRemoved: awardsToRemove.length },
+            });
+        } catch (error) {
+            this.logger.error({
+                message: `Error removing reactions from note ${params.commentId}`,
+                context: GitlabService.name,
+                error: error,
+                metadata: params,
+            });
+        }
     }
 
     async getLanguageRepository(params: {

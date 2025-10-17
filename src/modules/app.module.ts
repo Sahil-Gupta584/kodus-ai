@@ -1,6 +1,4 @@
 import { GithubModule } from '@/modules/github.module';
-import { JiraModule } from '@/modules/jira.module';
-import { SlackModule } from '@/modules/slack.module';
 import { UsersModule } from '@/modules/user.module';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from './database.module';
@@ -25,7 +23,6 @@ import { IntegrationModule } from './integration.module';
 import { IntegrationConfigModule } from './integrationConfig.module';
 import { PlatformIntegrationModule } from './platformIntegration.module';
 import { MSTeamsModule } from './msTeams.module';
-import { AzureBoardsModule } from './azureBoards.module';
 import { InteractionModule } from '@/modules/interaction.module';
 import { ParametersModule } from './parameters.module';
 import { ProfileConfigModule } from './profileConfig.module';
@@ -74,21 +71,18 @@ import { UsageModule } from './usage.module';
         TeamMembersModule,
         GithubModule,
         GitlabModule,
-        JiraModule,
         OrganizationModule,
         HealthModule,
         ProfilesModule,
         TeamsModule,
         AutomationModule,
         TeamAutomationModule,
-        SlackModule,
         AutomationStrategyModule,
         AgentModule,
         AuthIntegrationModule,
         IntegrationModule,
         IntegrationConfigModule,
         MSTeamsModule,
-        AzureBoardsModule,
         InteractionModule,
         ProfileConfigModule,
         ParametersModule,

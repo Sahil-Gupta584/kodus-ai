@@ -928,7 +928,7 @@ export class KodyRulesPrLevelAnalysisService
         const runName = 'prLevelKodyRulesAnalyzer';
         const spanName = `${KodyRulesPrLevelAnalysisService.name}::${runName}`;
         const spanAttrs = {
-            type: 'byok',
+            type: promptRunner.executeMode,
             organizationId: organizationAndTeamData.organizationId,
             prNumber,
             chunkIndex,
@@ -1275,14 +1275,6 @@ export class KodyRulesPrLevelAnalysisService
 
         const provider = LLMModelProvider.GEMINI_2_5_PRO;
         const fallbackProvider = LLMModelProvider.NOVITA_DEEPSEEK_V3;
-        const runName = 'prLevelKodyRulesGrouper';
-        const spanName = `${KodyRulesPrLevelAnalysisService.name}::${runName}`;
-        const spanAttrs = {
-            type: 'byok',
-            organizationId: organizationAndTeamData?.organizationId,
-            prNumber,
-            ruleId: rule?.uuid,
-        };
 
         const promptRunner = new BYOKPromptRunnerService(
             this.promptRunnerService,
@@ -1291,7 +1283,15 @@ export class KodyRulesPrLevelAnalysisService
             byokConfig,
         );
 
-        // Payload único para o grouping
+        const runName = 'prLevelKodyRulesGrouper';
+        const spanName = `${KodyRulesPrLevelAnalysisService.name}::${runName}`;
+        const spanAttrs = {
+            type: promptRunner.executeMode,
+            organizationId: organizationAndTeamData?.organizationId,
+            prNumber,
+            ruleId: rule?.uuid,
+        };
+
         const groupingPayload = {
             rule: {
                 title: rule?.title || '',

@@ -12,7 +12,10 @@ import {
     ICodeReviewSettingsLogService,
     CODE_REVIEW_SETTINGS_LOG_SERVICE_TOKEN,
 } from '@/ee/codeReviewSettingsLog/domain/codeReviewSettingsLog/contracts/codeReviewSettingsLog.service.contract';
-import { ActionType } from '@/config/types/general/codeReviewSettingsLog.type';
+import {
+    ActionType,
+    ConfigLevel,
+} from '@/config/types/general/codeReviewSettingsLog.type';
 
 import { v4 as uuidv4 } from 'uuid';
 import { AuthorizationService } from '@/core/infrastructure/adapters/services/permissions/authorization.service';
@@ -20,6 +23,10 @@ import {
     Action,
     ResourceType,
 } from '@/core/domain/permissions/enums/permissions.enum';
+import { CodeReviewParameter } from '@/config/types/general/codeReviewConfig.type';
+import { CodeReviewConfigWithoutLLMProvider } from '@/config/types/general/codeReview.type';
+import { DeepPartial } from 'typeorm';
+import { produce } from 'immer';
 
 @Injectable()
 export class CopyCodeReviewParameterUseCase {
@@ -46,15 +53,16 @@ export class CopyCodeReviewParameterUseCase {
 
     async execute(body: CopyCodeReviewParameterDTO) {
         const {
-            targetDirectoryPath,
             teamId,
             targetRepositoryId,
             sourceRepositoryId,
+            targetDirectoryPath,
         } = body;
 
         try {
-            if (!this.request.user.organization.uuid) {
-                throw new Error('Organization ID not found');
+            const organizationId = this.request.user.organization.uuid;
+            if (!organizationId) {
+                throw new Error('Organization ID not found in user request');
             }
 
             await this.authorizationService.ensure({
@@ -72,36 +80,58 @@ export class CopyCodeReviewParameterUseCase {
             });
 
             const organizationAndTeamData: OrganizationAndTeamData = {
-                organizationId: this.request.user.organization.uuid,
-                teamId: teamId,
+                organizationId,
+                teamId,
             };
 
-            const codeReviewConfig = await this.parametersService.findByKey(
-                ParametersKey.CODE_REVIEW_CONFIG,
-                organizationAndTeamData,
-            );
+            const codeReviewConfigParam =
+                await this.parametersService.findByKey(
+                    ParametersKey.CODE_REVIEW_CONFIG,
+                    organizationAndTeamData,
+                );
 
-            if (!codeReviewConfig) {
+            if (!codeReviewConfigParam || !codeReviewConfigParam.configValue) {
                 throw new Error('Code review config not found');
             }
 
-            const codeReviewConfigValue = codeReviewConfig.configValue;
+            const codeReviewConfig = codeReviewConfigParam.configValue;
 
-            // Se targetPath está presente, é uma cópia para diretório
-            if (targetDirectoryPath) {
-                return this.copyToDirectory(
-                    body,
-                    codeReviewConfigValue,
-                    organizationAndTeamData,
-                );
-            } else {
-                // Comportamento original - cópia para repositório
-                return this.copyToRepository(
-                    body,
-                    codeReviewConfigValue,
-                    organizationAndTeamData,
-                );
-            }
+            const sourceConfigDelta = this.getSourceConfigDelta(
+                codeReviewConfig,
+                sourceRepositoryId,
+            );
+
+            const updatedConfig = targetDirectoryPath
+                ? this.copyToDirectory(
+                      body,
+                      codeReviewConfig,
+                      sourceConfigDelta,
+                  )
+                : this.copyToRepository(
+                      body,
+                      codeReviewConfig,
+                      sourceConfigDelta,
+                  );
+
+            const result = await this.parametersService.createOrUpdateConfig(
+                ParametersKey.CODE_REVIEW_CONFIG,
+                updatedConfig,
+                organizationAndTeamData,
+            );
+
+            await this.logCopyAction(
+                body,
+                organizationAndTeamData,
+                updatedConfig,
+            );
+
+            this.logger.log({
+                message: 'Code review parameter copied successfully',
+                context: CopyCodeReviewParameterUseCase.name,
+                metadata: { body, organizationAndTeamData },
+            });
+
+            return result;
         } catch (error) {
             this.logger.error({
                 message: 'Could not copy code review parameter',
@@ -120,304 +150,164 @@ export class CopyCodeReviewParameterUseCase {
         }
     }
 
-    private async copyToDirectory(
-        body: CopyCodeReviewParameterDTO,
-        codeReviewConfigValue: any,
-        organizationAndTeamData: OrganizationAndTeamData,
-    ) {
-        const {
-            sourceRepositoryId,
-            targetRepositoryId,
-            targetDirectoryPath,
-            teamId,
-        } = body;
+    private getSourceConfigDelta(
+        codeReviewConfig: CodeReviewParameter,
+        sourceRepositoryId: string,
+    ): DeepPartial<CodeReviewConfigWithoutLLMProvider> {
+        if (sourceRepositoryId === 'global') {
+            return codeReviewConfig.configs ?? {};
+        }
 
-        const sourceRepository =
-            sourceRepositoryId === 'global'
-                ? codeReviewConfigValue.global
-                : codeReviewConfigValue.repositories.find(
-                      (repository) => repository.id === sourceRepositoryId,
-                  );
+        const sourceRepository = codeReviewConfig.repositories.find(
+            (repo) => repo.id === sourceRepositoryId,
+        );
 
         if (!sourceRepository) {
-            throw new Error('Source repository not found');
-        }
-
-        let targetRepository = codeReviewConfigValue.repositories.find(
-            (repository) => repository.id === targetRepositoryId,
-        );
-
-        if (!targetRepository) {
-            throw new Error('Target repository not found');
-        }
-
-        let updatedRepositories;
-        let updatedTargetRepository;
-
-        // Check if the repository is already configured
-        const repositoryAlreadyConfigured =
-            targetRepository.isSelected === true;
-
-        if (!repositoryAlreadyConfigured) {
-            // If the repository is not configured, copy the configuration from the source to the repository
-            const {
-                id,
-                name,
-                isSelected,
-                directories,
-                ...repositoryConfigFromSource
-            } = sourceRepository;
-
-            updatedTargetRepository = {
-                ...targetRepository,
-                ...repositoryConfigFromSource,
-                isSelected: true,
-                directories: targetRepository.directories || [],
-            };
-        } else {
-            // If the repository is already configured, keep the current configuration
-            updatedTargetRepository = { ...targetRepository };
-        }
-
-        // Add/update directory configuration
-        const existingDirectories = updatedTargetRepository.directories || [];
-        const existingDirectoryIndex = existingDirectories.findIndex(
-            (dir) => dir.path === targetDirectoryPath,
-        );
-
-        let updatedDirectories;
-        if (existingDirectoryIndex >= 0) {
-            // Update existing directory
-            updatedDirectories = existingDirectories.map((dir, index) =>
-                index === existingDirectoryIndex
-                    ? this.createDirectoryConfig(
-                          sourceRepository,
-                          targetDirectoryPath,
-                          dir.id,
-                      )
-                    : dir,
+            throw new Error(
+                `Source repository with ID ${sourceRepositoryId} not found.`,
             );
-        } else {
-            // Add new directory
-            updatedDirectories = [
-                ...existingDirectories,
-                this.createDirectoryConfig(
-                    sourceRepository,
-                    targetDirectoryPath,
-                ),
-            ];
         }
 
-        updatedTargetRepository.directories = updatedDirectories;
-
-        updatedRepositories = codeReviewConfigValue.repositories.map(
-            (repository) =>
-                repository.id === targetRepositoryId
-                    ? updatedTargetRepository
-                    : repository,
-        );
-
-        const updatedConfigValue = {
-            ...codeReviewConfigValue,
-            repositories: updatedRepositories,
-        };
-
-        const updated = await this.parametersService.createOrUpdateConfig(
-            ParametersKey.CODE_REVIEW_CONFIG,
-            updatedConfigValue,
-            organizationAndTeamData,
-        );
-
-        await this.logDirectoryCopy(
-            body,
-            sourceRepository,
-            organizationAndTeamData,
-        );
-
-        this.logger.log({
-            message: `Code review parameter copied to directory successfully${!repositoryAlreadyConfigured ? ' (repository configuration also created)' : ''}`,
-            context: CopyCodeReviewParameterUseCase.name,
-            serviceName: 'CopyCodeReviewParameterUseCase',
-            metadata: {
-                body,
-                organizationAndTeamData,
-                repositoryAlreadyConfigured,
-            },
-        });
-
-        return updated;
+        return sourceRepository.configs ?? {};
     }
 
-    private async copyToRepository(
+    private copyToRepository(
         body: CopyCodeReviewParameterDTO,
-        codeReviewConfigValue: any,
-        organizationAndTeamData: OrganizationAndTeamData,
-    ) {
-        const { sourceRepositoryId, targetRepositoryId } = body;
+        currentConfig: CodeReviewParameter,
+        sourceConfigDelta: DeepPartial<CodeReviewConfigWithoutLLMProvider>,
+    ): CodeReviewParameter {
+        const { targetRepositoryId } = body;
 
-        const sourceRepository =
-            sourceRepositoryId === 'global'
-                ? codeReviewConfigValue.global
-                : codeReviewConfigValue.repositories.find(
-                      (repository) => repository.id === sourceRepositoryId,
-                  );
+        return produce(currentConfig, (draft) => {
+            const targetRepoIndex = draft.repositories.findIndex(
+                (repo) => repo.id === targetRepositoryId,
+            );
 
-        const targetRepository = codeReviewConfigValue.repositories.find(
-            (repository) => repository.id === targetRepositoryId,
-        );
+            if (targetRepoIndex === -1) {
+                throw new Error(
+                    `Target repository with ID ${targetRepositoryId} not found.`,
+                );
+            }
 
-        if (!sourceRepository || !targetRepository) {
-            throw new Error('Source or target repository not found');
-        }
-
-        const updatedTarget = {
-            ...sourceRepository,
-            id: targetRepository.id,
-            name: targetRepository.name,
-            isSelected: true,
-            ...(targetRepository.directories && {
-                directories: targetRepository.directories,
-            }),
-        };
-
-        const updatedRepositories = codeReviewConfigValue.repositories.map(
-            (repository) =>
-                repository.id === targetRepositoryId
-                    ? updatedTarget
-                    : repository,
-        );
-
-        const updatedConfigValue = {
-            ...codeReviewConfigValue,
-            repositories: updatedRepositories,
-        };
-
-        const updated = await this.parametersService.createOrUpdateConfig(
-            ParametersKey.CODE_REVIEW_CONFIG,
-            updatedConfigValue,
-            organizationAndTeamData,
-        );
-
-        await this.logRepositoryCopy(
-            body,
-            sourceRepository,
-            targetRepository,
-            organizationAndTeamData,
-        );
-
-        this.logger.log({
-            message: 'Code review parameter copied successfully',
-            context: CopyCodeReviewParameterUseCase.name,
-            serviceName: 'CopyCodeReviewParameterUseCase',
-            metadata: {
-                body,
-                organizationAndTeamData,
-            },
+            draft.repositories[targetRepoIndex].configs = sourceConfigDelta;
+            draft.repositories[targetRepoIndex].isSelected = true;
         });
-
-        return updated;
     }
 
-    private createDirectoryConfig(
-        sourceConfig: any,
-        targetPath: string,
-        existingId?: string,
-    ): any {
-        // Remove repository specific properties if they exist
-        const { id, name, isSelected, directories, ...directoryConfig } =
-            sourceConfig;
-
-        return {
-            id: existingId || uuidv4(),
-            name: this.extractDirectoryNameFromPath(targetPath),
-            path: targetPath,
-            isSelected: true,
-            ...directoryConfig,
-        };
-    }
-
-    private extractDirectoryNameFromPath(path: string): string {
-        const segments = path.split('/');
-        return segments[segments.length - 1];
-    }
-
-    private async logDirectoryCopy(
+    private copyToDirectory(
         body: CopyCodeReviewParameterDTO,
-        sourceRepository: any,
+        currentConfig: CodeReviewParameter,
+        sourceConfigDelta: DeepPartial<CodeReviewConfigWithoutLLMProvider>,
+    ): CodeReviewParameter {
+        const { targetRepositoryId, targetDirectoryPath } = body;
+
+        return produce(currentConfig, (draft) => {
+            const targetRepoIndex = draft.repositories.findIndex(
+                (repo) => repo.id === targetRepositoryId,
+            );
+
+            if (targetRepoIndex === -1) {
+                throw new Error(
+                    `Target repository with ID ${targetRepositoryId} not found.`,
+                );
+            }
+
+            const targetRepo = draft.repositories[targetRepoIndex];
+            if (!targetRepo.directories) {
+                targetRepo.directories = [];
+            }
+
+            const targetDirIndex = targetRepo.directories.findIndex(
+                (dir) => dir.path === targetDirectoryPath,
+            );
+
+            if (targetDirIndex >= 0) {
+                // Directory exists, update its config
+                targetRepo.directories[targetDirIndex].configs =
+                    sourceConfigDelta;
+                targetRepo.directories[targetDirIndex].isSelected = true;
+            } else {
+                // Directory does not exist, create it
+                const segments = targetDirectoryPath.split('/');
+                const name = segments[segments.length - 1];
+
+                targetRepo.directories.push({
+                    id: uuidv4(),
+                    name,
+                    path: targetDirectoryPath,
+                    isSelected: true,
+                    configs: sourceConfigDelta,
+                });
+            }
+
+            // Mark the parent repository as selected since it now has a configured directory
+            targetRepo.isSelected = true;
+        });
+    }
+
+    private async logCopyAction(
+        body: CopyCodeReviewParameterDTO,
         organizationAndTeamData: OrganizationAndTeamData,
+        updatedConfig: CodeReviewParameter,
     ) {
+        const { sourceRepositoryId, targetRepositoryId, targetDirectoryPath } =
+            body;
+
         try {
-            this.codeReviewSettingsLogService.registerRepositoriesLog({
-                organizationAndTeamData: {
-                    ...organizationAndTeamData,
-                    organizationId: this.request.user.organization.uuid,
-                },
+            const sourceRepo = updatedConfig.repositories.find(
+                (r) => r.id === sourceRepositoryId,
+            );
+            const source =
+                sourceRepositoryId === 'global'
+                    ? { id: 'global', name: 'Global' }
+                    : { id: sourceRepositoryId, name: sourceRepo?.name ?? '' };
+
+            const targetRepo = updatedConfig.repositories.find(
+                (r) => r.id === targetRepositoryId,
+            );
+            const targetRepoName = targetRepo?.name ?? '';
+
+            const logPayload: any = {
+                organizationAndTeamData,
                 userInfo: {
                     userId: this.request.user.uuid,
                     userEmail: this.request.user.email,
                 },
-                actionType: ActionType.ADD,
-                sourceRepository:
-                    body.sourceRepositoryId === 'global'
-                        ? { id: 'global', name: 'Global Settings' }
-                        : {
-                              id: sourceRepository.id,
-                              name: sourceRepository.name,
-                          },
-                targetDirectory: {
-                    id: '',
-                    path: body.targetDirectoryPath,
-                },
-            });
-        } catch (error) {
-            this.logger.error({
-                message: 'Error saving code review settings log for directory',
-                error: error,
-                context: CopyCodeReviewParameterUseCase.name,
-                metadata: {
-                    organizationAndTeamData: organizationAndTeamData,
-                },
-            });
-        }
-    }
+                actionType: ActionType.CLONE,
+                source,
+            };
 
-    private async logRepositoryCopy(
-        body: CopyCodeReviewParameterDTO,
-        sourceRepository: any,
-        targetRepository: any,
-        organizationAndTeamData: OrganizationAndTeamData,
-    ) {
-        try {
-            this.codeReviewSettingsLogService.registerRepositoriesLog({
-                organizationAndTeamData: {
-                    ...organizationAndTeamData,
-                    organizationId: this.request.user.organization.uuid,
-                },
-                userInfo: {
-                    userId: this.request.user.uuid,
-                    userEmail: this.request.user.email,
-                },
-                actionType: ActionType.ADD,
-                sourceRepository:
-                    body.sourceRepositoryId === 'global'
-                        ? { id: 'global', name: 'Global Settings' }
-                        : {
-                              id: sourceRepository.id,
-                              name: sourceRepository.name,
-                          },
-                targetRepository: {
-                    id: targetRepository.id,
-                    name: targetRepository.name,
-                },
-            });
+            if (targetDirectoryPath && targetRepo) {
+                const targetDir = targetRepo.directories?.find(
+                    (d) => d.path === targetDirectoryPath,
+                );
+
+                logPayload.configLevel = ConfigLevel.DIRECTORY;
+                logPayload.repository = {
+                    id: targetRepositoryId,
+                    name: targetRepoName,
+                };
+                logPayload.directory = {
+                    id: targetDir?.id ?? '',
+                    path: targetDirectoryPath,
+                };
+            } else {
+                logPayload.configLevel = ConfigLevel.REPOSITORY;
+                logPayload.repository = {
+                    id: targetRepositoryId,
+                    name: targetRepoName,
+                };
+            }
+
+            await this.codeReviewSettingsLogService.registerCodeReviewConfigLog(
+                logPayload,
+            );
         } catch (error) {
             this.logger.error({
-                message: 'Error saving code review settings log',
-                error: error,
+                message: 'Error saving code review settings copy log',
+                error,
                 context: CopyCodeReviewParameterUseCase.name,
-                metadata: {
-                    organizationAndTeamData: organizationAndTeamData,
-                },
+                metadata: { organizationAndTeamData },
             });
         }
     }

@@ -6,22 +6,28 @@ import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 export const PARAMETERS_REPOSITORY_TOKEN = Symbol('ParametersRepository');
 
 export interface IParametersRepository {
-    find(filter?: Partial<IParameters>): Promise<ParametersEntity[]>;
-    findOne(filter?: Partial<IParameters>): Promise<ParametersEntity>;
-    findById(uuid: string): Promise<ParametersEntity | undefined>;
-    findByOrganizationName(
+    find<K extends ParametersKey>(
+        filter?: Partial<IParameters<K>>,
+    ): Promise<ParametersEntity<K>[]>;
+    findOne<K extends ParametersKey>(
+        filter?: Partial<IParameters<K>>,
+    ): Promise<ParametersEntity<K>>;
+    findById<K extends ParametersKey>(
+        uuid: string,
+    ): Promise<ParametersEntity<K> | undefined>;
+    findByOrganizationName<K extends ParametersKey>(
         organizationName: string,
-    ): Promise<ParametersEntity | undefined>;
-    create(
-        integrationConfig: IParameters,
-    ): Promise<ParametersEntity | undefined>;
-    update(
-        filter: Partial<IParameters>,
-        data: Partial<IParameters>,
-    ): Promise<ParametersEntity | undefined>;
+    ): Promise<ParametersEntity<K> | undefined>;
+    create<K extends ParametersKey>(
+        integrationConfig: IParameters<K>,
+    ): Promise<ParametersEntity<K> | undefined>;
+    update<K extends ParametersKey>(
+        filter: Partial<IParameters<K>>,
+        data: Partial<IParameters<K>>,
+    ): Promise<ParametersEntity<K> | undefined>;
     delete(uuid: string): Promise<void>;
-    findByKey(
-        configKey: ParametersKey,
+    findByKey<K extends ParametersKey>(
+        configKey: K,
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<ParametersEntity>;
+    ): Promise<ParametersEntity<K>>;
 }

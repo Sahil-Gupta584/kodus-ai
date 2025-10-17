@@ -45,6 +45,7 @@ export class GithubMappedPlatform implements IMappedPlatform {
             body: payload?.pull_request?.body,
             number: payload?.pull_request?.number,
             user: payload?.pull_request?.user,
+            url: payload?.pull_request?.html_url,
             head: {
                 repo: {
                     fullName: payload?.pull_request?.head?.repo?.full_name,

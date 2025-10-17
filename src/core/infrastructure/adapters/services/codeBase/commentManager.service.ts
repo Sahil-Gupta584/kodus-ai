@@ -43,10 +43,7 @@ interface ClusteredSuggestion {
     problemDescription?: string;
     actionStatement?: string;
 }
-import {
-    IPullRequestMessageContent,
-    IPullRequestMessages,
-} from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
+import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import {
     MessageTemplateProcessor,
     PlaceholderContext,
@@ -177,10 +174,17 @@ export class CommentManagerService implements ICommentManagerService {
                 const fallbackProvider = LLMModelProvider.OPENAI_GPT_4O;
                 const userPrompt = `<changedFilesContext>${JSON.stringify(baseContext?.changedFiles, null, 2) || 'No files changed'}</changedFilesContext>`;
 
+                const promptRunner = new BYOKPromptRunnerService(
+                    this.promptRunnerService,
+                    LLMModelProvider.GEMINI_2_5_FLASH,
+                    fallbackProvider,
+                    byokConfigValue,
+                );
+
                 const runName = 'generateSummaryPR';
                 const spanName = `${CommentManagerService.name}::${runName}`;
                 const spanAttrs = {
-                    type: byokConfigValue ? 'byok' : 'system',
+                    type: promptRunner.executeMode,
                     organizationId: organizationAndTeamData?.organizationId,
                     prNumber: pullRequest?.number,
                     repositoryId: repository?.id,
@@ -192,13 +196,6 @@ export class CommentManagerService implements ICommentManagerService {
                         runName,
                         attrs: spanAttrs,
                         exec: async (callbacks) => {
-                            const promptRunner = new BYOKPromptRunnerService(
-                                this.promptRunnerService,
-                                LLMModelProvider.GEMINI_2_5_FLASH,
-                                fallbackProvider,
-                                byokConfigValue,
-                            );
-
                             return await promptRunner
                                 .builder()
                                 .setParser(ParserType.STRING)
@@ -237,6 +234,11 @@ export class CommentManagerService implements ICommentManagerService {
                     });
 
                 if (!result) {
+                    this.logger.error({
+                        message: `No result returned from generateSummaryPR: PR#${pullRequest?.number}`,
+                        context: CommentManagerService.name,
+                        metadata: { organizationAndTeamData, pullRequest },
+                    });
                     throw new Error(
                         'No result returned from generateSummaryPR',
                     );
@@ -352,9 +354,13 @@ export class CommentManagerService implements ICommentManagerService {
                 });
                 retryCount++;
                 if (retryCount === maxRetries) {
-                    throw new Error(
-                        'Error generateOverallComment pull request. Max retries exceeded',
-                    );
+                    this.logger.error({
+                        message: `Error generateOverallComment pull request. Max retries exceeded: PR#${pullRequest?.number}`,
+                        context: CommentManagerService.name,
+                        error,
+                        metadata: { organizationAndTeamData, pullRequest },
+                    });
+                    return null;
                 }
             }
         }
@@ -367,6 +373,10 @@ export class CommentManagerService implements ICommentManagerService {
         summary: string,
     ): Promise<void> {
         try {
+            if (!summary) {
+                return;
+            }
+
             await this.codeManagementService.updateDescriptionInPullRequest({
                 organizationAndTeamData,
                 prNumber,
@@ -693,7 +703,8 @@ export class CommentManagerService implements ICommentManagerService {
                         codeReviewFeedbackData: {
                             commentId: createdComment?.id,
                             pullRequestReviewId:
-                                createdComment?.pull_request_review_id,
+                                createdComment?.pull_request_review_id ??
+                                createdComment?.pullRequestReviewId,
                             suggestionId: comment.suggestion.id,
                         },
                     });
@@ -931,10 +942,17 @@ ${reviewOptions}
 
             const userPrompt = `<codeSuggestionsContext>${JSON.stringify(baseContext?.codeSuggestions, null, 2) || 'No code suggestions provided'}</codeSuggestionsContext>`;
 
+            const promptRunner = new BYOKPromptRunnerService(
+                this.promptRunnerService,
+                provider,
+                fallbackProvider,
+                byokConfig,
+            );
+
             const runName = 'repeatedCodeReviewSuggestionClustering';
             const spanName = `${CommentManagerService.name}::${runName}`;
             const spanAttrs = {
-                type: byokConfig ? 'byok' : 'system',
+                type: promptRunner.executeMode,
                 organizationId: organizationAndTeamData?.organizationId,
                 prNumber,
             };
@@ -945,13 +963,6 @@ ${reviewOptions}
                     runName,
                     attrs: spanAttrs,
                     exec: async (callbacks) => {
-                        const promptRunner = new BYOKPromptRunnerService(
-                            this.promptRunnerService,
-                            provider,
-                            fallbackProvider,
-                            byokConfig,
-                        );
-
                         return await promptRunner
                             .builder()
                             .setParser(ParserType.STRING)

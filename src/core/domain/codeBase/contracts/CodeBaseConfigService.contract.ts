@@ -1,4 +1,8 @@
-import { CodeReviewConfig } from '@/config/types/general/codeReview.type';
+import {
+    CodeReviewConfig,
+    FileChange,
+    KodusConfigFile,
+} from '@/config/types/general/codeReview.type';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 
 export const CODE_BASE_CONFIG_SERVICE_TOKEN = Symbol('CodeBaseConfigService');
@@ -7,8 +11,9 @@ export interface ICodeBaseConfigService {
     getConfig(
         organizationAndTeamData: OrganizationAndTeamData,
         repository: { name: string; id: string },
-        ignoreKodusConfigFile?: boolean,
+        preliminaryFiles?: FileChange[],
     ): Promise<CodeReviewConfig>;
+
     getCodeManagementAuthenticationPlatform(
         organizationAndTeamData: OrganizationAndTeamData,
     );
@@ -18,26 +23,18 @@ export interface ICodeBaseConfigService {
     getCodeManagementConfigAndRepositories(
         organizationAndTeamData: OrganizationAndTeamData,
     );
-    getDefaultConfigs(): CodeReviewConfig;
 
-    resolveConfigByDirectories(
-        organizationAndTeamData: OrganizationAndTeamData,
-        repository: { name: string; id: string },
-        affectedPaths: string[],
-        repoConfig: any,
-    ): Promise<CodeReviewConfig>;
-
-    getDirectoryConfigs(
-        organizationAndTeamData: OrganizationAndTeamData,
-        repository: { id: string; name: string },
-    ): Promise<{ hasConfigs: boolean; repoConfig?: any; parameters?: any }>;
-
-    extractUniqueDirectoryPaths(files: { filename: string }[]): string[];
-
-    resolveMostSpecificConfigForPath(
+    getDirectoryIdForPath(
         organizationAndTeamData: OrganizationAndTeamData,
         repository: { name: string; id: string },
         affectedPath: string,
-        repoConfig: any,
-    ): Promise<CodeReviewConfig>;
+    ): Promise<string | undefined>;
+
+    getKodusConfigFile(params: {
+        organizationAndTeamData: OrganizationAndTeamData;
+        repository: { id: string; name: string };
+        overrideConfig?: boolean;
+        directoryPath?: string;
+        defaultBranch?: string;
+    }): Promise<KodusConfigFile | undefined>;
 }

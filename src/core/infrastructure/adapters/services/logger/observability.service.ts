@@ -3,6 +3,8 @@ import { ConnectionString } from 'connection-string';
 import { getObservability, IdGenerator } from '@kodus/flow';
 import type { DatabaseConnection } from '@/config/types';
 import { TokenTrackingHandler } from '@kodus/kodus-common/llm';
+import { PinoLoggerService } from './pino.service';
+import { env } from 'process';
 
 export type TokenUsage = {
     input_tokens?: number;
@@ -56,6 +58,7 @@ export class ObservabilityService {
     };
 
     // ---------- bootstrap ----------
+    constructor(private readonly logger: PinoLoggerService) {}
 
     createObservabilityConfig(
         config: DatabaseConnection,
@@ -125,14 +128,35 @@ export class ObservabilityService {
         const key = this.makeKey(config, options.serviceName);
 
         let obs = this.instances.get(key);
+
         if (!obs) {
             const obsConfig = this.createObservabilityConfig(config, options);
             obs = getObservability(obsConfig);
             try {
                 await obs.initialize();
-            } catch {
-                // segue sem derrubar a app; console ainda recebe logs
+                console.log('@@@Observability initialized');
+                this.logger.log({
+                    message: 'Observability initialized',
+                    context: ObservabilityService.name,
+                    metadata: {
+                        config,
+                        options,
+                    },
+                });
+            } catch (error) {
+                console.log('@@@Error initializing observability');
+                this.logger.error({
+                    message: 'Error initializing observability',
+                    context: ObservabilityService.name,
+                    error,
+                    metadata: {
+                        config,
+                        options,
+                    },
+                });
             }
+
+            console.log('@@@Observability set');
             this.instances.set(key, obs);
         }
 
@@ -143,6 +167,7 @@ export class ObservabilityService {
                 (ctx as any).sessionId = options.threadId;
             }
             obs.setContext(ctx);
+            console.log('@@@Observability set context');
         }
 
         return obs;
@@ -180,23 +205,31 @@ export class ObservabilityService {
             );
         }
 
-        const protocol = config.port ? 'mongodb' : 'mongodb+srv';
+        // const protocol = config.port ? 'mongodb' : 'mongodb+srv';
 
-        const hostItems = String(config.host)
-            .split(',')
-            .map((raw) => raw.trim())
-            .filter(Boolean)
-            .map((h) => ({ name: h, port: config.port }));
+        // const hostItems = String(config.host)
+        //     .split(',')
+        //     .map((raw) => raw.trim())
+        //     .filter(Boolean)
+        //     .map((h) => ({ name: h, port: config.port }));
+        const env = process.env.API_DATABASE_ENV ?? process.env.API_NODE_ENV;
 
-        return new ConnectionString('', {
+        let uri = new ConnectionString('', {
             user: config.username,
             password: config.password,
-            protocol,
-            hosts:
-                hostItems.length > 0
-                    ? hostItems
-                    : [{ name: config.host, port: config.port }],
+            protocol: config.port ? 'mongodb' : 'mongodb+srv',
+            hosts: [{ name: config.host, port: config.port }],
         }).toString();
+
+        const shouldAppendClusterConfig =
+            !['development', 'test'].includes(env ?? '') &&
+            !!process.env.API_MG_DB_PRODUCTION_CONFIG;
+
+        if (shouldAppendClusterConfig) {
+            uri = `${uri}/${process.env.API_MG_DB_PRODUCTION_CONFIG}`;
+        }
+
+        return uri;
     }
 
     generateCorrelationId(): string {
@@ -356,7 +389,9 @@ export class ObservabilityService {
                 });
             }
 
-            if (reset) tracker.reset(runKey ?? undefined);
+            if (reset) {
+                tracker.reset(runKey ?? undefined);
+            }
 
             return {
                 runKey,

@@ -3,7 +3,6 @@ import { TeamsModule } from './team.module';
 import { TeamAutomationModule } from './teamAutomation.module';
 import { AutomationStrategyModule } from './automationStrategy.module';
 import { AutomationModule } from './automation.module';
-import { JiraModule } from '@/modules/jira.module';
 import { IntegrationModule } from './integration.module';
 import { AuthIntegrationModule } from './authIntegration.module';
 import { PlatformIntegrationModule } from './platformIntegration.module';
@@ -26,7 +25,6 @@ import { CheckIfPRCanBeApprovedCronProvider } from '@/core/infrastructure/adapte
         forwardRef(() => ParametersModule),
         forwardRef(() => KodyRulesModule),
         PullRequestsModule,
-        JiraModule,
         TeamAutomationModule,
         AutomationModule,
         AutomationStrategyModule,

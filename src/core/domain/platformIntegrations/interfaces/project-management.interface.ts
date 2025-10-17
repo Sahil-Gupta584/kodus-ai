@@ -5,12 +5,8 @@ import { ColumnBoard } from '../types/projectManagement/columnBoard.type';
 import { Domain } from '../types/projectManagement/domain.type';
 import { Project } from '../types/projectManagement/project.type';
 import { User } from '../types/projectManagement/user.type';
-import {
-    Item,
-    WorkItem,
-} from '../types/projectManagement/workItem.type';
+import { Item, WorkItem } from '../types/projectManagement/workItem.type';
 import { ICommonPlatformIntegrationService } from './common.interface';
-import { ISprint } from './jiraSprint.interface';
 import { Epic } from '../types/projectManagement/epic.type';
 import { ColumnsConfigResult } from '../../integrationConfigs/types/projectManagement/columns.type';
 import { ProjectManagementConnectionStatus } from '@/shared/utils/decorators/validate-project-management-integration.decorator';
@@ -66,21 +62,6 @@ export interface IProjectManagementService
         filters: WorkItemsFilter;
     }): Promise<Item[]>;
     getWorkItemTypes(params: any);
-    getAllSprintsForTeam(
-        organizationAndTeamData: OrganizationAndTeamData,
-        originBoardId?: number,
-    ): Promise<ISprint[]>;
-    getCurrentSprintForTeam(
-        organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<ISprint>;
-    getLastCompletedSprintForTeam(
-        organizationAndTeamData: OrganizationAndTeamData,
-        originBoardId?: number,
-    ): Promise<ISprint>;
-    getSprintByProjectManagementId(
-        organizationAndTeamData: OrganizationAndTeamData,
-        projectManagementSprintId: string,
-    ): Promise<ISprint>;
     getWorkItemsBySprint(
         organizationAndTeamData: OrganizationAndTeamData,
         projectManagementSprintId: string,
@@ -91,12 +72,6 @@ export interface IProjectManagementService
         organizationAndTeamData: OrganizationAndTeamData,
         filters: WorkItemsFilter,
     ): Promise<Item[]>;
-
-    getNextSprintForTeam(
-        organizationAndTeamData: any,
-        currentSprintId: string,
-        originBoardId?: number,
-    ): Promise<ISprint>;
 
     getEpicsAndLinkedItems(params: any): Promise<Epic[]>;
 }

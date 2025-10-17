@@ -4,10 +4,7 @@ import type {
     TokenUsageQueryContract,
     UsageSummaryContract,
 } from '@/core/domain/tokenUsage/contracts/tokenUsage.repository.contract';
-import {
-    ITokenUsageService,
-    TOKEN_USAGE_SERVICE_TOKEN,
-} from '@/core/domain/tokenUsage/contracts/tokenUsage.service.contract';
+import { ITokenUsageService } from '@/core/domain/tokenUsage/contracts/tokenUsage.service.contract';
 import {
     ITokenUsageRepository,
     TOKEN_USAGE_REPOSITORY_TOKEN,
@@ -31,6 +28,4 @@ export class TokenUsageService implements ITokenUsageService {
     ): Promise<UsageSummaryContract> {
         return this.repository.getSummary(query);
     }
-
-    // debug counts removed
 }

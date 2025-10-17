@@ -16,11 +16,11 @@ export class CreateOrUpdateParametersUseCase {
         private readonly logger: PinoLoggerService,
     ) {}
 
-    async execute(
-        parametersKey: ParametersKey,
-        configValue: any,
+    async execute<K extends ParametersKey>(
+        parametersKey: K,
+        configValue: ParametersEntity<K>['configValue'],
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<ParametersEntity | boolean> {
+    ): Promise<ParametersEntity<K> | boolean> {
         try {
             return await this.parametersService.createOrUpdateConfig(
                 parametersKey,

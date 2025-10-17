@@ -17,10 +17,10 @@ export class FindByKeyParametersUseCase {
         private readonly logger: PinoLoggerService,
     ) {}
 
-    async execute(
-        parametersKey: ParametersKey,
+    async execute<K extends ParametersKey>(
+        parametersKey: K,
         organizationAndTeamData: OrganizationAndTeamData,
-    ): Promise<IParameters> {
+    ): Promise<IParameters<K>> {
         try {
             const parameter = await this.parametersService.findByKey(
                 parametersKey,
@@ -46,7 +46,9 @@ export class FindByKeyParametersUseCase {
         }
     }
 
-    private getUpdatedParamaters(parameter: ParametersEntity) {
+    private getUpdatedParamaters<K extends ParametersKey>(
+        parameter: ParametersEntity<K>,
+    ) {
         if (parameter.configKey === ParametersKey.CODE_REVIEW_CONFIG) {
             /**
              * TEMPORARY LOGIC: Show/hide code review version toggle based on user registration date
@@ -83,6 +85,7 @@ export class FindByKeyParametersUseCase {
                 uuid: parameter.uuid,
                 createdAt: parameter.createdAt,
                 updatedAt: parameter.updatedAt,
+                active: parameter.active,
             };
         } else {
             return {
@@ -90,6 +93,7 @@ export class FindByKeyParametersUseCase {
                 configValue: parameter.configValue,
                 team: parameter.team,
                 uuid: parameter.uuid,
+                active: parameter.active,
             };
         }
     }

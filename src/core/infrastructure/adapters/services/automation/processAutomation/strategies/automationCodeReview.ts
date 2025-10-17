@@ -88,6 +88,7 @@ export class AutomationCodeReviewService
             teamAutomationId,
             origin,
             action,
+            triggerCommentId,
         } = payload;
 
         let execution: IAutomationExecution | null = null;
@@ -152,6 +153,7 @@ export class AutomationCodeReviewService
                     origin || 'automation',
                     action,
                     execution.uuid,
+                    triggerCommentId,
                 );
 
             await this._handleExecutionCompletion(execution, result, payload);
