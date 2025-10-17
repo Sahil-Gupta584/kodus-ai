@@ -2186,7 +2186,7 @@ export class GitlabService
 
             const originalCommit = comments?.find(
                 (comment) => comment.id === filters.discussionId,
-            )?.notes[0]?.body;
+            )?.notes[0]
 
             if (filters?.discussionId === undefined) {
                 return comments;
@@ -2198,12 +2198,13 @@ export class GitlabService
                             id: note.id,
                             body: note.body,
                             createdAt: note.created_at,
-                            originalCommit: { body: originalCommit },
+                            originalCommit: { body: originalCommit.body, id: originalCommit.id },
                             author: {
                                 id: note.author.id,
                                 username: note.author.username,
                                 name: note.author.name,
                             },
+                            
                         })),
                     )
                     .sort(

@@ -23,11 +23,11 @@ export interface IIssue {
     updatedAt: string;
     prNumbers?: string[];
     owner?: {
-        gitId: string;
+        gitId: number;
         username: string;
     };
     reporter?: { 
-        gitId: string;
+        gitId: number;
         username: string;
     };
 }

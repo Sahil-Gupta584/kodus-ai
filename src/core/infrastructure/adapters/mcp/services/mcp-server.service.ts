@@ -4,7 +4,7 @@ import { Response } from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { nanoid } from 'nanoid';
-import { CodeManagementTools, KodyRulesTools } from '../tools';
+import { CodeManagementTools, KodyIssuesTools, KodyRulesTools } from '../tools';
 import { toShape } from '../types/mcp-tool.interface';
 
 interface McpSession {
@@ -21,6 +21,7 @@ export class McpServerService {
     constructor(
         private readonly codeManagementTools: CodeManagementTools,
         private readonly kodyRulesTools: KodyRulesTools,
+        private readonly kodyIssuesTools: KodyIssuesTools,
         private readonly logger: PinoLoggerService,
     ) {}
 
@@ -85,7 +86,8 @@ export class McpServerService {
         // Get all tools from tool classes
         const codeManagementTools = this.codeManagementTools.getAllTools();
         const kodyRulesTools = this.kodyRulesTools.getAllTools();
-        const allTools = [...codeManagementTools, ...kodyRulesTools];
+        const kodyIssuesTools = this.kodyIssuesTools.getAllTools();
+        const allTools = [...codeManagementTools, ...kodyRulesTools, ...kodyIssuesTools];
 
         for (const tool of allTools) {
             server.registerTool(

@@ -6,12 +6,13 @@ import {
     IsObject,
     IsOptional,
     ValidateNested,
+    IsNumber,
 } from 'class-validator';
 import { IRepositoryToIssues } from '../../adapters/services/kodyIssuesManagement/domain/kodyIssuesManagement.interface';
 import { Type } from 'class-transformer';
 
 class GitUserDto {
-    @IsString() gitId: string;
+    @IsNumber() gitId: number;
     @IsString() username: string;
 }
 
