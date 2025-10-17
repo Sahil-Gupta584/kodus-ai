@@ -147,10 +147,10 @@ export class KodyIssuesTools {
                             platform: args.repository.platformType,
                         },
                         owner: {
-                            gitId: args.owner.gitId,
+                            gitId: args.owner.gitId.toString(),
                             username: args.owner.username,
                         },
-                        reporter: { gitId: 1, username: 'Kodus-MCP' },
+                        reporter: { gitId: 'kodus', username: 'Kodus-MCP' },
                         contributingSuggestions: [
                             {
                                 id: suggestion?.id,

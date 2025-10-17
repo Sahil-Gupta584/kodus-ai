@@ -23,11 +23,11 @@ export class IssuesEntity implements Entity<IIssue> {
     public createdAt: string;
     public updatedAt: string;
     public owner?: {
-        gitId: number;
+        gitId: string;
         username: string;
     };
     public reporter?: {      
-        gitId: number;
+        gitId: string;
         username: string;
     };
 

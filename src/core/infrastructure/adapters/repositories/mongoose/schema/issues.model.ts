@@ -46,13 +46,13 @@ export class IssuesModel extends CoreDocument {
 
     @Prop({ type: Object, required: false })
     public owner?: {
-        gitId: number;
+        gitId: string;
         username: string;
     };
 
     @Prop({ type: Object, required: false })
     public reporter?: {
-        gitId: number;
+        gitId: string;
         username: string;
     };
 }

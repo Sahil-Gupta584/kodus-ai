@@ -46,7 +46,7 @@ export class UpdateOrCreateIssuesParameterUseCase {
 
     async execute(
         body: UpdateOrCreateIssuesParameterBodyDto,
-    ): Promise<ParametersEntity | boolean> {
+    ): Promise<ParametersEntity<ParametersKey.ISSUE_CREATION_CONFIG> | boolean> {
         try {
             const { organizationAndTeamData, configValue } = body;
             const { organizationId, teamId } = organizationAndTeamData;

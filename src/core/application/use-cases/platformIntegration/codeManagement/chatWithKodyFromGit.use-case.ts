@@ -501,7 +501,6 @@ export class ChatWithKodyFromGitUseCase {
                         params.payload?.object_attributes?.discussion_id ?? '',
                 },
             });
-        console.log('allComments', JSON.stringify(allComments));
 
         const commentId = this.getCommentId(params);
         const comment =
@@ -1347,7 +1346,6 @@ export class ChatWithKodyFromGitUseCase {
         thread: any;
     }): Promise<string> {
         const { prepareContext, organizationAndTeamData, thread } = context;
-        console.log('prepareContext', JSON.stringify(prepareContext));
 
         return await this.conversationAgentUseCase.execute({
             prompt: prepareContext.userQuestion,

@@ -280,7 +280,7 @@ export class KodyIssuesManagementService
                             id: suggestion.id,
                             prNumber: context.pullRequest.number,
                             prAuthor: {
-                                id: pullRequest?.user?.id || '',
+                                id: pullRequest?.user?.id.toString() || '',
                                 name: pullRequest?.user?.name || '',
                             },
                         },
@@ -299,7 +299,7 @@ export class KodyIssuesManagementService
                         username: pullRequest.user.username,
                     },
                     reporter: {
-                        gitId: 'kody',
+                        gitId: 'kodus',
                         username: 'Kodus',
                     },
                     createdAt: new Date().toISOString(),
