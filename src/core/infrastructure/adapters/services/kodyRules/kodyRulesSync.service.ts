@@ -7,6 +7,7 @@ import { CreateOrUpdateKodyRulesUseCase } from '@/core/application/use-cases/kod
 import {
     KodyRulesOrigin,
     KodyRulesScope,
+    KodyRulesStatus,
 } from '@/core/domain/kodyRules/interfaces/kodyRules.interface';
 import {
     CreateKodyRuleDto,
@@ -33,6 +34,9 @@ import * as path from 'path';
 import { ObservabilityService } from '../logger/observability.service';
 import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
 import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
+import { ExternalReferenceDetectorService } from './externalReferenceDetector.service';
+import { GetAdditionalInfoHelper } from '@/shared/utils/helpers/getAdditionalInfo.helper';
+import { kodyRulesIDEGeneratorSchema } from '@/shared/utils/langchainCommon/prompts/kodyRules';
 
 type SyncTarget = {
     organizationAndTeamData: OrganizationAndTeamData;
@@ -59,6 +63,8 @@ export class KodyRulesSyncService {
         private readonly promptRunnerService: PromptRunnerService,
         private readonly permissionValidationService: PermissionValidationService,
         private readonly observabilityService: ObservabilityService,
+        private readonly externalReferenceDetectorService: ExternalReferenceDetectorService,
+        private readonly getAdditionalInfoHelper: GetAdditionalInfoHelper,
     ) {}
 
     /**
@@ -709,10 +715,13 @@ export class KodyRulesSyncService {
                     organizationAndTeamData,
                 });
 
-                const oneRule = rules.find(
+                const oneRule = rules?.find(
                     (r) => r && typeof r === 'object' && r.title && r.rule,
                 );
-                if (!oneRule) continue;
+
+                if (!oneRule) {
+                    continue;
+                }
 
                 const existing = await this.findRuleBySourcePath({
                     organizationAndTeamData,
@@ -749,7 +758,7 @@ export class KodyRulesSyncService {
                         : [],
                 } as CreateKodyRuleDto;
 
-                const result = await this.upsertRule.execute(
+                await this.upsertRule.execute(
                     dto,
                     organizationAndTeamData.organizationId,
                 );
@@ -865,10 +874,8 @@ export class KodyRulesSyncService {
                 params.organizationAndTeamData,
             );
 
-        const mainProvider =
-            LLMModelProvider.NOVITA_MOONSHOTAI_KIMI_K2_INSTRUCT;
-        const mainFallback =
-            LLMModelProvider.NOVITA_QWEN3_235B_A22B_THINKING_2507;
+        const mainProvider = LLMModelProvider.GEMINI_2_5_FLASH;
+        const mainFallback = LLMModelProvider.GEMINI_2_5_PRO;
         const mainRun = 'kodyRulesFileToRules';
 
         const promptRunner = new BYOKPromptRunnerService(
@@ -891,7 +898,15 @@ export class KodyRulesSyncService {
                 exec: async (callbacks) => {
                     return await promptRunner
                         .builder()
-                        .setParser(ParserType.JSON)
+                        .setParser(
+                            ParserType.ZOD,
+                            kodyRulesIDEGeneratorSchema,
+                            {
+                                provider: LLMModelProvider.OPENAI_GPT_4O_MINI,
+                                fallbackProvider:
+                                    LLMModelProvider.OPENAI_GPT_4O,
+                            },
+                        )
                         .setLLMJsonMode(true)
                         .setPayload({
                             filePath: params.filePath,
@@ -901,21 +916,32 @@ export class KodyRulesSyncService {
                         .addPrompt({
                             role: PromptRole.SYSTEM,
                             prompt: [
-                                'Convert repository rule files (Cursor, Claude, GitHub rules, coding standards, etc.) into a JSON array of Kody Rules. IMPORTANT: Enforce exactly one rule per file. If multiple candidate rules exist, merge them concisely into one or pick the most representative. Return an array with a single item or [].',
+                                'Convert repository rule files (Cursor, Claude, GitHub rules, coding standards, etc.) into a JSON array of Kody Rules. IMPORTANT: Enforce exactly one rule per file. If multiple candidate rules exist, merge them COMPREHENSIVELY into one unified rule that preserves all essential details.',
                                 'Output ONLY a valid JSON array. If none, output []. No comments or explanations.',
                                 'Each item MUST match exactly:',
                                 '{"title": string, "rule": string, "path": string, "sourcePath": string, "severity": "low"|"medium"|"high"|"critical", "scope"?: "file"|"pull-request", "status"?: "active"|"pending"|"rejected"|"deleted", "examples": [{ "snippet": string, "isCorrect": boolean }], "sourceSnippet"?: string}',
                                 'Detection: extract a rule only if the text imposes a requirement/restriction/convention/standard.',
                                 'Severity map: must/required/security/blocker → "high" or "critical"; should/warn → "medium"; tip/info/optional → "low".',
                                 'Scope: "file" for code/content; "pull-request" for PR titles/descriptions/commits/reviewers/labels.',
-                                'Status: "active" if mandatory; "pending" if suggestive; "deleted" if deprecated.',
+                                'Status: "active"',
                                 'path (target GLOB): use declared globs/paths when present (frontmatter like "globs:" or explicit sections). If none, set "**/*". If multiple, join with commas (e.g., "services/**,api/**").',
                                 'sourcePath: ALWAYS set to the exact file path provided in input.',
                                 'sourceSnippet: when possible, include an EXACT copy (verbatim) of the bullet/line/paragraph from the file that led to this rule. Do NOT paraphrase. If none is suitable, omit this key.',
-                                'Examples: prefer 1 incorrect and 1 correct (minimal snippets).',
+
+                                '**CRITICAL: The "rule" field must capture ALL essential information from the source file:**',
+                                '- Include ALL prohibited patterns/anti-patterns (list each one explicitly)',
+                                '- Include ALL recommended patterns/best practices (with code examples when present)',
+                                '- Include ALL key principles, guidelines, and rationale',
+                                '- Include configuration instructions and setup steps when present',
+                                '- Include references to real examples in the codebase when mentioned',
+                                '- Use markdown formatting (lists, code blocks, headers) to organize complex rules clearly',
+                                '- DO NOT summarize or compress - preserve specific method names, class names, code snippets, and technical details',
+                                '- The rule should be self-contained and actionable without needing to read the source file',
+
+                                'Examples: prefer 1 incorrect and 1 correct (minimal snippets). When the source has many examples, include the most representative ones.',
                                 'Language: keep the rule language consistent with the source (EN or PT-BR).',
                                 'Do NOT include keys like repositoryId, origin, createdAt, updatedAt, uuid, or any extra keys.',
-                                'Keep strings concise and strictly typed.',
+                                'Keep strings strictly typed, but COMPREHENSIVE in content - do not sacrifice completeness for brevity.',
                             ].join(' '),
                         })
                         .addPrompt({
@@ -929,26 +955,66 @@ export class KodyRulesSyncService {
                 },
             });
 
-            let normalizedResult: any[] = [];
+            if (!result?.rules || result.rules.length === 0) return [];
 
-            if (result) {
-                if (Array.isArray(result)) {
-                    normalizedResult = result;
-                } else if (typeof result === 'object') {
-                    normalizedResult = [result]; // Objeto único → array
-                }
+            let repositoryName: string;
+            try {
+                repositoryName =
+                    await this.getAdditionalInfoHelper.getRepositoryNameByOrganizationAndRepository(
+                        params.organizationAndTeamData.organizationId,
+                        params.repositoryId,
+                    );
+            } catch (error) {
+                this.logger.warn({
+                    message:
+                        'Failed to resolve repository name, using ID as fallback',
+                    context: KodyRulesSyncService.name,
+                    error,
+                    metadata: {
+                        organizationAndTeamData: params.organizationAndTeamData,
+                    },
+                });
+                repositoryName = params.repositoryId;
             }
 
-            if (normalizedResult.length === 0) return [];
+            const rulesWithReferences = await Promise.all(
+                result?.rules.map(async (r) => {
+                    const { references, syncError } =
+                        await this.externalReferenceDetectorService.detectAndResolveReferences(
+                            {
+                                ruleText: r?.rule || '',
+                                repositoryId: params.repositoryId,
+                                repositoryName,
+                                organizationAndTeamData:
+                                    params.organizationAndTeamData,
+                                byokConfig: byokConfigValue,
+                            },
+                        );
 
-            return normalizedResult.map((r) => ({
+                    return {
+                        ...r,
+                        severity:
+                            (r?.severity
+                                ?.toString?.()
+                                .toLowerCase?.() as any) ||
+                            KodyRuleSeverity.MEDIUM,
+                        scope: (r?.scope as any) || KodyRulesScope.FILE,
+                        path: r?.path || params.filePath,
+                        origin: KodyRulesOrigin.USER,
+                        externalReferences:
+                            references.length > 0 ? references : undefined,
+                        syncError,
+                    };
+                }),
+            );
+
+            return rulesWithReferences.map((r) => ({
                 ...r,
-                severity:
-                    (r?.severity?.toString?.().toLowerCase?.() as any) ||
-                    KodyRuleSeverity.MEDIUM,
-                scope: (r?.scope as any) || KodyRulesScope.FILE,
-                path: r?.path || params.filePath,
-                origin: KodyRulesOrigin.USER,
+                status: KodyRulesStatus.ACTIVE,
+                examples: r?.examples?.map((e) => ({
+                    snippet: e?.snippet || '',
+                    isCorrect: e?.isCorrect || false,
+                })),
             }));
         } catch (error) {
             const fbRun = 'kodyRulesFileToRulesRaw';
@@ -998,23 +1064,72 @@ export class KodyRulesSyncService {
                     });
 
                 const parsed = this.extractJsonArray(raw);
-                if (!Array.isArray(parsed)) return [];
+                if (!Array.isArray(parsed)) {
+                    return [];
+                }
 
-                return parsed.map((r) => ({
-                    ...r,
-                    severity:
-                        (r?.severity?.toString?.().toLowerCase?.() as any) ||
-                        KodyRuleSeverity.MEDIUM,
-                    scope: (r?.scope as any) || KodyRulesScope.FILE,
-                    path: r?.path || params.filePath,
-                    sourcePath: r?.sourcePath || params.filePath,
-                    origin: KodyRulesOrigin.USER,
-                }));
+                let repositoryName: string;
+                try {
+                    repositoryName =
+                        await this.getAdditionalInfoHelper.getRepositoryNameByOrganizationAndRepository(
+                            params.organizationAndTeamData.organizationId,
+                            params.repositoryId,
+                        );
+                } catch (error) {
+                    this.logger.warn({
+                        message:
+                            'Failed to resolve repository name, using ID as fallback',
+                        context: KodyRulesSyncService.name,
+                        error,
+                        metadata: {
+                            organizationAndTeamData:
+                                params.organizationAndTeamData,
+                        },
+                    });
+                    repositoryName = params.repositoryId;
+                }
+
+                const rulesWithReferences = await Promise.all(
+                    parsed.map(async (r) => {
+                        const { references, syncError } =
+                            await this.externalReferenceDetectorService.detectAndResolveReferences(
+                                {
+                                    ruleText: r?.rule || '',
+                                    repositoryId: params.repositoryId,
+                                    repositoryName,
+                                    organizationAndTeamData:
+                                        params.organizationAndTeamData,
+                                    byokConfig: byokConfigValue,
+                                },
+                            );
+
+                        return {
+                            ...r,
+                            severity:
+                                (r?.severity
+                                    ?.toString?.()
+                                    .toLowerCase?.() as any) ||
+                                KodyRuleSeverity.MEDIUM,
+                            scope: (r?.scope as any) || KodyRulesScope.FILE,
+                            path: r?.path || params.filePath,
+                            sourcePath: r?.sourcePath || params.filePath,
+                            origin: KodyRulesOrigin.USER,
+                            externalReferences:
+                                references.length > 0 ? references : undefined,
+                            syncError,
+                        };
+                    }),
+                );
+
+                return rulesWithReferences;
             } catch (fallbackError) {
                 this.logger.error({
                     message: 'LLM conversion failed for rule file',
                     context: KodyRulesSyncService.name,
-                    metadata: params,
+                    metadata: {
+                        ...params,
+                        organizationAndTeamData: params.organizationAndTeamData,
+                    },
                     error: fallbackError,
                 });
                 return [];

@@ -14,6 +14,7 @@ import {
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
 import { PermissionValidationService } from '@/ee/shared/services/permissionValidation.service';
 import { BYOKPromptRunnerService } from '@/shared/infrastructure/services/tokenTracking/byokPromptRunner.service';
+import { ObservabilityService } from '../../logger/observability.service';
 
 @Injectable()
 export abstract class BaseAgentProvider {
@@ -39,6 +40,7 @@ export abstract class BaseAgentProvider {
     constructor(
         protected readonly promptRunnerService: PromptRunnerService,
         protected readonly permissionValidationService: PermissionValidationService,
+        protected readonly observabilityService: ObservabilityService,
     ) {}
 
     /**
@@ -56,7 +58,10 @@ export abstract class BaseAgentProvider {
     /**
      * Creates an LLM adapter with BYOK support, metadata tracking, and proper error handling
      */
-    protected createLLMAdapter(moduleName: string): LLMAdapter {
+    protected createLLMAdapter(
+        moduleName: string,
+        runName: string,
+    ): LLMAdapter {
         const self = this;
         const wrappedLLM = {
             name: 'agent-configurable-llm',
@@ -80,51 +85,78 @@ export abstract class BaseAgentProvider {
                     self.byokConfig,
                 );
 
-                let builder = promptRunner
-                    .builder()
-                    .setParser(ParserType.STRING);
+                const spanName = `${moduleName}::${runName}`;
+                const spanAttrs = {
+                    type: promptRunner.executeMode,
+                    organizationId:
+                        self.organizationAndTeamData?.organizationId,
+                    // prNumber: self?.number,
+                };
 
-                for (const msg of lcMessages) {
-                    const role =
-                        msg.type === 'system'
-                            ? PromptRole.SYSTEM
-                            : PromptRole.USER;
+                const { result } = await self.observabilityService.runLLMInSpan(
+                    {
+                        spanName,
+                        runName,
+                        attrs: spanAttrs,
+                        exec: async (callbacks) => {
+                            let builder = promptRunner
+                                .builder()
+                                .setParser(ParserType.STRING)
+                                .setPayload({});
 
-                    builder = builder.addPrompt({
-                        prompt: msg.content,
-                        role: role,
-                    });
-                }
+                            for (const msg of lcMessages) {
+                                const role =
+                                    msg.type === 'system'
+                                        ? PromptRole.SYSTEM
+                                        : PromptRole.USER;
 
-                // Execute with metadata
-                const result = await builder
-                    .setTemperature(
-                        options?.temperature ??
-                            self.defaultLLMConfig.temperature,
-                    )
-                    .setMaxTokens(
-                        options?.maxTokens ?? self.defaultLLMConfig.maxTokens,
-                    )
-                    .setMaxReasoningTokens(
-                        options?.maxReasoningTokens ??
-                            self.defaultLLMConfig.maxReasoningTokens,
-                    )
-                    .addMetadata({
-                        module: moduleName,
-                        submodule: 'kodus-flow',
-                        organizationId:
-                            self.organizationAndTeamData?.organizationId,
-                        teamId: self.organizationAndTeamData?.teamId,
-                        provider: self.byokConfig?.main?.provider || provider,
-                        fallbackProvider:
-                            self.byokConfig?.fallback?.provider ||
-                            fallbackProvider,
-                        model: self.byokConfig?.main?.model,
-                        fallbackModel: self.byokConfig?.fallback?.model,
-                        type: promptRunner.executeMode,
-                    })
-                    .setRunName(`${moduleName}`)
-                    .execute();
+                                builder = builder.addPrompt({
+                                    prompt: msg.content,
+                                    role: role,
+                                });
+                            }
+                            return await builder
+                                .setTemperature(
+                                    options?.temperature ??
+                                        self.defaultLLMConfig.temperature,
+                                )
+                                .setMaxTokens(
+                                    options?.maxTokens ??
+                                        self.defaultLLMConfig.maxTokens,
+                                )
+                                .setMaxReasoningTokens(
+                                    options?.maxReasoningTokens ??
+                                        self.defaultLLMConfig
+                                            .maxReasoningTokens,
+                                )
+                                .addMetadata({
+                                    module: moduleName,
+                                    submodule: 'kodus-flow',
+                                    organizationId:
+                                        self.organizationAndTeamData
+                                            ?.organizationId,
+                                    teamId: self.organizationAndTeamData
+                                        ?.teamId,
+                                    provider:
+                                        self.byokConfig?.main?.provider ||
+                                        provider,
+                                    fallbackProvider:
+                                        self.byokConfig?.fallback?.provider ||
+                                        fallbackProvider,
+                                    model:
+                                        self.byokConfig?.main?.model ||
+                                        provider,
+                                    fallbackModel:
+                                        self.byokConfig?.fallback?.model ||
+                                        fallbackProvider,
+                                    type: promptRunner.executeMode,
+                                })
+                                .addCallbacks(callbacks)
+                                .setRunName(`${moduleName}`)
+                                .execute();
+                        },
+                    },
+                );
 
                 return {
                     content: result,

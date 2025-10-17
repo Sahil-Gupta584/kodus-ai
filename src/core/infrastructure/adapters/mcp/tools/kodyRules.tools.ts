@@ -11,6 +11,7 @@ import {
     IKodyRule,
     IKodyRulesExample,
     IKodyRulesInheritance,
+    IKodyRuleExternalReference,
     KodyRulesOrigin,
     KodyRulesScope,
     KodyRulesStatus,
@@ -34,6 +35,8 @@ type KodyRuleInput = Required<
         | 'severity'
         | 'sourcePath'
         | 'sourceAnchor'
+        | 'externalReferences'
+        | 'syncError'
     >
 > & {
     severity: KodyRuleSeverity;

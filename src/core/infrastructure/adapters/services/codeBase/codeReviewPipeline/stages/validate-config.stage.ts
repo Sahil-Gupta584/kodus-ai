@@ -27,6 +27,7 @@ import {
     ORGANIZATION_PARAMETERS_SERVICE_TOKEN,
 } from '@/core/domain/organizationParameters/contracts/organizationParameters.service.contract';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
+import { PlatformType } from '@/shared/domain/enums/platform-type.enum';
 
 @Injectable()
 export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineContext> {
@@ -151,6 +152,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
             context.pullRequest.isDraft,
             config,
             context.origin || '',
+            context.platformType,
             context.organizationAndTeamData,
             config.baseBranchDefault, // API base branch from repository
         );
@@ -456,6 +458,7 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         isDraft: boolean,
         config: any,
         origin: string,
+        platformType: PlatformType,
         organizationAndTeamData: OrganizationAndTeamData,
         apiBaseBranch?: string,
     ): boolean {
@@ -480,7 +483,13 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 config.baseBranches,
                 apiBaseBranch || targetBranch,
             );
-            const expression = mergedBranches.join(', ');
+
+            const normalizedBranches = this.normalizeBranchesForPlatform(
+                mergedBranches,
+                platformType,
+            );
+
+            const expression = normalizedBranches.join(', ');
             const reviewConfig = processExpression(expression);
 
             const resultValidation = shouldReviewBranches(
@@ -489,7 +498,6 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
                 reviewConfig,
             );
 
-            // Log das configurações usadas para gerar o resultValidation
             this.logger.log({
                 message: '🔍 Branch Review Validation',
                 context: 'ValidateConfigStage',
@@ -518,5 +526,47 @@ export class ValidateConfigStage extends BasePipelineStage<CodeReviewPipelineCon
         }
 
         return true;
+    }
+
+    /**
+     * Normalizes branch patterns for different platforms
+     * Azure DevOps adds refs/heads/ prefix to all branches
+     * This method adds the prefix to user-configured patterns for compatibility
+     */
+    private normalizeBranchesForPlatform(
+        branches: string[],
+        platformType: PlatformType,
+    ): string[] {
+        if (platformType !== PlatformType.AZURE_REPOS) {
+            return branches;
+        }
+
+        return branches.map((branch) => {
+            if (branch.startsWith('refs/heads/')) {
+                return branch;
+            }
+
+            if (branch.startsWith('!')) {
+                const pattern = branch.slice(1);
+                if (pattern.startsWith('refs/heads/')) {
+                    return branch;
+                }
+                return `!refs/heads/${pattern}`;
+            }
+
+            if (branch.startsWith('=')) {
+                const pattern = branch.slice(1);
+                if (pattern.startsWith('refs/heads/')) {
+                    return branch;
+                }
+                return `=refs/heads/${pattern}`;
+            }
+
+            if (branch.startsWith('contains:')) {
+                return branch;
+            }
+
+            return `refs/heads/${branch}`;
+        });
     }
 }

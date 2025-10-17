@@ -62,6 +62,7 @@ export class CreateRepositoriesUseCase implements IUseCase {
             await this.codeManagementService.createOrUpdateIntegrationConfig({
                 configKey: IntegrationConfigKey.REPOSITORIES,
                 configValue: params.repositories,
+                type: params.type,
                 organizationAndTeamData: {
                     teamId: teamId,
                     organizationId: organizationId,
@@ -97,10 +98,6 @@ export class CreateRepositoriesUseCase implements IUseCase {
             if (teams && teams?.length > 1) {
                 this.savePlatformConfig(teamId, organizationId);
             }
-
-            await this.syncSelectedRepositoriesKodyRulesUseCase.execute({
-                teamId,
-            });
 
             return {
                 status: true,

@@ -209,6 +209,12 @@ class V2PromptOverridesCategoriesDto {
     descriptions?: V2PromptOverridesCategoriesDescriptionsDto;
 }
 
+class V2PromptOverridesGenerationDto {
+    @IsOptional()
+    @IsString()
+    main?: string;
+}
+
 class V2PromptOverridesDto {
     @IsOptional()
     @ValidateNested()
@@ -219,6 +225,11 @@ class V2PromptOverridesDto {
     @ValidateNested()
     @Type(() => V2PromptOverridesSeverityDto)
     severity?: V2PromptOverridesSeverityDto;
+
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => V2PromptOverridesGenerationDto)
+    generation?: V2PromptOverridesGenerationDto;
 }
 
 class CustomMessagesGlobalSettingsDto {

@@ -41,7 +41,7 @@ export class VertexAdapter implements ProviderAdapter {
                 ? { maxReasoningTokens: resolved.resolvedReasoningTokens }
                 : {}),
             ...buildJsonModeOptions('google_vertex', options?.jsonMode),
-        } as any;
+        };
 
         return new ChatVertexAI(payload);
     }

@@ -11,7 +11,7 @@ import {
 import { PullRequestMessagesEntity } from '@/core/domain/pullRequestMessages/entities/pullRequestMessages.entity';
 import { IPullRequestMessages } from '@/core/domain/pullRequestMessages/interfaces/pullRequestMessages.interface';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { deepDifference } from '@/shared/utils/deep';
+import { deepDifference, deepMerge } from '@/shared/utils/deep';
 import { getDefaultKodusConfigFile } from '@/shared/utils/validateCodeReviewConfigFile';
 import { Inject, Injectable } from '@nestjs/common';
 import { DeepPartial } from 'typeorm';
@@ -76,9 +76,18 @@ export class FindByRepositoryOrDirectoryIdPullRequestMessagesUseCase {
                 : undefined;
             const directoryConfig = this.getConfigs(directoryEntity);
 
+            const resolvedGlobalConfig = deepMerge(defaultConfig, globalConfig);
+            const resolvedRepoConfig = deepMerge(
+                resolvedGlobalConfig,
+                repoConfig,
+            );
+
             const globalDelta = deepDifference(defaultConfig, globalConfig);
-            const repoDelta = deepDifference(globalConfig, repoConfig);
-            const directoryDelta = deepDifference(repoConfig, directoryConfig);
+            const repoDelta = deepDifference(resolvedGlobalConfig, repoConfig);
+            const directoryDelta = deepDifference(
+                resolvedRepoConfig,
+                directoryConfig,
+            );
 
             const formattedDefaultConfig =
                 this.formatDefaultConfig(defaultConfig);
@@ -109,10 +118,6 @@ export class FindByRepositoryOrDirectoryIdPullRequestMessagesUseCase {
                 repositoryId,
                 directoryId,
             };
-            console.log(
-                'startReviewMessage',
-                formattedDirectoryConfig.startReviewMessage,
-            );
 
             return {
                 ...baseEntityObject,

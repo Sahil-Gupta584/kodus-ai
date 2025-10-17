@@ -1,17 +1,17 @@
-import { Injectable, Inject } from '@nestjs/common';
-import { REQUEST } from '@nestjs/core';
-import { Request } from 'express';
 import { OrganizationAndTeamData } from '@/config/types/general/organizationAndTeamData';
-import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
 import { KodyRulesSyncService } from '@/core/infrastructure/adapters/services/kodyRules/kodyRulesSync.service';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
+import { CodeManagementService } from '@/core/infrastructure/adapters/services/platformIntegration/codeManagement.service';
+import { Inject, Injectable } from '@nestjs/common';
+import { REQUEST } from '@nestjs/core';
 
 @Injectable()
-export class SyncSelectedRepositoriesKodyRulesUseCase {
+export class ResyncRulesFromIdeUseCase {
     constructor(
-        private readonly codeManagementService: CodeManagementService,
         private readonly kodyRulesSyncService: KodyRulesSyncService,
+        private readonly codeManagementService: CodeManagementService,
         private readonly logger: PinoLoggerService,
+
         @Inject(REQUEST)
         private readonly request: Request & {
             user: { organization: { uuid: string } };
@@ -20,8 +20,8 @@ export class SyncSelectedRepositoriesKodyRulesUseCase {
 
     async execute(params: {
         teamId: string;
-        repositoriesIds?: Array<string | number>;
-    }): Promise<void> {
+        repositoriesIds: string[];
+    }) {
         const organizationAndTeamData: OrganizationAndTeamData = {
             organizationId: this.request.user?.organization?.uuid,
             teamId: params.teamId,
@@ -32,9 +32,7 @@ export class SyncSelectedRepositoriesKodyRulesUseCase {
                 organizationAndTeamData,
             });
 
-            if (!Array.isArray(repos) || repos.length === 0) {
-                return;
-            }
+            if (!Array.isArray(repos) || repos.length === 0) return;
 
             const filtered = repos
                 .filter(
@@ -64,7 +62,7 @@ export class SyncSelectedRepositoriesKodyRulesUseCase {
         } catch (error) {
             this.logger.error({
                 message: 'Failed to sync selected repositories Kody Rules',
-                context: SyncSelectedRepositoriesKodyRulesUseCase.name,
+                context: ResyncRulesFromIdeUseCase.name,
                 error,
                 metadata: {
                     organizationAndTeamData,

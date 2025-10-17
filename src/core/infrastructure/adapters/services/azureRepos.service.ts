@@ -1994,6 +1994,7 @@ export class AzureReposService
                 params.configValue,
                 integration?.uuid,
                 params.organizationAndTeamData,
+                params.type,
             );
 
             this.createWebhook(params.organizationAndTeamData);

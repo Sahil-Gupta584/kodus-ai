@@ -15,6 +15,7 @@ import { SendRulesNotificationUseCase } from './send-rules-notification.use-case
 import { SyncSelectedRepositoriesKodyRulesUseCase } from './sync-selected-repositories.use-case';
 import { GetInheritedRulesKodyRulesUseCase } from './get-inherited-kody-rules.use-case';
 import { GetRulesLimitStatusUseCase } from './get-rules-limit-status.use-case';
+import { ResyncRulesFromIdeUseCase } from './resync-rules-from-ide.use-case';
 
 export const UseCases = [
     CreateOrUpdateKodyRulesUseCase,
@@ -34,4 +35,5 @@ export const UseCases = [
     CheckSyncStatusUseCase,
     GetInheritedRulesKodyRulesUseCase,
     GetRulesLimitStatusUseCase,
+    ResyncRulesFromIdeUseCase,
 ];

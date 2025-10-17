@@ -29,6 +29,8 @@ export interface IKodyRule {
     scope?: KodyRulesScope;
     directoryId?: string;
     inheritance?: IKodyRulesInheritance;
+    externalReferences?: IKodyRuleExternalReference[];
+    syncError?: string;
 }
 
 export interface IKodyRulesExtendedContext {
@@ -44,6 +46,12 @@ export interface IKodyRulesInheritance {
     inheritable: boolean;
     exclude: string[];
     include: string[];
+}
+
+export interface IKodyRuleExternalReference {
+    filePath: string;
+    description?: string;
+    repositoryName?: string;
 }
 
 export enum KodyRulesOrigin {
@@ -77,6 +85,12 @@ export const kodyRulesInheritanceSchema = z.object({
     inheritable: z.boolean(),
     exclude: z.array(z.string()),
     include: z.array(z.string()),
+});
+
+export const kodyRuleExternalReferenceSchema = z.object({
+    filePath: z.string(),
+    description: z.string().optional(),
+    repositoryName: z.string().optional(),
 });
 
 const kodyRulesOriginSchema = z.enum([...Object.values(KodyRulesOrigin)] as [
@@ -115,4 +129,6 @@ export const kodyRuleSchema = z.object({
     scope: kodyRulesScopeSchema.optional(),
     inheritance: kodyRulesInheritanceSchema.optional(),
     directoryId: z.string().optional(),
+    externalReferences: z.array(kodyRuleExternalReferenceSchema).optional(),
+    syncError: z.string().optional(),
 });

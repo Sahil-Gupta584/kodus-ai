@@ -1,4 +1,7 @@
 import z from 'zod';
+import { SeverityLevel } from '../../enums/severityLevel.enum';
+import { CodeReviewConfig } from '@/config/types/general/codeReview.type';
+import { getDefaultKodusConfigFile } from '../../validateCodeReviewConfigFile';
 
 export interface CrossFileAnalysisPayload {
     files: {
@@ -8,6 +11,10 @@ export interface CrossFileAnalysisPayload {
         };
     }[];
     language: string;
+    v2PromptOverrides: Omit<
+        CodeReviewConfig['v2PromptOverrides'],
+        'categories'
+    >;
 }
 
 export const CrossFileAnalysisSchema = z.object({
@@ -22,6 +29,9 @@ export const CrossFileAnalysisSchema = z.object({
             oneSentenceSummary: z.string().min(1),
             relevantLinesStart: z.number().min(1),
             relevantLinesEnd: z.number().min(1),
+            severity: z.enum(
+                Object.values(SeverityLevel) as [string, ...string[]],
+            ),
         }),
     ),
 });
@@ -33,6 +43,39 @@ export type CrossFileAnalysisSchemaType = z.infer<
 export const prompt_codereview_cross_file_analysis = (
     payload: CrossFileAnalysisPayload,
 ) => {
+    const overrides = payload?.v2PromptOverrides || {};
+    const defaults = getDefaultKodusConfigFile()?.v2PromptOverrides;
+
+    const limitText = (text: string, max = 2000): string =>
+        text.length > max ? text.slice(0, max) : text;
+    const getTextOrDefault = (
+        text: string | undefined,
+        fallbackText: string,
+    ): string =>
+        text && typeof text === 'string' && text.trim().length
+            ? limitText(text.trim())
+            : fallbackText;
+
+    const defaultSeverity = defaults?.severity?.flags;
+
+    const defaultCritical = defaultSeverity?.critical;
+    const defaultHigh = defaultSeverity?.high;
+    const defaultMedium = defaultSeverity?.medium;
+    const defaultLow = defaultSeverity?.low;
+
+    const sev = overrides?.severity?.flags || {};
+    const criticalText = getTextOrDefault(sev.critical, defaultCritical);
+    const highText = getTextOrDefault(sev.high, defaultHigh);
+    const mediumText = getTextOrDefault(sev.medium, defaultMedium);
+    const lowText = getTextOrDefault(sev.low, defaultLow);
+
+    const defaultGeneration = defaults?.generation;
+
+    const mainGenText = getTextOrDefault(
+        overrides?.generation?.main,
+        defaultGeneration?.main,
+    );
+
     return `You are Kody PR-Reviewer, a senior engineer specialized in understanding and reviewing code, with deep knowledge of how LLMs function.
 
 # Cross-File Code Analysis
@@ -103,6 +146,22 @@ Look for cross-file issues that require multiple file context:
    - Avoid assuming external frameworks or files not visible in the diff
    - Focus on extracting shared utilities within the current structure
 
+## Severity Assessment
+
+For each confirmed issue, evaluate severity based on impact and scope:
+
+**CRITICAL** - Immediate and severe impact
+${criticalText}
+
+**HIGH** - Significant but not immediate impact
+${highText}
+
+**MEDIUM** - Moderate impact
+${mediumText}
+
+**LOW** - Minimal impact
+${lowText}
+
 ## Line-number constraints (MANDATORY)
 - Numbering starts at **1** inside the corresponding __new_block__.
 - relevantLinesStart = first "+" line that contains the issue.
@@ -127,6 +186,13 @@ Example format for code fields:
 
 ## Output Format
 
+### Issue description
+
+Custom instructions for 'suggestionContent'
+IMPORTANT none of these instructions should be taken into consideration for any other fields such as 'improvedCode'
+
+${mainGenText}
+
 Generate suggestions in JSON format:
 
 \`\`\`json
@@ -141,6 +207,7 @@ Generate suggestions in JSON format:
         "oneSentenceSummary": "brief description of the cross-file issue",
         "relevantLinesStart": number,
         "relevantLinesEnd": number,
+        "severity": "low | medium | high | critical"
     ]
 }
 \`\`\`

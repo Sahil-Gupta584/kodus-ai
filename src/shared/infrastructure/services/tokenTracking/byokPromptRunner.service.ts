@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
     BYOKConfig,
     LLMModelProvider,
+    PromptBuilder,
     PromptRunnerService,
 } from '@kodus/kodus-common/llm';
 import { decrypt } from '@/shared/utils/crypto';
@@ -33,7 +34,7 @@ export class BYOKPromptRunnerService {
      *
      * @returns Configured PromptBuilder ready to use
      */
-    builder(): any {
+    builder() {
         let analysisBuilder = this.basePromptRunnerService
             .builder()
             .setProviders({

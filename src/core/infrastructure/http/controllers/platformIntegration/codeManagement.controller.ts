@@ -112,7 +112,7 @@ export class CodeManagementController {
         checkPermissions(Action.Create, ResourceType.CodeReviewSettings),
     )
     public async createRepositories(
-        @Body() body: { repositories: Repository[]; teamId: string },
+        @Body() body: { repositories: Repository[]; teamId: string; type?: "replace" | "append" },
     ) {
         return this.createRepositoriesUseCase.execute(body);
     }

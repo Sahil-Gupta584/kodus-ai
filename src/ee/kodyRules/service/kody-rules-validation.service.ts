@@ -299,11 +299,54 @@ export class KodyRulesValidationService {
                 return false;
             }
 
+            const currentLevel = this.resolveContextLevel({
+                directoryId,
+                repositoryId,
+            });
+
+            if (
+                (currentLevel === 'repository' &&
+                    repositoryId === rule.repositoryId) ||
+                (currentLevel === 'directory' &&
+                    directoryId === rule.directoryId)
+            ) {
+                return true;
+            }
+
             return (
                 isPathMatch(rule) &&
                 isRepositoryMatch(rule) &&
                 isInheritanceMatch(rule)
             );
         });
+    }
+
+    private resolveContextLevel(params: {
+        directoryId?: string;
+        repositoryId?: string;
+    }): 'global' | 'repository' | 'directory' {
+        if (params.directoryId) {
+            return 'directory';
+        }
+
+        if (params.repositoryId) {
+            return 'repository';
+        }
+
+        return 'global';
+    }
+
+    private resolveRuleLevel(
+        rule: Partial<IKodyRule>,
+    ): 'global' | 'repository' | 'directory' {
+        if (rule?.directoryId) {
+            return 'directory';
+        }
+
+        if (rule?.repositoryId && rule.repositoryId !== 'global') {
+            return 'repository';
+        }
+
+        return 'global';
     }
 }

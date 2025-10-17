@@ -71,7 +71,7 @@ export function resolveModelOptions(
         const desiredLevel = user.reasoningLevel ?? FALLBACK_LEVEL;
         resolvedReasoningLevel = allowedLevels.includes(desiredLevel)
             ? desiredLevel
-            : allowedLevels[0] ?? FALLBACK_LEVEL;
+            : (allowedLevels[0] ?? FALLBACK_LEVEL);
     }
 
     const temperature = caps.supportsTemperature ? user.temperature : undefined;

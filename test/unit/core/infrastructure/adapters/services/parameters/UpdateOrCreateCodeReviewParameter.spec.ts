@@ -1,5 +1,4 @@
 import {
-    BehaviourForExistingDescription,
     CodeReviewConfigWithoutLLMProvider,
     LimitationType,
 } from '@/config/types/general/codeReview.type';
@@ -8,9 +7,7 @@ import { UpdateOrCreateCodeReviewParameterUseCase } from '@/core/application/use
 import { INTEGRATION_CONFIG_SERVICE_TOKEN } from '@/core/domain/integrationConfigs/contracts/integration-config.service.contracts';
 import { PARAMETERS_SERVICE_TOKEN } from '@/core/domain/parameters/contracts/parameters.service.contract';
 import { ParametersEntity } from '@/core/domain/parameters/entities/parameters.entity';
-import { IntegrationConfigService } from '@/core/infrastructure/adapters/services/integrations/integrationConfig.service';
 import { PinoLoggerService } from '@/core/infrastructure/adapters/services/logger/pino.service';
-import { ParametersService } from '@/core/infrastructure/adapters/services/parameters.service';
 import { ParametersKey } from '@/shared/domain/enums/parameters-key.enum';
 import { SeverityLevel } from '@/shared/utils/enums/severityLevel.enum';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -93,7 +90,9 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             };
 
             mockParametersService.findByKey.mockResolvedValue(null);
-            mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue([]);
+            mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue(
+                [],
+            );
 
             const mockResult = new ParametersEntity({
                 uuid: 'uuid',
@@ -101,7 +100,9 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
                 configValue: { global: BASIC_CONFIG_VALUE, repositories: [] },
             });
 
-            mockParametersService.createOrUpdateConfig.mockResolvedValue(mockResult);
+            mockParametersService.createOrUpdateConfig.mockResolvedValue(
+                mockResult,
+            );
 
             const result = await useCase.execute(body);
 
@@ -135,7 +136,9 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             };
 
             mockParametersService.findByKey.mockResolvedValue(null);
-            mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue([]);
+            mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue(
+                [],
+            );
 
             await useCase.execute(body);
 
@@ -179,7 +182,9 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             };
 
             mockParametersService.findByKey.mockResolvedValue(existingConfig);
-            mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue([]);
+            mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue(
+                [],
+            );
 
             await useCase.execute(body);
 
@@ -231,7 +236,9 @@ describe('UpdateOrCreateCodeReviewParameterUseCase', () => {
             };
 
             mockParametersService.findByKey.mockResolvedValue(existingConfig);
-            mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue([]);
+            mockIntegrationConfigService.findIntegrationConfigFormatted.mockResolvedValue(
+                [],
+            );
 
             await useCase.execute(body);
 
