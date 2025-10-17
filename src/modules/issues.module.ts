@@ -28,7 +28,6 @@ import { OrganizationParametersModule } from './organizationParameters.module';
 import { PermissionValidationModule } from '@/ee/shared/permission-validation.module';
 import { UsersModule } from "./user.module";
 import { OrganizationModule } from "./organization.module";
-import { CreateIssueManuallyUseCase } from "@/core/application/use-cases/issues/create-issue-manually.use-case";
 
 const UseCases = [
     GetIssuesByFiltersUseCase,
@@ -37,7 +36,6 @@ const UseCases = [
     GetTotalIssuesUseCase,
     GetIssuesUseCase,
     GetIssueByIdUseCase,
-    CreateIssueManuallyUseCase
 ] as const;
 
 @Module({
