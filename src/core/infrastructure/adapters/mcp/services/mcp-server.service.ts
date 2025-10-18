@@ -87,7 +87,11 @@ export class McpServerService {
         const codeManagementTools = this.codeManagementTools.getAllTools();
         const kodyRulesTools = this.kodyRulesTools.getAllTools();
         const kodyIssuesTools = this.kodyIssuesTools.getAllTools();
-        const allTools = [...codeManagementTools, ...kodyRulesTools, ...kodyIssuesTools];
+        const allTools = [
+            ...codeManagementTools,
+            ...kodyRulesTools,
+            ...kodyIssuesTools,
+        ];
 
         for (const tool of allTools) {
             server.registerTool(
@@ -163,7 +167,12 @@ export class McpServerService {
     getAvailableToolsCount(): number {
         const codeManagementTools = this.codeManagementTools.getAllTools();
         const kodyRulesTools = this.kodyRulesTools.getAllTools();
-        return codeManagementTools.length + kodyRulesTools.length;
+        const kodyIssuesTools = this.kodyIssuesTools.getAllTools();
+        return (
+            codeManagementTools.length +
+            kodyRulesTools.length +
+            kodyIssuesTools.length
+        );
     }
 
     getSessionInfo(sessionId: string): Partial<McpSession> | undefined {

@@ -48,8 +48,12 @@ export class KodyIssuesTools {
                 }),
                 owner: z
                     .object({
-                        gitId: z.number().describe('userId of user from git provider'),
-                        username: z.string().describe('username of user from git provider'),
+                        gitId: z
+                            .number()
+                            .describe('userId of user from git provider'),
+                        username: z
+                            .string()
+                            .describe('username of user from git provider'),
                     })
                     .optional()
                     .describe('Details of pull request author'),
@@ -82,57 +86,55 @@ export class KodyIssuesTools {
             }),
             execute: wrapToolHandler(
                 async (args: InputType) => {
-                    if (!args.pullRequestNumber) {
+                    const { organizationId, pullRequestNumber, repository } =
+                        args;
+
+                    if (
+                        pullRequestNumber === null ||
+                        pullRequestNumber === undefined ||
+                        !repository?.id
+                    ) {
                         this.logger.error({
                             context: KodyIssuesTools.name,
                             message:
-                                "Couldn't found pullRequest number to create an issue via mcp",
-                            metadata: { organizationId: args.organizationId },
+                                "Couldn't find pullRequest number or repository to create an issue via MCP",
+                            metadata: { organizationId },
                         });
                         return { success: false };
                     }
 
-                    if (!args.reporter) {
-                        args.reporter = {
-                            gitId: 1,
-                            username: 'Kody-MCP',
-                        };
-                    }
+                    const reporterInput = args.reporter ?? {
+                        gitId: 1,
+                        username: 'Kody-MCP',
+                    };
 
                     const pullRequest =
                         await this.pullRequestsService.findByNumberAndRepositoryId(
-                            args.pullRequestNumber,
-                            args.repository.id,
-                            { organizationId: args.organizationId },
+                            pullRequestNumber,
+                            repository.id,
+                            { organizationId },
                         );
 
                     if (!pullRequest) {
                         this.logger.error({
                             context: KodyIssuesTools.name,
-                            message: `Couldn't found pullRequest #${args.pullRequestNumber}  to create an issue via mcp`,
-                            metadata: { organizationId: args.organizationId },
+                            message: `Couldn't found pullRequest #${pullRequestNumber}  to create an issue via mcp`,
+                            metadata: { organizationId },
                         });
                         return { success: false };
                     }
 
-                    let suggestion = pullRequest.files
-                        .flatMap((f) => f.suggestions)
-                        .find(
-                            (s) =>
-                                s.comment.id === args.originalKodyCommentId &&
-                                s.deliveryStatus === DeliveryStatus.SENT,
-                        );
+                    const owner =
+                        pullRequest?.user?.id && pullRequest?.user?.username
+                            ? {
+                                  gitId: pullRequest.user.id.toString(),
+                                  username: pullRequest.user.username,
+                              }
+                            : undefined;
 
-                    if (!suggestion) {
-                        this.logger.error({
-                            context: KodyIssuesTools.name,
-                            message: `Couldn't found the related suggestionCommentId, skipping to connect issue with suggestion.`,
-                            metadata: { organizationId: args.organizationId },
-                        });
-                    }
-
+                    const now = new Date().toISOString();
                     const issueInstance: IIssue = {
-                        organizationId: args.organizationId,
+                        organizationId,
                         title: args.title,
                         description: args.description,
                         filePath: args.filePath,
@@ -141,29 +143,77 @@ export class KodyIssuesTools {
                         severity: args.severity,
                         status: IssueStatus.OPEN,
                         repository: {
-                            full_name: pullRequest.repository.fullName,
-                            id: pullRequest.repository.id,
-                            name: pullRequest.repository.name,
-                            platform: args.repository.platformType,
+                            full_name: pullRequest?.repository?.fullName,
+                            id: pullRequest?.repository?.id,
+                            name: pullRequest?.repository?.name,
+                            platform: repository.platformType,
                         },
-                        owner: {
-                            gitId: args.owner.gitId.toString(),
-                            username: args.owner.username,
+                        ...(owner && { owner }),
+                        reporter: {
+                            gitId: reporterInput.gitId?.toString() ?? '1',
+                            username: reporterInput.username,
                         },
-                        reporter: { gitId: 'kodus', username: 'Kodus-MCP' },
-                        contributingSuggestions: [
-                            {
-                                id: suggestion?.id,
-                                prNumber: pullRequest.number,
-                                prAuthor: {
-                                    id: args.owner.gitId.toString(),
-                                    name: args.owner.username,
-                                },
-                            },
-                        ],
-                        createdAt: new Date().toISOString(),
-                        updatedAt: new Date().toISOString(),
+                        contributingSuggestions: [],
+                        createdAt: now,
+                        updatedAt: now,
                     };
+
+                    const resolvedPrAuthor = args.owner
+                        ? {
+                              id: args.owner.gitId?.toString(),
+                              name: args.owner.username,
+                          }
+                        : owner
+                          ? {
+                                id: owner.gitId,
+                                name: owner.username,
+                            }
+                          : undefined;
+
+                    const suggestionFromArgs =
+                        typeof args.originalKodyCommentId !== 'undefined' &&
+                        resolvedPrAuthor
+                            ? {
+                                  id: args.originalKodyCommentId.toString(),
+                                  prNumber: pullRequest?.number,
+                                  prAuthor: resolvedPrAuthor,
+                              }
+                            : undefined;
+
+                    if (
+                        suggestionFromArgs?.id &&
+                        suggestionFromArgs.prNumber &&
+                        suggestionFromArgs.prAuthor.id
+                    ) {
+                        issueInstance.contributingSuggestions.push(
+                            suggestionFromArgs,
+                        );
+                    } else {
+                        const suggestion = pullRequest.files
+                            ?.flatMap((file) => file.suggestions ?? [])
+                            .find(
+                                (candidate) =>
+                                    candidate.comment?.id ===
+                                        args.originalKodyCommentId &&
+                                    candidate.deliveryStatus ===
+                                        DeliveryStatus.SENT,
+                            );
+
+                        if (suggestion?.id && resolvedPrAuthor) {
+                            issueInstance.contributingSuggestions.push({
+                                id: suggestion.id,
+                                prNumber: pullRequest.number,
+                                prAuthor: resolvedPrAuthor,
+                            });
+                        } else {
+                            this.logger.error({
+                                context: KodyIssuesTools.name,
+                                message: `Couldn't found the related suggestionCommentId, skipping to connect issue with suggestion.`,
+                                metadata: { organizationId },
+                            });
+                        }
+                    }
+
                     const issue =
                         await this.issuesService.create(issueInstance);
                     return { success: true, data: issue };
