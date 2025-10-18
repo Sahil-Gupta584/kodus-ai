@@ -86,11 +86,7 @@ export class KodyIssuesManagementService
 
             const issuesConfigValue = issuesConfig?.configValue;
 
-            const automaticCreationEnabled =
-                issuesConfigValue?.automaticCreationEnabled;
-
-            const shouldAutomaticallyCreateIssues =
-                automaticCreationEnabled !== false;
+            const shouldAutomaticallyCreateIssues = issuesConfigValue !== false;
 
             if (shouldAutomaticallyCreateIssues) {
                 this.logger.log({
