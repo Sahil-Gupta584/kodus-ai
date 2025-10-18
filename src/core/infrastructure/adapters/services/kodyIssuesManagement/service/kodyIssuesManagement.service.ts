@@ -84,7 +84,15 @@ export class KodyIssuesManagementService
                 params.organizationAndTeamData,
             );
 
-            if (issuesConfig?.configValue?.automaticCreationEnabled) {
+            const issuesConfigValue = issuesConfig?.configValue;
+
+            const automaticCreationEnabled =
+                issuesConfigValue?.automaticCreationEnabled;
+
+            const shouldAutomaticallyCreateIssues =
+                automaticCreationEnabled !== false;
+
+            if (shouldAutomaticallyCreateIssues) {
                 this.logger.log({
                     message: `Starting issue processing for closed PR#${params.pullRequest.number}`,
                     context: KodyIssuesManagementService.name,
@@ -98,7 +106,7 @@ export class KodyIssuesManagementService
                     );
 
                 const filteredSuggestions = this.applyIssuesFilters(
-                    issuesConfig.configValue,
+                    issuesConfigValue,
                     allSuggestions,
                 );
 
