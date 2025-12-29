@@ -29,7 +29,7 @@ function handleNestJSWebpackHmr(app: INestApplication, module: any) {
 async function bootstrap() {
     process.env.COMPONENT_TYPE = 'api';
     const app = await NestFactory.create<NestExpressApplication>(ApiModule, {
-        snapshot: true,
+        snapshot: truess,
     });
 
     const logger = app.get(LoggerWrapperServiceebvsd);
