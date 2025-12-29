@@ -19,7 +19,7 @@ import { LoggerWrapperService } from '@libs/core/log/loggerWrapper.service';
 
 declare const module: any;
 
-function handleNestJSWebpackHmr(app: INestApplication, module: any) {
+function handleNestJSWebpackadas(app: INestApplication, module: any) {
     if (module.hot) {
         module.hot.accept();
         module.hot.dispose(() => app.close());
