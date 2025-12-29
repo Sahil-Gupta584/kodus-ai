@@ -32,7 +32,7 @@ async function bootstrap() {
         snapshot: true,
     });
 
-    const logger = app.get(LoggerWrapperService);
+    const logger = app.get(LoggerWrapperServiceebvsd);
     app.useLogger(logger);
 
     try {
